@@ -128,6 +128,9 @@
           <select class="control" id="proj"></select></div>
         <div class="field"><label>メモ（何を買ったか）</label>
           <input class="control" id="memo" placeholder="木材・ビス など"></div>
+        <div class="field"><label>レシート（任意・撮ると金額を自動読み取り）</label>
+          <input class="control" id="receipt" type="file" accept="image/*" capture="environment" onchange="onReceipt(event)">
+          <div id="ocrMsg" style="font-size:12px;color:var(--sub);margin-top:6px"></div></div>
         <button class="btn" id="recBtn" onclick="record()">記録する</button>
       </div>
       <p style="text-align:center;color:var(--sub);font-size:12px">日時・入力者・申請状態は自動で付きます</p>
@@ -176,10 +179,11 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 const cfg = window.OC_CONFIG || {};
 const configured = cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR-PROJECT");
-let sb=null, projects=[], me=null;
+let sb=null, projects=[], me=null, receiptPath=null;
 
 const yen = n => "¥"+Number(n||0).toLocaleString();
 const man = n => "¥"+Math.round(Number(n||0)/10000)+"万";
@@ -311,6 +315,31 @@ function runNL(){
   p.classList.add('show');
 }
 
+// ---- レシート：アップロード + ブラウザ内OCR（無料） ----
+async function onReceipt(ev){
+  const file=ev.target.files&&ev.target.files[0]; if(!file)return;
+  const msg=document.getElementById('ocrMsg');
+  const ext=(file.name&&file.name.split('.').pop())||'jpg';
+  const path=me.id+'/'+Date.now()+'.'+ext;
+  msg.textContent='アップロード中…';
+  try{
+    const {error:upErr}=await sb.storage.from('receipts').upload(path,file,{upsert:false});
+    if(upErr){msg.textContent='アップロード失敗: '+upErr.message;return;}
+    receiptPath=path;
+    msg.textContent='画像から金額を読み取り中…（初回は辞書DLで数十秒）';
+    try{
+      const res=await Tesseract.recognize(file,'eng');
+      const text=res.data.text||'';
+      const nums=(text.match(/\d[\d,]{1,8}/g)||[]).map(s=>parseInt(s.replace(/,/g,''),10))
+                  .filter(n=>n>=10&&n<=9999999);
+      if(nums.length){const guess=Math.max(...nums);
+        document.getElementById('amt').value=guess.toLocaleString();
+        msg.textContent='読み取り: ¥'+guess.toLocaleString()+'（違ったら手で直してOK）／画像は保存済み';
+      }else{msg.textContent='金額を読み取れませんでした。手で入力してください（画像は保存済み）。';}
+    }catch(e){msg.textContent='OCR不可: '+e.message+'（画像は保存済み）';}
+  }catch(e){msg.textContent='エラー: '+e.message;}
+}
+
 // ---- 記録 ----
 async function record(){
   const amount=parseInt((document.getElementById('amt').value||'0').replace(/,/g,''),10);
@@ -318,12 +347,13 @@ async function record(){
   const note=document.getElementById('memo').value.trim();
   if(!amount||!project_id){toast('金額と案件を入れてください');return;}
   const btn=document.getElementById('recBtn');btn.disabled=true;
-  const {error}=await sb.from('expenses').insert({project_id,amount,note});
+  const {error}=await sb.from('expenses').insert({project_id,amount,note,receipt_url:receiptPath});
   btn.disabled=false;
   if(error){toast('保存エラー: '+error.message);return;}
   toast(yen(amount)+' を記録しました');
   document.getElementById('amt').value='';document.getElementById('memo').value='';
   document.getElementById('nlInput').value='';document.getElementById('parsed').classList.remove('show');
+  document.getElementById('receipt').value='';document.getElementById('ocrMsg').textContent='';receiptPath=null;
 }
 
 // ---- 起動 ----
