@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1A1A1A">
+<title>オフィスキャンプ 案件管理</title>
+<style>
+  :root{
+    --bg:#F4F4F5;--card:#FFF;--ink:#1A1A1A;--sub:#8C8C8C;--line:#E6E6E6;
+    --accent:#1A1A1A;--accent-soft:#EDEDED;--amber:#6E6E6E;--gray:#BFBFBF;
+    --shadow:0 4px 18px rgba(0,0,0,.06);--radius:16px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    min-height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
+  .wrap{max-width:480px;margin:0 auto;min-height:100dvh;position:relative;display:flex;flex-direction:column}
+  .head{padding:max(env(safe-area-inset-top),14px) 20px 8px;flex:none}
+  .head h1{margin:0;font-size:24px}
+  .head .date{color:var(--sub);font-size:13px;margin-top:2px}
+  .screen{flex:1;overflow-y:auto;padding:4px 16px 96px}
+  .hidden{display:none!important}
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+    border:1px solid var(--line);margin-bottom:12px}
+  .pad{padding:16px}
+  .sec{font-size:12px;color:var(--sub);font-weight:700;letter-spacing:1px;margin:18px 4px 8px;text-transform:uppercase}
+  /* 経費フォーム */
+  .amount-row{display:flex;align-items:center;gap:10px;padding:8px 4px 14px}
+  .yen{font-size:34px;color:var(--sub);font-weight:300}
+  .amount{font-size:40px;font-weight:700;border:none;background:transparent;width:100%;outline:none;color:var(--ink)}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:12px;color:var(--sub);font-weight:700;margin:0 2px 6px}
+  .control{width:100%;background:var(--card);border:1.5px solid var(--line);border-radius:14px;
+    padding:14px;font-size:16px;color:var(--ink);outline:none;font-family:inherit}
+  select.control{appearance:none}
+  .btn{display:block;width:100%;border:none;border-radius:16px;padding:16px;font-size:17px;font-weight:700;
+    color:#fff;background:var(--accent);cursor:pointer;font-family:inherit;box-shadow:0 6px 16px rgba(0,0,0,.18)}
+  .btn:disabled{opacity:.5}
+  .btn-ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line);box-shadow:none}
+  .nl{background:linear-gradient(135deg,#2A2A2A,#111);border-radius:var(--radius);padding:16px;color:#fff;margin-bottom:14px}
+  .nl .lab{font-size:12px;opacity:.85;font-weight:700;margin-bottom:8px}
+  .nl-input{width:100%;background:rgba(255,255,255,.15);border:none;border-radius:12px;padding:13px;color:#fff;font-size:15px;outline:none;font-family:inherit}
+  .nl-input::placeholder{color:rgba(255,255,255,.7)}
+  .nl-hint{font-size:11.5px;opacity:.8;margin-top:10px}
+  .parsed{font-size:12px;margin-top:9px;background:rgba(255,255,255,.12);border-radius:10px;padding:9px 11px;line-height:1.7;display:none}
+  .parsed.show{display:block}
+  /* 案件 */
+  .proj{display:flex;flex-direction:column;gap:6px;cursor:pointer}
+  .proj-top{display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .proj-name{font-size:16px;font-weight:700}
+  .proj-meta{color:var(--sub);font-size:13px;padding-left:0}
+  .profit{margin-left:auto;text-align:right}
+  .profit .v{font-weight:700;font-size:15px}
+  .profit .r{font-size:11px;color:var(--sub)}
+  .badge{font-size:11px;padding:2px 9px;border-radius:20px;font-weight:700}
+  .b-go{background:var(--accent-soft);color:var(--accent)}
+  .b-may{background:#EDEDED;color:var(--amber);border:1px solid #DCDCDC}
+  .b-lost{background:#eee;color:var(--gray)}
+  .kpis{display:flex;gap:8px;margin-top:6px}
+  .kpi{flex:1;background:var(--bg);border-radius:14px;padding:12px;text-align:center}
+  .kpi .l{font-size:11px;color:var(--sub);font-weight:700}
+  .kpi .n{font-size:16px;font-weight:700;margin-top:3px}
+  .kpi.pf{background:var(--accent-soft)}
+  .exp-row{display:flex;align-items:center;padding:13px 16px;gap:10px;border-top:1px solid var(--line)}
+  .exp-row:first-child{border-top:none}
+  .exp-row .n{font-weight:600}.exp-row .d{font-size:12px;color:var(--sub);margin-top:2px}
+  .exp-row .a{margin-left:auto;font-weight:700}
+  .st{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:700;margin-left:6px}
+  .st-ok{background:var(--accent-soft);color:var(--accent)}.st-wait{background:#EDEDED;color:var(--amber)}
+  .back{color:var(--accent);font-weight:600;font-size:15px;cursor:pointer;padding:4px;margin-bottom:4px}
+  /* タブ */
+  .tabbar{position:fixed;bottom:0;left:0;right:0;height:calc(64px + env(safe-area-inset-bottom));
+    padding-bottom:env(safe-area-inset-bottom);background:rgba(255,255,255,.95);backdrop-filter:blur(12px);
+    border-top:1px solid var(--line);display:flex;max-width:480px;margin:0 auto;z-index:4}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    color:var(--gray);font-size:11px;font-weight:600;cursor:pointer}
+  .tab.on{color:var(--accent)}.tab svg{width:24px;height:24px}
+  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--ink);color:#fff;padding:12px 20px;border-radius:30px;font-size:14px;font-weight:600;
+    opacity:0;transition:.3s;z-index:10;box-shadow:0 8px 20px rgba(0,0,0,.3)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .empty{text-align:center;color:var(--sub);font-size:14px;padding:30px 10px}
+  /* ログイン */
+  .login{flex:1;display:flex;flex-direction:column;justify-content:center;padding:24px;gap:14px}
+  .login h1{font-size:26px;margin:0 0 4px}
+  .login p{color:var(--sub);font-size:14px;margin:0 0 12px}
+  .banner{background:#FFF4E5;border:1px solid #F0D9A8;color:#8A6D2F;border-radius:12px;padding:12px;font-size:13px;line-height:1.6}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+
+  <!-- 設定未投入バナー -->
+  <div id="needConfig" class="login hidden">
+    <h1>オフィスキャンプ 案件管理</h1>
+    <div class="banner">まだ Supabase に接続されていません。<br>
+      <code>config.js</code> に Project URL と anon キーを入れると有効になります。</div>
+  </div>
+
+  <!-- ログイン -->
+  <div id="loginView" class="login hidden">
+    <h1>オフィスキャンプ</h1>
+    <p>案件・経費・予定の管理。会社のメールでログインします。</p>
+    <input id="loginEmail" class="control" type="email" inputmode="email" placeholder="you@officecamp.jp">
+    <button class="btn" id="loginBtn" onclick="sendMagicLink()">ログインリンクを送る</button>
+    <p id="loginMsg" style="color:var(--accent)"></p>
+  </div>
+
+  <!-- 経費入力 -->
+  <section id="s-expense" class="hidden" style="display:flex;flex-direction:column;flex:1">
+    <div class="head"><h1>経費を記録</h1><div class="date" id="whoami">その場でパッと。あとは自動。</div></div>
+    <div class="screen">
+      <div class="nl">
+        <div class="lab">✦ 文章で入力（自動で分解）</div>
+        <input class="nl-input" id="nlInput" placeholder="例）○○ビル改修で木材3000円" oninput="runNL()">
+        <div class="parsed" id="parsed"></div>
+        <div class="nl-hint">打つだけ → 金額・案件・メモに自動で振り分け。確認して記録。</div>
+      </div>
+      <div class="sec">内容</div>
+      <div class="card pad">
+        <div class="amount-row"><span class="yen">¥</span><input class="amount" id="amt" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label>紐づく案件</label>
+          <select class="control" id="proj"></select></div>
+        <div class="field"><label>メモ（何を買ったか）</label>
+          <input class="control" id="memo" placeholder="木材・ビス など"></div>
+        <button class="btn" id="recBtn" onclick="record()">記録する</button>
+      </div>
+      <p style="text-align:center;color:var(--sub);font-size:12px">日時・入力者・申請状態は自動で付きます</p>
+    </div>
+  </section>
+
+  <!-- 案件一覧 -->
+  <section id="s-projects" class="hidden" style="display:flex;flex-direction:column;flex:1">
+    <div class="head"><h1>案件</h1><div class="date">粗利つき</div></div>
+    <div class="screen" id="projList"><div class="empty">読み込み中…</div></div>
+  </section>
+
+  <!-- 案件詳細 -->
+  <section id="s-detail" class="hidden" style="display:flex;flex-direction:column;flex:1">
+    <div class="head"><div class="back" onclick="nav('projects')">‹ 案件一覧</div><h1 id="dName">—</h1></div>
+    <div class="screen" id="detailBody"></div>
+  </section>
+
+  <!-- 予定（暫定：DBから当日以降を表示） -->
+  <section id="s-schedule" class="hidden" style="display:flex;flex-direction:column;flex:1">
+    <div class="head"><h1>予定</h1><div class="date">Googleカレンダー連携は次フェーズ</div></div>
+    <div class="screen" id="schedList"><div class="empty">読み込み中…</div></div>
+  </section>
+
+  <nav class="tabbar hidden" id="tabbar">
+    <div class="tab on" data-s="expense" onclick="nav('expense')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>経費</div>
+    <div class="tab" data-s="projects" onclick="nav('projects')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>案件</div>
+    <div class="tab" data-s="schedule" onclick="nav('schedule')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>予定</div>
+  </nav>
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+const cfg = window.OC_CONFIG || {};
+const configured = cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR-PROJECT");
+let sb=null, projects=[], me=null;
+
+const yen = n => "¥"+Number(n||0).toLocaleString();
+const man = n => "¥"+Math.round(Number(n||0)/10000)+"万";
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);}
+
+const views=['needConfig','loginView','s-expense','s-projects','s-detail','s-schedule'];
+function showOnly(id){views.forEach(v=>document.getElementById(v).classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');}
+function nav(name){
+  document.getElementById('tabbar').classList.remove('hidden');
+  const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail'};
+  showOnly(map[name]);
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.s===name));
+  if(name==='projects')loadProjects();
+  if(name==='schedule')loadSchedule();
+}
+
+// ---- 認証 ----
+async function sendMagicLink(){
+  const email=document.getElementById('loginEmail').value.trim();
+  if(!email)return;
+  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.href}});
+  document.getElementById('loginMsg').textContent =
+    error ? ("エラー: "+error.message) : "メールを確認してください。リンクから戻るとログインできます。";
+}
+
+// ---- データ ----
+async function loadMe(){
+  const {data:{user}}=await sb.auth.getUser();
+  me=user;
+  const {data}=await sb.from('profiles').select('name,role').eq('id',user.id).single();
+  document.getElementById('whoami').textContent =
+    (data?.name||user.email)+"（"+(data?.role||'—')+"）として記録";
+}
+async function loadProjectOptions(){
+  const {data}=await sb.from('projects').select('id,name').neq('status','失注').order('created_at',{ascending:false});
+  projects=data||[];
+  const sel=document.getElementById('proj');
+  sel.innerHTML = projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')
+                  || `<option value="">案件がありません</option>`;
+}
+async function loadProjects(){
+  const list=document.getElementById('projList');
+  const {data,error}=await sb.from('project_costs').select('*').order('profit',{ascending:false});
+  if(error){list.innerHTML=`<div class="empty">取得エラー: ${error.message}</div>`;return;}
+  if(!data||!data.length){list.innerHTML=`<div class="empty">案件がまだありません</div>`;return;}
+  list.innerHTML=data.map(p=>`
+    <div class="card"><div class="pad proj" onclick="openDetail('${p.id}')">
+      <div class="proj-top"><span class="dot" style="background:#1A1A1A"></span>
+        <span class="proj-name">${p.name}</span>
+        <div class="profit"><div class="v">粗利 ${man(p.profit)}</div><div class="r">${p.profit_rate}%</div></div></div>
+      <div class="proj-meta">受注 ${man(p.revenue)}・原価 ${man(p.cost)}</div>
+    </div></div>`).join('');
+}
+async function openDetail(id){
+  showOnly('s-detail');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.querySelector('.tab[data-s="projects"]').classList.add('on');
+  const {data:p}=await sb.from('project_costs').select('*').eq('id',id).single();
+  document.getElementById('dName').textContent=p?.name||'—';
+  const {data:exps}=await sb.from('expenses').select('amount,note,spent_at,status,user_id')
+    .eq('project_id',id).order('spent_at',{ascending:false});
+  const rows=(exps||[]).map(e=>`
+    <div class="exp-row"><div><div class="n">${e.note||'（メモなし）'}</div>
+      <div class="d">${new Date(e.spent_at).toLocaleDateString('ja-JP')}</div></div>
+      <div class="a">${yen(e.amount)}<span class="st ${e.status==='承認'?'st-ok':'st-wait'}">${e.status}</span></div></div>`).join('')
+    || `<div class="empty">経費はまだありません</div>`;
+  document.getElementById('detailBody').innerHTML=`
+    <div class="card pad">
+      <div class="kpis">
+        <div class="kpi"><div class="l">受注</div><div class="n">${man(p.revenue)}</div></div>
+        <div class="kpi"><div class="l">原価</div><div class="n">${man(p.cost)}</div></div>
+        <div class="kpi pf"><div class="l">粗利</div><div class="n">${man(p.profit)}</div></div>
+      </div></div>
+    <div class="sec">経費</div>
+    <div class="card">${rows}</div>
+    <button class="btn btn-ghost" onclick="nav('expense')">＋ 経費を足す</button>`;
+}
+async function loadSchedule(){
+  const list=document.getElementById('schedList');
+  const {data}=await sb.from('events').select('title,start_at,project_id').gte('start_at',new Date().toISOString())
+    .order('start_at').limit(50);
+  if(!data||!data.length){list.innerHTML=`<div class="empty">予定はまだありません</div>`;return;}
+  list.innerHTML=data.map(e=>`<div class="card pad">
+    <div style="font-weight:600">${e.title}</div>
+    <div class="proj-meta">${new Date(e.start_at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+  </div>`).join('');
+}
+
+// ---- 自然言語 ----
+function parseNL(text){
+  const m=text.replace(/,/g,'').match(/([0-9]+)\s*円?/);
+  const amount=m?m[1]:'';
+  let proj=projects.find(p=>text.includes(p.name));
+  let memo=text; if(m)memo=memo.replace(m[0],''); if(proj)memo=memo.replace(proj.name,'');
+  memo=memo.replace(/[ので・]/g,' ').replace(/\s+/g,' ').trim();
+  return {amount,proj,memo};
+}
+function runNL(){
+  const text=document.getElementById('nlInput').value.trim(); if(!text)return;
+  const r=parseNL(text);
+  if(r.amount)document.getElementById('amt').value=Number(r.amount).toLocaleString();
+  if(r.proj)document.getElementById('proj').value=r.proj.id;
+  if(r.memo)document.getElementById('memo').value=r.memo;
+  const p=document.getElementById('parsed');
+  p.innerHTML=`金額 <b>${r.amount?yen(r.amount):'—'}</b> ／ 案件 <b>${r.proj?r.proj.name:'未判定'}</b> ／ メモ <b>${r.memo||'—'}</b>`;
+  p.classList.add('show');
+}
+
+// ---- 記録 ----
+async function record(){
+  const amount=parseInt((document.getElementById('amt').value||'0').replace(/,/g,''),10);
+  const project_id=document.getElementById('proj').value;
+  const note=document.getElementById('memo').value.trim();
+  if(!amount||!project_id){toast('金額と案件を入れてください');return;}
+  const btn=document.getElementById('recBtn');btn.disabled=true;
+  const {error}=await sb.from('expenses').insert({project_id,amount,note});
+  btn.disabled=false;
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast(yen(amount)+' を記録しました');
+  document.getElementById('amt').value='';document.getElementById('memo').value='';
+  document.getElementById('nlInput').value='';document.getElementById('parsed').classList.remove('show');
+}
+
+// ---- 起動 ----
+(async function init(){
+  if(!configured){showOnly('needConfig');return;}
+  sb=supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session){showOnly('loginView');
+    sb.auth.onAuthStateChange((_e,s)=>{if(s)boot();});
+    return;}
+  boot();
+})();
+async function boot(){
+  await loadMe();
+  await loadProjectOptions();
+  nav('expense');
+}
+</script>
+</body>
+</html>
