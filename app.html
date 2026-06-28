@@ -145,6 +145,21 @@
         <div class="amount-row"><span class="yen">¥</span><input class="amount" id="amt" inputmode="numeric" placeholder="0"></div>
         <div class="field"><label>紐づく案件</label>
           <select class="control" id="proj"></select></div>
+        <div class="field"><label>種別</label>
+          <select class="control" id="kind" onchange="onKindChange()">
+            <option value="経費">経費（材料・備品など）</option>
+            <option value="外注">外注（外部・社内別部門への発注）</option>
+          </select></div>
+        <div class="field hidden" id="vendorField"><label>外注先</label>
+          <select class="control" id="vendor"></select>
+          <div id="vendorAdd" class="hidden" style="margin-top:8px;display:flex;gap:8px">
+            <input class="control" id="newVendor" placeholder="新しい外注先名" style="flex:1">
+            <select class="control" id="newVendorKind" style="width:120px;flex:none">
+              <option value="外部">外部</option><option value="社内部門">社内部門</option>
+            </select>
+            <button class="btn btn-ghost" style="width:auto;flex:none;padding:14px 16px" onclick="addVendor()">追加</button>
+          </div>
+        </div>
         <div class="field"><label>メモ（何を買ったか）</label>
           <input class="control" id="memo" placeholder="木材・ビス など"></div>
         <div class="field"><label>レシート（任意・撮ると金額を自動読み取り）</label>
@@ -214,8 +229,9 @@
 <script>
 const cfg = window.OC_CONFIG || {};
 const configured = cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR-PROJECT");
-let sb=null, projects=[], me=null, myRole=null, receiptPath=null;
+let sb=null, projects=[], vendors=[], me=null, myRole=null, receiptPath=null;
 const isAccounting = ()=> myRole==='経理' || myRole==='管理者';
+const isManager = ()=> myRole==='経理' || myRole==='管理者';
 
 const yen = n => "¥"+Number(n||0).toLocaleString();
 const man = n => "¥"+Math.round(Number(n||0)/10000)+"万";
@@ -267,6 +283,30 @@ async function loadProjectOptions(){
   sel.innerHTML = projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')
                   || `<option value="">案件がありません</option>`;
 }
+async function loadVendors(){
+  const {data}=await sb.from('vendors').select('id,name,kind').order('name');
+  vendors=data||[];
+  const sel=document.getElementById('vendor');
+  if(sel)sel.innerHTML = vendors.map(v=>`<option value="${v.id}">${v.name}（${v.kind}）</option>`).join('')
+    || `<option value="">外注先がありません</option>`;
+}
+function onKindChange(){
+  const isG = document.getElementById('kind').value==='外注';
+  document.getElementById('vendorField').classList.toggle('hidden',!isG);
+  // 管理者/経理だけ外注先を追加できる
+  document.getElementById('vendorAdd').classList.toggle('hidden',!(isG && isManager()));
+}
+async function addVendor(){
+  const name=document.getElementById('newVendor').value.trim();
+  if(!name){toast('外注先名を入れてください');return;}
+  const kind=document.getElementById('newVendorKind').value;
+  const {data,error}=await sb.from('vendors').insert({name,kind}).select().single();
+  if(error){toast('追加エラー: '+error.message);return;}
+  document.getElementById('newVendor').value='';
+  await loadVendors();
+  document.getElementById('vendor').value=data.id;
+  toast('外注先「'+name+'」を追加');
+}
 async function loadProjects(){
   const list=document.getElementById('projList');
   const {data,error}=await sb.from('project_costs').select('*').order('profit',{ascending:false});
@@ -307,13 +347,17 @@ async function openDetail(id){
   document.querySelector('.tab[data-s="projects"]').classList.add('on');
   const {data:p}=await sb.from('project_costs').select('*').eq('id',id).single();
   document.getElementById('dName').textContent=p?.name||'—';
-  const {data:exps}=await sb.from('expenses').select('amount,note,spent_at,status,user_id')
+  const {data:exps}=await sb.from('expenses')
+    .select('amount,note,spent_at,status,kind,user_id,vendor:vendor_id(name,kind),author:user_id(name,email)')
     .eq('project_id',id).order('spent_at',{ascending:false});
-  const rows=(exps||[]).map(e=>`
-    <div class="exp-row"><div><div class="n">${e.note||'（メモなし）'}</div>
-      <div class="d">${new Date(e.spent_at).toLocaleDateString('ja-JP')}</div></div>
-      <div class="a">${yen(e.amount)}<span class="st ${e.status==='承認'?'st-ok':'st-wait'}">${e.status}</span></div></div>`).join('')
-    || `<div class="empty">経費はまだありません</div>`;
+  const rows=(exps||[]).map(e=>{
+    const who=e.author?.name||e.author?.email||'—';
+    const tag=e.kind==='外注'
+      ? `<span class="st st-wait">外注${e.vendor?'・'+e.vendor.name:''}</span>` : '';
+    return `<div class="exp-row"><div><div class="n">${e.note||'（メモなし）'}${tag}</div>
+      <div class="d">${new Date(e.spent_at).toLocaleDateString('ja-JP')}・${who}</div></div>
+      <div class="a">${yen(e.amount)}<span class="st ${e.status==='承認'?'st-ok':'st-wait'}">${e.status}</span></div></div>`;
+  }).join('') || `<div class="empty">経費はまだありません</div>`;
   document.getElementById('detailBody').innerHTML=`
     <div class="card pad">
       <div class="kpis">
@@ -343,6 +387,7 @@ const FIN_COLS=[
   {key:'status', label:'状態',   l:true, fmt:r=>statusPill(r.status)},
   {key:'revenue',label:'受注',   fmt:r=>yen(r.revenue)},
   {key:'cost',   label:'原価',   fmt:r=>yen(r.cost)},
+  {key:'outsource',label:'外注', fmt:r=>yen(r.outsource)},
   {key:'profit', label:'粗利',   fmt:r=>`<span class="${r.profit<0?'neg':''}">${yen(r.profit)}</span>`},
   {key:'profit_rate',label:'粗利率',fmt:r=>`<span class="${r.profit<0?'neg':''}">${r.profit_rate}%</span>`},
   {key:'created_at',label:'登録', fmt:r=>r.created_at?new Date(r.created_at).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'}):'—'},
@@ -385,8 +430,8 @@ function renderFinance(){
   const body=rows.length? rows.map(r=>`<tr onclick="openDetail('${r.id}')">${
     FIN_COLS.map(c=>`<td class="${c.l?'l':''}">${c.fmt(r)}</td>`).join('')
   }</tr>`).join('') : `<tr><td class="l" colspan="${FIN_COLS.length}" style="color:var(--sub);text-align:center;padding:24px">案件がまだありません</td></tr>`;
-  const t=finRows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,prof:0});
-  const tot=rows.length?`<tr class="tot"><td class="l">合計</td><td class="l"></td><td>${yen(t.rev)}</td><td>${yen(t.cost)}</td><td class="${t.prof<0?'neg':''}">${yen(t.prof)}</td><td></td><td></td></tr>`:'';
+  const t=finRows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),out:a.out+(r.outsource||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,out:0,prof:0});
+  const tot=rows.length?`<tr class="tot"><td class="l">合計</td><td class="l"></td><td>${yen(t.rev)}</td><td>${yen(t.cost)}</td><td>${yen(t.out)}</td><td class="${t.prof<0?'neg':''}">${yen(t.prof)}</td><td></td><td></td></tr>`:'';
   document.getElementById('finTable').innerHTML=`<thead><tr>${head}</tr></thead><tbody>${body}${tot}</tbody>`;
 }
 function sortFin(key){
@@ -445,15 +490,19 @@ async function record(){
   const amount=parseInt((document.getElementById('amt').value||'0').replace(/,/g,''),10);
   const project_id=document.getElementById('proj').value;
   const note=document.getElementById('memo').value.trim();
+  const kind=document.getElementById('kind').value;
+  const vendor_id = kind==='外注' ? (document.getElementById('vendor').value||null) : null;
   if(!amount||!project_id){toast('金額と案件を入れてください');return;}
+  if(kind==='外注' && !vendor_id){toast('外注先を選んでください');return;}
   const btn=document.getElementById('recBtn');btn.disabled=true;
-  const {error}=await sb.from('expenses').insert({project_id,amount,note,receipt_url:receiptPath});
+  const {error}=await sb.from('expenses').insert({project_id,amount,note,kind,vendor_id,receipt_url:receiptPath});
   btn.disabled=false;
   if(error){toast('保存エラー: '+error.message);return;}
   toast(yen(amount)+' を記録しました');
   document.getElementById('amt').value='';document.getElementById('memo').value='';
   document.getElementById('nlInput').value='';document.getElementById('parsed').classList.remove('show');
   document.getElementById('receipt').value='';document.getElementById('ocrMsg').textContent='';receiptPath=null;
+  document.getElementById('kind').value='経費';onKindChange();
 }
 
 // ---- 起動 ----
@@ -469,6 +518,8 @@ async function record(){
 async function boot(){
   await loadMe();
   await loadProjectOptions();
+  await loadVendors();
+  onKindChange();
   nav('expense');
 }
 </script>
