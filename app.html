@@ -146,6 +146,18 @@
   .tk-prog{height:5px;background:var(--line);border-radius:3px;margin-top:7px;overflow:hidden}
   .tk-prog i{display:block;height:100%;background:var(--accent)}
   .tk-badge{font-size:10px;padding:1px 8px;border-radius:10px;font-weight:700;flex:none;background:var(--accent-soft);color:var(--accent)}
+  /* lean タスク行 */
+  .tk-lean{display:flex;align-items:center;gap:10px;padding:11px 4px;border-top:1px solid var(--line)}
+  .tk-lean:first-child{border-top:none}
+  .tk-lean-main{min-width:0;flex:1}
+  /* 色つきステータス select（ワンタップ変更） */
+  .st-sel{appearance:none;border:none;border-radius:9px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;flex:none}
+  .st-sel.s-未着手{background:#ECECEC;color:#555}.st-sel.s-進行{background:#1A1A1A;color:#fff}
+  .st-sel.s-完了{background:#DCEFDC;color:#3D6B3C}.st-sel.s-保留{background:#F6E7C2;color:#8A6D2F}
+  .st-sel.ps-見込{background:#ECECEC;color:#555}.st-sel.ps-進行{background:#1A1A1A;color:#fff}
+  .st-sel.ps-完了{background:#DCEFDC;color:#3D6B3C}.st-sel.ps-失注{background:#F3DEDE;color:#A33}
+  .dl-soon{color:#C8772B!important;font-weight:700}
+  .dl-over{color:#B00020!important;font-weight:700}
   .tk-edit{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:7px}
   .tk-edit .tk-i{width:auto;flex:none;text-align:left;border:1px solid var(--line);background:#fff;
     padding:6px 8px;border-radius:8px;font-size:12px}
@@ -233,6 +245,7 @@
       <button class="btn btn-ghost" id="addProjToggle" style="margin:4px 0 12px" onclick="toggleProjForm()">＋ 案件を追加</button>
       <div id="projForm" class="card pad hidden" style="margin-bottom:12px">
         <div class="field"><label>案件名</label><input class="control" id="npName" placeholder="○○ビル改修"></div>
+        <div class="field"><label>受注元（任意）</label><input class="control" id="npClient" placeholder="◇◇建設"></div>
         <div class="field"><label>受注金額（円・任意）</label><input class="control" id="npAmt" inputmode="numeric" placeholder="0"></div>
         <div class="field"><label>納品日（任意）</label><input class="control" id="npDeliv" type="date"></div>
         <div style="display:flex;gap:8px">
@@ -446,12 +459,13 @@ async function addProject(){
   if(!name){toast('案件名を入れてください');return;}
   const amount=parseInt((document.getElementById('npAmt').value||'0').replace(/[,，]/g,''),10)||0;
   const delivery_date=document.getElementById('npDeliv').value||null;
+  const client=document.getElementById('npClient').value.trim()||null;
   const btn=document.getElementById('npSave');btn.disabled=true;
   try{
-    const {error}=await sb.from('projects').insert({name,amount,delivery_date,owner_id:me.id,status:'進行'});
+    const {error}=await sb.from('projects').insert({name,client,amount,delivery_date,owner_id:me.id,status:'進行'});
     if(error){toast('追加エラー: '+error.message);return;}
     toast('案件「'+name+'」を追加');
-    document.getElementById('npName').value='';document.getElementById('npAmt').value='';document.getElementById('npDeliv').value='';
+    document.getElementById('npName').value='';document.getElementById('npClient').value='';document.getElementById('npAmt').value='';document.getElementById('npDeliv').value='';
     toggleProjForm(false);
     await loadProjectOptions(); await loadProjects();
   }catch(e){toast('例外: '+e.message);}
@@ -466,7 +480,7 @@ async function openDetail(id){
   body.innerHTML=`<div class="empty">読み込み中…</div>`;
   const [{data:p},{data:pmeta},{data:exps},tasks,{data:members},{data:logs},{data:ords}]=await Promise.all([
     sb.from('project_costs').select('*').eq('id',id).single(),
-    sb.from('projects').select('delivery_date').eq('id',id).single(),
+    sb.from('projects').select('delivery_date,client').eq('id',id).single(),
     sb.from('expenses').select('amount,note,spent_at,status,kind,user_id,vendor:vendor_id(name,kind),author:user_id(name,email)')
       .eq('project_id',id).order('spent_at',{ascending:false}),
     fetchTasks(id),
@@ -520,7 +534,8 @@ async function openDetail(id){
         <div class="kpi pf"><div class="l">粗利</div><div class="n">${man(p.profit)}</div></div>
       </div>
       <div class="task-meta" style="margin-top:8px">
-        ${p.outsource?`うち外注 ${man(p.outsource)}　`:''}納品日：${pmeta?.delivery_date?fmtDate(pmeta.delivery_date):'未設定'}</div>
+        ${pmeta?.client?'受注元：'+pmeta.client+'　':''}${p.outsource?`うち外注 ${man(p.outsource)}　`:''}
+        納品日：<span class="${deadlineInfo(pmeta?.delivery_date,'').cls}">${pmeta?.delivery_date?fmtDate(pmeta.delivery_date):'未設定'}</span></div>
     </div>
 
     <div class="sec">タスク（ガント）</div>
@@ -734,25 +749,46 @@ function ganttRows(tasks){
 const DOW=['日','月','火','水','木','金','土'];
 function fmtDate(d){ if(!d)return null; const x=new Date(d+'T00:00:00');
   return `${x.getMonth()+1}/${x.getDate()}(${DOW[x.getDay()]})`; }
+function deadlineInfo(end,status){
+  if(!end||status==='完了')return {cls:'',tag:''};
+  const days=dnum(end)-todayNum();
+  if(days<0)return {cls:'dl-over',tag:'・期限切れ'};
+  if(days<=3)return {cls:'dl-soon',tag:`・あと${days}日`};
+  return {cls:'',tag:''};
+}
+function statusSelect(t){
+  return `<select class="st-sel s-${t.status}" onchange="updTask('${t.id}','status',this.value);this.className='st-sel s-'+this.value">${
+    TASK_STATUS.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}</select>`;
+}
+function dateText(t){
+  const dl=deadlineInfo(t.end_date,t.status);
+  return (t.start_date||t.end_date)
+    ? `<span class="tk-date ${dl.cls}">${fmtDate(t.start_date)||'未定'} → ${fmtDate(t.end_date)||'未定'}<span class="${dl.cls}">${dl.tag}</span></span>`
+    : '<span style="color:var(--sub)">日付未設定</span>';
+}
 function taskItemHTML(t,opts){
   opts=opts||{};
+  // lean: タスクtab用（内容・日付・ステータスだけ）
+  if(opts.lean){
+    return `<div class="tk-lean">${statusSelect(t)}
+      <div class="tk-lean-main"><div class="tk-title">${t.title}</div>
+        <div class="tk-sub">${dateText(t)}</div></div></div>`;
+  }
+  // full: 案件詳細用（日付/進捗/担当も編集）
   const who=(t.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}</span>`).join('')
     || '<span style="color:var(--sub)">担当者なし</span>';
-  const stOpt=TASK_STATUS.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('');
   let prOpt=''; for(let i=0;i<=100;i+=10)prOpt+=`<option ${i===(t.progress||0)?'selected':''}>${i}</option>`;
   return `<div class="tk-item">
     <div class="tk-st s-${t.status}"></div>
     <div class="tk-main">
-      <div class="tk-title">${t.title}</div>
+      <div class="task-h"><span class="tk-title">${t.title}</span><span style="margin-left:auto">${statusSelect(t)}</span></div>
       <div class="tk-edit">
-        <select class="fin-edit tk-i" onchange="updTask('${t.id}','status',this.value)">${stOpt}</select>
         <input class="fin-edit tk-i" type="date" value="${t.start_date||''}" onchange="updTask('${t.id}','start_date',this.value)">
         <span class="tk-arrow">→</span>
         <input class="fin-edit tk-i" type="date" value="${t.end_date||''}" onchange="updTask('${t.id}','end_date',this.value)">
         <select class="fin-edit tk-i" onchange="updTaskNum('${t.id}','progress',this.value)">${prOpt}</select><span class="tk-pct">%</span>
       </div>
-      <div class="tk-sub"><span class="tk-who">担当：${who}</span>
-        ${t.leader_id?`<span>リーダー：${personName(t.leader_id)}</span>`:''}</div>
+      <div class="tk-sub">${dateText(t)}　<span class="tk-who">担当：${who}</span></div>
       <div class="tk-prog"><i style="width:${t.progress||0}%"></i></div>
       ${opts.assign?`<div class="row-inline" style="margin-top:8px">
         <select class="control" id="asg-${t.id}" style="flex:1">${peopleOptions('＋担当者を選ぶ')}</select>
@@ -792,7 +828,7 @@ async function loadGantt(){
     const g=ganttRows(list);
     html+=`<div class="card pad">
       <div class="gproj" onclick="openDetail('${pid}')" style="cursor:pointer">▸ ${pname[pid]||'案件'}</div>
-      ${list.map(taskItemHTML).join('')}
+      ${list.map(t=>taskItemHTML(t,{lean:true})).join('')}
       ${g.rows?`<div class="gwin" style="margin-top:12px">タイムライン（${g.win}）</div>${g.rows}`:''}
     </div>`;
   }
@@ -808,13 +844,14 @@ function statusOptions(cur){
 }
 const FIN_COLS=[
   {key:'name',   label:'案件',   l:true, ed:true, fmt:r=>`<input class="fin-edit l" value="${esc(r.name)}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','name',this.value)">`},
-  {key:'status', label:'状態',   l:true, ed:true, fmt:r=>`<select class="fin-edit" onclick="event.stopPropagation()" onchange="updProj('${r.id}','status',this.value)">${statusOptions(r.status)}</select>`},
+  {key:'client', label:'受注元', l:true, ed:true, fmt:r=>`<input class="fin-edit l" value="${esc(r.client)}" placeholder="—" onclick="event.stopPropagation()" onchange="updProj('${r.id}','client',this.value)">`},
+  {key:'status', label:'状態',   l:true, ed:true, fmt:r=>`<select class="st-sel ps-${r.status}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','status',this.value);this.className='st-sel ps-'+this.value">${statusOptions(r.status)}</select>`},
   {key:'revenue',label:'受注',   ed:true, fmt:r=>`<input class="fin-edit" inputmode="numeric" value="${r.revenue||0}" onclick="event.stopPropagation()" onchange="updProjNum('${r.id}','amount',this.value)">`},
   {key:'cost',   label:'原価',   fmt:r=>yen(r.cost)},
   {key:'outsource',label:'外注', fmt:r=>yen(r.outsource)},
   {key:'profit', label:'粗利',   fmt:r=>`<span class="${r.profit<0?'neg':''}">${yen(r.profit)}</span>`},
   {key:'profit_rate',label:'粗利率',fmt:r=>`<span class="${r.profit<0?'neg':''}">${r.profit_rate}%</span>`},
-  {key:'delivery_date',label:'納品', ed:true, fmt:r=>`<input class="fin-edit" type="date" value="${r.delivery_date||''}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','delivery_date',this.value)">`},
+  {key:'delivery_date',label:'納品', ed:true, fmt:r=>`<input class="fin-edit ${deadlineInfo(r.delivery_date,r.status==='完了'?'完了':'').cls}" type="date" value="${r.delivery_date||''}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','delivery_date',this.value)">`},
   {key:'created_at',label:'登録', fmt:r=>r.created_at?new Date(r.created_at).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'}):'—'},
 ];
 async function updProj(id,field,value){
@@ -870,7 +907,7 @@ function renderFinance(){
     FIN_COLS.map(c=>`<td class="${c.l?'l':''} ${c.ed?'ed':''}">${c.fmt(r)}</td>`).join('')
   }</tr>`).join('') : `<tr><td class="l" colspan="${FIN_COLS.length}" style="color:var(--sub);text-align:center;padding:24px">案件がまだありません</td></tr>`;
   const t=finRows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),out:a.out+(r.outsource||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,out:0,prof:0});
-  const tot=rows.length?`<tr class="tot"><td class="l">合計</td><td class="l"></td><td>${yen(t.rev)}</td><td>${yen(t.cost)}</td><td>${yen(t.out)}</td><td class="${t.prof<0?'neg':''}">${yen(t.prof)}</td><td></td><td></td><td></td></tr>`:'';
+  const tot=rows.length?`<tr class="tot"><td class="l">合計</td><td class="l"></td><td class="l"></td><td>${yen(t.rev)}</td><td>${yen(t.cost)}</td><td>${yen(t.out)}</td><td class="${t.prof<0?'neg':''}">${yen(t.prof)}</td><td></td><td></td><td></td></tr>`:'';
   document.getElementById('finTable').innerHTML=`<thead><tr>${head}</tr></thead><tbody>${body}${tot}</tbody>`;
 }
 function sortFin(key){
