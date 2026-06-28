@@ -227,9 +227,14 @@
   .modal-card{background:var(--card);width:100%;max-width:480px;max-height:88vh;overflow-y:auto;
     border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
   .tm-proj{font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px}
-  .sub-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
-  .sub-row:first-child{border-top:none}
-  .sub-t{flex:1;font-size:13.5px;cursor:pointer}
+  .sub-item{padding:9px 0;border-top:1px solid var(--line)}
+  .sub-item:first-child{border-top:none}
+  .sub-row{display:flex;align-items:center;gap:8px}
+  .sub-t{flex:1;font-size:13.5px;font-weight:600;cursor:pointer}
+  .sub-edit{display:flex;align-items:center;gap:6px;margin-top:6px}
+  .sub-edit input{border:1px solid var(--line);border-radius:8px;padding:5px 7px;font-size:12px;font-family:inherit}
+  .sub-asg{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .sub-asg select{flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:7px;font-size:12px;font-family:inherit}
   /* 色つきステータス select（ワンタップ変更） */
   .st-sel{appearance:none;border:none;border-radius:9px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;flex:none}
   .st-sel.s-未着手{background:#ECECEC;color:#555}.st-sel.s-進行{background:#1A1A1A;color:#fff}
@@ -911,13 +916,24 @@ function taskItemHTML(t){
 async function openTask(id){
   const [{data:t},{data:subs}]=await Promise.all([
     sb.from('tasks').select('*, task_assignees(user_id), proj:project_id(name,code)').eq('id',id).single(),
-    sb.from('tasks').select('id,title,status,start_date,end_date').eq('parent_task_id',id).order('created_at'),
+    sb.from('tasks').select('id,title,status,start_date,end_date,task_assignees(user_id)').eq('parent_task_id',id).order('created_at'),
   ]);
   if(!t)return;
-  const subRows=(subs||[]).map(s=>`<div class="sub-row">
-    <select class="st-sel st-mini s-${s.status}" onclick="event.stopPropagation()" onchange="updTask('${s.id}','status',this.value);this.className='st-sel st-mini s-'+this.value">${TASK_STATUS.map(x=>`<option ${x===s.status?'selected':''}>${x.charAt(0)}</option>`).join('')}</select>
-    <span class="sub-t" onclick="openTask('${s.id}')">${s.title}</span></div>`).join('')
-    || '<div class="task-meta">サブタスクはありません</div>';
+  const subRows=(subs||[]).map(s=>{
+    const chips=(s.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}<b onclick="unassignSub('${s.id}','${a.user_id}','${id}')" style="cursor:pointer;margin-left:3px">×</b></span>`).join('');
+    return `<div class="sub-item">
+      <div class="sub-row">
+        <select class="st-sel st-mini s-${s.status}" onchange="updSub('${s.id}','status',this.value,'${id}');this.className='st-sel st-mini s-'+this.value">${TASK_STATUS.map(x=>`<option ${x===s.status?'selected':''}>${x.charAt(0)}</option>`).join('')}</select>
+        <span class="sub-t" onclick="openTask('${s.id}')">${s.title}</span></div>
+      <div class="sub-edit">
+        <input type="date" value="${s.start_date||''}" onchange="updSub('${s.id}','start_date',this.value,'${id}')">
+        <span class="tk-arrow">→</span>
+        <input type="date" value="${s.end_date||''}" onchange="updSub('${s.id}','end_date',this.value,'${id}')"></div>
+      <div class="sub-asg">${chips}
+        <select id="sasg-${s.id}">${peopleOptions('＋担当')}</select>
+        <button class="btn btn-ghost mini" onclick="assignSub('${s.id}','${id}')">追加</button></div>
+    </div>`;
+  }).join('') || '<div class="task-meta">サブタスクはありません</div>';
   const chips=(t.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}
     <b onclick="unassign('${id}','${a.user_id}')" style="cursor:pointer;margin-left:3px">×</b></span>`).join('')||'<span style="color:var(--sub)">担当者なし</span>';
   document.getElementById('taskModalBody').innerHTML=`
@@ -965,6 +981,23 @@ async function addSubtask(parentId,projectId){
   const {error}=await sb.from('tasks').insert({project_id:projectId,parent_task_id:parentId,title});
   if(error){toast('追加エラー: '+error.message);return;}
   toast('サブタスク「'+title+'」を追加'); openTask(parentId);
+}
+async function updSub(subId,field,value,parentId){
+  let v=value; if((field==='start_date'||field==='end_date')&&!value)v=null;
+  const {error}=await sb.from('tasks').update({[field]:v}).eq('id',subId);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('保存しました'); openTask(parentId);
+}
+async function assignSub(subId,parentId){
+  const uid=document.getElementById('sasg-'+subId).value;
+  if(!uid){toast('人を選んでください');return;}
+  const {error}=await sb.from('task_assignees').insert({task_id:subId,user_id:uid});
+  if(error){toast(error.message.includes('duplicate')?'すでに担当':'エラー: '+error.message);return;}
+  openTask(parentId);
+}
+async function unassignSub(subId,uid,parentId){
+  await sb.from('task_assignees').delete().eq('task_id',subId).eq('user_id',uid);
+  openTask(parentId);
 }
 async function updTask(id,field,value){
   let v=value; if((field==='start_date'||field==='end_date')&&!value)v=null;
