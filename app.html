@@ -965,7 +965,7 @@ function statusSelect(t){
 }
 function statusSelectMini(t){
   return `<select class="st-sel st-mini s-${t.status}" onclick="event.stopPropagation()" onchange="updTask('${t.id}','status',this.value);this.className='st-sel st-mini s-'+this.value">${
-    TASK_STATUS.map(s=>`<option ${s===t.status?'selected':''}>${s.charAt(0)}</option>`).join('')}</select>`;
+    TASK_STATUS.map(s=>`<option value="${s}" ${s===t.status?'selected':''}>${s.charAt(0)}</option>`).join('')}</select>`;
 }
 function dateText(t){
   const dl=deadlineInfo(t.end_date,t.status);
@@ -992,7 +992,7 @@ async function openTask(id){
     const chips=(s.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}<b onclick="unassignSub('${s.id}','${a.user_id}','${id}')" style="cursor:pointer;margin-left:3px">×</b></span>`).join('');
     return `<div class="sub-item">
       <div class="sub-row">
-        <select class="st-sel st-mini s-${s.status}" onchange="updSub('${s.id}','status',this.value,'${id}');this.className='st-sel st-mini s-'+this.value">${TASK_STATUS.map(x=>`<option ${x===s.status?'selected':''}>${x.charAt(0)}</option>`).join('')}</select>
+        <select class="st-sel st-mini s-${s.status}" onchange="updSub('${s.id}','status',this.value,'${id}');this.className='st-sel st-mini s-'+this.value">${TASK_STATUS.map(x=>`<option value="${x}" ${x===s.status?'selected':''}>${x.charAt(0)}</option>`).join('')}</select>
         <span class="sub-t" onclick="openTask('${s.id}')">${s.title}</span></div>
       <div class="sub-edit">
         <input type="date" value="${s.start_date||''}" onchange="updSub('${s.id}','start_date',this.value,'${id}')">
