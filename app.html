@@ -146,6 +146,11 @@
   .tk-prog{height:5px;background:var(--line);border-radius:3px;margin-top:7px;overflow:hidden}
   .tk-prog i{display:block;height:100%;background:var(--accent)}
   .tk-badge{font-size:10px;padding:1px 8px;border-radius:10px;font-weight:700;flex:none;background:var(--accent-soft);color:var(--accent)}
+  .tk-edit{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:7px}
+  .tk-edit .tk-i{width:auto;flex:none;text-align:left;border:1px solid var(--line);background:#fff;
+    padding:6px 8px;border-radius:8px;font-size:12px}
+  .tk-edit select.tk-i{font-weight:700}
+  .tk-arrow,.tk-pct{color:var(--sub);font-size:12px}
   /* 経理スプレッドシート編集 */
   .fin-edit{border:none;background:transparent;font:inherit;font-size:13px;color:var(--ink);width:100%;
     text-align:right;padding:2px 3px;border-radius:4px;outline:none}
@@ -229,6 +234,7 @@
       <div id="projForm" class="card pad hidden" style="margin-bottom:12px">
         <div class="field"><label>案件名</label><input class="control" id="npName" placeholder="○○ビル改修"></div>
         <div class="field"><label>受注金額（円・任意）</label><input class="control" id="npAmt" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label>納品日（任意）</label><input class="control" id="npDeliv" type="date"></div>
         <div style="display:flex;gap:8px">
           <button class="btn" id="npSave" style="flex:1" onclick="addProject()">追加</button>
           <button class="btn btn-ghost" style="flex:1" onclick="toggleProjForm(false)">キャンセル</button>
@@ -281,8 +287,8 @@
             <button class="btn btn-ghost mini" onclick="addVendorO()">追加</button>
           </div>
         </div>
-        <div class="field hidden" id="odUserField"><label>内注先（社内の担当者）</label>
-          <select class="control" id="odUser"></select></div>
+        <div class="field hidden" id="odUserField"><label>内注先（部門）</label>
+          <select class="control" id="odDept"></select></div>
         <div class="field"><label>依頼内容</label><input class="control" id="odTitle" placeholder="例）図面作成・運搬 など"></div>
         <div class="field"><label>金額（円）</label><input class="control" id="odAmount" inputmode="numeric" placeholder="0"></div>
         <div style="display:flex;gap:8px">
@@ -318,7 +324,8 @@
 <script>
 const cfg = window.OC_CONFIG || {};
 const configured = cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR-PROJECT");
-let sb=null, projects=[], vendors=[], people=[], peopleById={}, me=null, myRole=null, receiptPath=null, curDetail=null;
+let sb=null, projects=[], vendors=[], people=[], peopleById={}, departments=[], myDept=null, me=null, myRole=null, receiptPath=null, curDetail=null;
+const TASK_STATUS=['未着手','進行','完了','保留'];
 const isAccounting = ()=> myRole==='経理' || myRole==='管理者';
 const isManager = ()=> myRole==='経理' || myRole==='管理者';
 
@@ -355,8 +362,9 @@ async function sendMagicLink(){
 async function loadMe(){
   const {data:{user}}=await sb.auth.getUser();
   me=user;
-  const {data}=await sb.from('profiles').select('name,role').eq('id',user.id).single();
+  const {data}=await sb.from('profiles').select('name,role,department_id').eq('id',user.id).single();
   myRole=data?.role||null;
+  myDept=data?.department_id||null;
   const nm=data?.name||'';
   document.getElementById('whoami').textContent =
     (nm||user.email)+"（"+(data?.role||'—')+"）として記録";
@@ -393,10 +401,15 @@ async function loadProjectOptions(){
                   || `<option value="">案件がありません</option>`;
 }
 async function loadPeople(){
-  const {data}=await sb.from('profiles').select('id,name,email,role').order('name');
+  const {data}=await sb.from('profiles').select('id,name,email,role,department_id').order('name');
   people=data||[];
   peopleById={}; people.forEach(p=>peopleById[p.id]=p);
 }
+async function loadDepartments(){
+  const {data}=await sb.from('departments').select('id,name').order('name');
+  departments=data||[];
+}
+const deptName = id => (departments.find(d=>d.id===id)||{}).name || '部門';
 const personName = id => { const p=peopleById[id]; return p?(p.name||p.email):'—'; };
 function peopleOptions(sel){
   return `<option value="">${sel||'—選択—'}</option>`+
@@ -432,12 +445,13 @@ async function addProject(){
   const name=document.getElementById('npName').value.trim();
   if(!name){toast('案件名を入れてください');return;}
   const amount=parseInt((document.getElementById('npAmt').value||'0').replace(/[,，]/g,''),10)||0;
+  const delivery_date=document.getElementById('npDeliv').value||null;
   const btn=document.getElementById('npSave');btn.disabled=true;
   try{
-    const {error}=await sb.from('projects').insert({name,amount,owner_id:me.id,status:'進行'});
+    const {error}=await sb.from('projects').insert({name,amount,delivery_date,owner_id:me.id,status:'進行'});
     if(error){toast('追加エラー: '+error.message);return;}
     toast('案件「'+name+'」を追加');
-    document.getElementById('npName').value='';document.getElementById('npAmt').value='';
+    document.getElementById('npName').value='';document.getElementById('npAmt').value='';document.getElementById('npDeliv').value='';
     toggleProjForm(false);
     await loadProjectOptions(); await loadProjects();
   }catch(e){toast('例外: '+e.message);}
@@ -450,15 +464,16 @@ async function openDetail(id){
   document.querySelector('.tab[data-s="projects"]').classList.add('on');
   const body=document.getElementById('detailBody');
   body.innerHTML=`<div class="empty">読み込み中…</div>`;
-  const [{data:p},{data:exps},tasks,{data:members},{data:logs},{data:ords}]=await Promise.all([
+  const [{data:p},{data:pmeta},{data:exps},tasks,{data:members},{data:logs},{data:ords}]=await Promise.all([
     sb.from('project_costs').select('*').eq('id',id).single(),
+    sb.from('projects').select('delivery_date').eq('id',id).single(),
     sb.from('expenses').select('amount,note,spent_at,status,kind,user_id,vendor:vendor_id(name,kind),author:user_id(name,email)')
       .eq('project_id',id).order('spent_at',{ascending:false}),
     fetchTasks(id),
     sb.from('project_members').select('user_id').eq('project_id',id),
     sb.from('audit_log').select('table_name,action,actor_id,summary,diff,created_at')
       .eq('project_id',id).order('created_at',{ascending:false}).limit(40),
-    sb.from('orders').select('id,kind,amount,title,status,from_user,to_user_id,vendor:vendor_id(name)')
+    sb.from('orders').select('id,kind,amount,title,status,from_user,to_user_id,to_dept_id,vendor:vendor_id(name)')
       .eq('project_id',id).order('created_at',{ascending:false}),
   ]);
   document.getElementById('dName').textContent=p?.name||'—';
@@ -475,24 +490,12 @@ async function openDetail(id){
   // タスク（ガント＋一覧＋アサイン）
   const g=ganttRows(tasks);
   const ganttBlock = g.rows ? `<div class="gwin">${g.win}</div>${g.rows}` : '';
-  const taskList=(tasks||[]).map(t=>{
-    const asg=(t.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}</span>`).join('')||'<span class="task-meta">担当者なし</span>';
-    return `<div class="task-card">
-      <div class="task-h"><span class="tt">${t.title}</span>
-        <span class="st ${t.status==='完了'?'st-ok':'st-wait'}" style="margin-left:auto">${t.status} ${t.progress||0}%</span></div>
-      <div class="task-meta">${t.start_date?t.start_date+' 〜 '+(t.end_date||'未定'):'日付未設定'}
-        ${t.leader_id?'・リーダー: '+personName(t.leader_id):''}</div>
-      <div style="margin-top:6px">担当者：${asg}</div>
-      <div class="row-inline">
-        <select class="control" id="asg-${t.id}" style="flex:1">${peopleOptions('＋担当者を選ぶ')}</select>
-        <button class="btn btn-ghost mini" onclick="assignUser('${t.id}')">割り当て</button>
-      </div>
-    </div>`;
-  }).join('') || `<div class="empty">タスクはまだありません</div>`;
+  const taskList=(tasks||[]).map(t=>taskItemHTML(t,{assign:true})).join('')
+    || `<div class="empty">タスクはまだありません</div>`;
 
   // 発注
   const ordRows=(ords||[]).map(o=>{
-    const dest=o.kind==='外注'?(o.vendor?.name||'外注先'):personName(o.to_user_id);
+    const dest=o.kind==='外注'?(o.vendor?.name||'外注先'):deptName(o.to_dept_id);
     return `<div class="exp-row"><div><div class="n">${o.title}
       <span class="badge ${o.kind==='内注'?'b-may':'b-go'}">${o.kind}</span></div>
       <div class="d">宛先 ${dest}・${o.status}・依頼 ${personName(o.from_user)}</div></div>
@@ -516,7 +519,8 @@ async function openDetail(id){
         <div class="kpi"><div class="l">原価</div><div class="n">${man(p.cost)}</div></div>
         <div class="kpi pf"><div class="l">粗利</div><div class="n">${man(p.profit)}</div></div>
       </div>
-      ${p.outsource?`<div class="task-meta" style="margin-top:8px">うち外注 ${man(p.outsource)}</div>`:''}
+      <div class="task-meta" style="margin-top:8px">
+        ${p.outsource?`うち外注 ${man(p.outsource)}　`:''}納品日：${pmeta?.delivery_date?fmtDate(pmeta.delivery_date):'未設定'}</div>
     </div>
 
     <div class="sec">タスク（ガント）</div>
@@ -612,8 +616,8 @@ function fillOrderSelects(){
     projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')||`<option value="">案件なし</option>`;
   document.getElementById('odVendor').innerHTML =
     vendors.map(v=>`<option value="${v.id}">${v.name}（${v.kind}）</option>`).join('')||`<option value="">外注先なし</option>`;
-  document.getElementById('odUser').innerHTML =
-    people.filter(p=>p.id!==me.id).map(p=>`<option value="${p.id}">${p.name||p.email}</option>`).join('')||`<option value="">社内ユーザーなし</option>`;
+  document.getElementById('odDept').innerHTML =
+    departments.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')||`<option value="">部門なし</option>`;
 }
 function onOrderKind(){
   const g=document.getElementById('odKind').value==='外注';
@@ -637,22 +641,22 @@ async function addOrder(){
   const title=document.getElementById('odTitle').value.trim();
   const amount=parseInt((document.getElementById('odAmount').value||'0').replace(/[,，]/g,''),10)||0;
   const vendor_id = kind==='外注' ? (document.getElementById('odVendor').value||null) : null;
-  const to_user_id = kind==='内注' ? (document.getElementById('odUser').value||null) : null;
+  const to_dept_id = kind==='内注' ? (document.getElementById('odDept').value||null) : null;
   if(!project_id){toast('案件を選んでください');return;}
   if(!title){toast('依頼内容を入れてください');return;}
   if(kind==='外注'&&!vendor_id){toast('外注先を選んでください');return;}
-  if(kind==='内注'&&!to_user_id){toast('内注先を選んでください');return;}
-  const {error}=await sb.from('orders').insert({project_id,kind,vendor_id,to_user_id,from_user:me.id,title,amount});
+  if(kind==='内注'&&!to_dept_id){toast('内注先（部門）を選んでください');return;}
+  const {error}=await sb.from('orders').insert({project_id,kind,vendor_id,to_dept_id,from_user:me.id,title,amount});
   if(error){toast('発注エラー: '+error.message);return;}
   toast(kind+'「'+title+'」を発注');
   document.getElementById('odTitle').value='';document.getElementById('odAmount').value='';
   toggleOrderForm(false);
   loadOrders();
 }
-const ORDER_SELECT='id,project_id,kind,amount,title,status,from_user,to_user_id,created_at,'+
+const ORDER_SELECT='id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,'+
   'vendor:vendor_id(name),proj:project_id(name)';
 function orderCard(o,received){
-  const dest = o.kind==='外注' ? (o.vendor?.name||'外注先') : personName(o.to_user_id);
+  const dest = o.kind==='外注' ? (o.vendor?.name||'外注先') : deptName(o.to_dept_id);
   const who = received ? `${personName(o.from_user)} から` : `宛先: ${dest}`;
   const kc = o.kind==='内注'?'b-may':'b-go';
   return `<div class="card pad">
@@ -664,9 +668,10 @@ function orderCard(o,received){
 }
 async function loadOrders(){
   fillOrderSelects();
+  const inFilter = myDept ? `to_user_id.eq.${me.id},to_dept_id.eq.${myDept}` : `to_user_id.eq.${me.id}`;
   const [{data:out},{data:inb}]=await Promise.all([
     sb.from('orders').select(ORDER_SELECT).eq('from_user',me.id).order('created_at',{ascending:false}),
-    sb.from('orders').select(ORDER_SELECT).eq('to_user_id',me.id).order('created_at',{ascending:false}),
+    sb.from('orders').select(ORDER_SELECT).or(inFilter).order('created_at',{ascending:false}),
   ]);
   document.getElementById('ordersOut').innerHTML =
     (out&&out.length)?out.map(o=>orderCard(o,false)).join(''):`<div class="empty">まだ発注はありません</div>`;
@@ -729,25 +734,47 @@ function ganttRows(tasks){
 const DOW=['日','月','火','水','木','金','土'];
 function fmtDate(d){ if(!d)return null; const x=new Date(d+'T00:00:00');
   return `${x.getMonth()+1}/${x.getDate()}(${DOW[x.getDay()]})`; }
-function taskItemHTML(t){
+function taskItemHTML(t,opts){
+  opts=opts||{};
   const who=(t.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}</span>`).join('')
     || '<span style="color:var(--sub)">担当者なし</span>';
-  const period = (t.start_date||t.end_date)
-    ? `<span class="tk-date">${fmtDate(t.start_date)||'未定'} → ${fmtDate(t.end_date)||'未定'}</span>`
-    : '<span style="color:var(--sub)">日付未設定</span>';
+  const stOpt=TASK_STATUS.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('');
+  let prOpt=''; for(let i=0;i<=100;i+=10)prOpt+=`<option ${i===(t.progress||0)?'selected':''}>${i}</option>`;
   return `<div class="tk-item">
     <div class="tk-st s-${t.status}"></div>
     <div class="tk-main">
       <div class="tk-title">${t.title}</div>
-      <div class="tk-sub">
-        <span class="tk-badge">${t.status} ${t.progress||0}%</span>
-        ${period}
-        <span class="tk-who">担当：${who}</span>
-        ${t.leader_id?`<span>リーダー：${personName(t.leader_id)}</span>`:''}
+      <div class="tk-edit">
+        <select class="fin-edit tk-i" onchange="updTask('${t.id}','status',this.value)">${stOpt}</select>
+        <input class="fin-edit tk-i" type="date" value="${t.start_date||''}" onchange="updTask('${t.id}','start_date',this.value)">
+        <span class="tk-arrow">→</span>
+        <input class="fin-edit tk-i" type="date" value="${t.end_date||''}" onchange="updTask('${t.id}','end_date',this.value)">
+        <select class="fin-edit tk-i" onchange="updTaskNum('${t.id}','progress',this.value)">${prOpt}</select><span class="tk-pct">%</span>
       </div>
+      <div class="tk-sub"><span class="tk-who">担当：${who}</span>
+        ${t.leader_id?`<span>リーダー：${personName(t.leader_id)}</span>`:''}</div>
       <div class="tk-prog"><i style="width:${t.progress||0}%"></i></div>
+      ${opts.assign?`<div class="row-inline" style="margin-top:8px">
+        <select class="control" id="asg-${t.id}" style="flex:1">${peopleOptions('＋担当者を選ぶ')}</select>
+        <button class="btn btn-ghost mini" onclick="assignUser('${t.id}')">割り当て</button></div>`:''}
     </div>
   </div>`;
+}
+async function updTask(id,field,value){
+  let v=value; if((field==='start_date'||field==='end_date')&&!value)v=null;
+  const {error}=await sb.from('tasks').update({[field]:v}).eq('id',id);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('保存しました'); refreshTasks();
+}
+async function updTaskNum(id,field,value){
+  const n=parseInt(value,10)||0;
+  const {error}=await sb.from('tasks').update({[field]:n}).eq('id',id);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('保存しました'); refreshTasks();
+}
+function refreshTasks(){
+  const detOpen=!document.getElementById('s-detail').classList.contains('hidden');
+  if(detOpen&&curDetail)openDetail(curDetail); else loadGantt();
 }
 // ---- タスクタブ：全案件横断（リスト＋ガント） ----
 async function loadGantt(){
@@ -787,11 +814,13 @@ const FIN_COLS=[
   {key:'outsource',label:'外注', fmt:r=>yen(r.outsource)},
   {key:'profit', label:'粗利',   fmt:r=>`<span class="${r.profit<0?'neg':''}">${yen(r.profit)}</span>`},
   {key:'profit_rate',label:'粗利率',fmt:r=>`<span class="${r.profit<0?'neg':''}">${r.profit_rate}%</span>`},
+  {key:'delivery_date',label:'納品', ed:true, fmt:r=>`<input class="fin-edit" type="date" value="${r.delivery_date||''}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','delivery_date',this.value)">`},
   {key:'created_at',label:'登録', fmt:r=>r.created_at?new Date(r.created_at).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'}):'—'},
 ];
 async function updProj(id,field,value){
-  const v=(value==null?'':value).toString().trim();
+  let v=(value==null?'':value).toString().trim();
   if(field==='name'&&!v){toast('案件名は空にできません');loadFinance();return;}
+  if(field==='delivery_date'&&!v) v=null;   // 空欄は未設定
   const {error}=await sb.from('projects').update({[field]:v}).eq('id',id);
   if(error){toast('保存エラー: '+error.message);return;}
   toast('保存しました');
@@ -812,7 +841,7 @@ async function loadFinance(){
   // 財務はビュー、状態・登録日は projects から取り、id で結合
   const [{data:costs,error:e1},{data:meta,error:e2}]=await Promise.all([
     sb.from('project_costs').select('*'),
-    sb.from('projects').select('id,status,created_at,client'),
+    sb.from('projects').select('id,status,created_at,client,delivery_date'),
   ]);
   if(e1||e2){table.innerHTML=`<tbody><tr><td class="l">取得エラー: ${(e1||e2).message}</td></tr></tbody>`;return;}
   const m=Object.fromEntries((meta||[]).map(x=>[x.id,x]));
@@ -841,7 +870,7 @@ function renderFinance(){
     FIN_COLS.map(c=>`<td class="${c.l?'l':''} ${c.ed?'ed':''}">${c.fmt(r)}</td>`).join('')
   }</tr>`).join('') : `<tr><td class="l" colspan="${FIN_COLS.length}" style="color:var(--sub);text-align:center;padding:24px">案件がまだありません</td></tr>`;
   const t=finRows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),out:a.out+(r.outsource||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,out:0,prof:0});
-  const tot=rows.length?`<tr class="tot"><td class="l">合計</td><td class="l"></td><td>${yen(t.rev)}</td><td>${yen(t.cost)}</td><td>${yen(t.out)}</td><td class="${t.prof<0?'neg':''}">${yen(t.prof)}</td><td></td><td></td></tr>`:'';
+  const tot=rows.length?`<tr class="tot"><td class="l">合計</td><td class="l"></td><td>${yen(t.rev)}</td><td>${yen(t.cost)}</td><td>${yen(t.out)}</td><td class="${t.prof<0?'neg':''}">${yen(t.prof)}</td><td></td><td></td><td></td></tr>`:'';
   document.getElementById('finTable').innerHTML=`<thead><tr>${head}</tr></thead><tbody>${body}${tot}</tbody>`;
 }
 function sortFin(key){
@@ -924,6 +953,7 @@ async function record(){
 async function boot(){
   await loadMe();
   await loadPeople();
+  await loadDepartments();
   await loadProjectOptions();
   await loadVendors();
   nav('expense');
