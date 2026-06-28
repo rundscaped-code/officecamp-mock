@@ -50,7 +50,8 @@
   /* 案件 */
   .proj{display:flex;flex-direction:column;gap:6px;cursor:pointer}
   .proj-top{display:flex;align-items:center;gap:8px}
-  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;background:#1A1A1A}
+  .dot.s-見込{background:#9A9A9A}.dot.s-進行{background:#1A1A1A}.dot.s-完了{background:#5B8C5A}.dot.s-失注{background:#C77}
   .proj-name{font-size:16px;font-weight:700}
   .proj-meta{color:var(--sub);font-size:13px;padding-left:0}
   .profit{margin-left:auto;text-align:right}
@@ -248,6 +249,10 @@
     padding:6px 8px;border-radius:8px;font-size:12px}
   .tk-edit select.tk-i{font-weight:700}
   .tk-arrow,.tk-pct{color:var(--sub);font-size:12px}
+  /* フィルタバー */
+  .filterbar{display:flex;gap:6px;margin:2px 0 12px;flex-wrap:wrap}
+  .fbi{padding:9px 10px;font-size:13px;flex:1;min-width:120px}
+  select.fbi{appearance:none}
   /* 経理スプレッドシート編集 */
   .fin-edit{border:none;background:transparent;font:inherit;font-size:13px;color:var(--ink);width:100%;
     text-align:right;padding:2px 3px;border-radius:4px;outline:none}
@@ -263,6 +268,13 @@
   .log-act{font-size:10px;padding:1px 6px;border-radius:8px;font-weight:700;flex:none}
   .la-INSERT{background:#E7F0E7;color:#3D6B3C}.la-UPDATE{background:#EDEDED;color:#555}
   .la-DELETE{background:#F3E2E2;color:#A33}
+  .log-d>summary{list-style:none;cursor:pointer}
+  .log-d>summary::-webkit-details-marker{display:none}
+  .log-d[open]>summary{background:var(--bg)}
+  .log-diff{padding:8px 14px 12px;background:var(--bg);font-size:12.5px}
+  .dl{padding:3px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+  .dk{font-weight:700;min-width:64px;color:var(--sub)}
+  .do{color:#A33;text-decoration:line-through}.dn{color:#3D6B3C;font-weight:600}
   /* ログイン */
   .login{flex:1;display:flex;flex-direction:column;justify-content:center;padding:24px;gap:14px}
   .login h1{font-size:26px;margin:0 0 4px}
@@ -345,6 +357,11 @@
           <button class="btn btn-ghost" style="flex:1" onclick="toggleProjForm(false)">キャンセル</button>
         </div>
       </div>
+      <div class="filterbar">
+        <input class="control fbi" id="projSearch" placeholder="🔍 案件名・番号・受注元" oninput="renderProjects()">
+        <select class="control fbi" id="projStatus" onchange="renderProjects()">
+          <option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option></select>
+      </div>
       <div id="projList"><div class="empty">読み込み中…</div></div>
     </div>
   </section>
@@ -359,6 +376,12 @@
   <section id="s-finance" class="hidden" style="display:flex;flex-direction:column;flex:1">
     <div class="head"><h1>経理</h1><div class="date">全案件・原価・粗利を一覧</div></div>
     <div class="screen">
+      <div class="filterbar">
+        <input class="control fbi" id="finSearch" placeholder="🔍 案件名・番号・受注元" oninput="applyFinFilter()">
+        <select class="control fbi" id="finStatus" onchange="applyFinFilter()">
+          <option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option></select>
+        <select class="control fbi" id="finMonth" onchange="applyFinFilter()"><option value="">納品月：すべて</option></select>
+      </div>
       <div class="fin-sum" id="finSum"></div>
       <div class="fin-tablewrap"><table class="fin-table" id="finTable"></table></div>
       <p style="text-align:center;color:var(--sub);font-size:12px;margin-top:12px">案件名・状態・受注は<b>セルを直接編集</b>して保存／見出しで並べ替え／行タップで詳細</p>
@@ -530,17 +553,34 @@ async function loadVendors(){
   if(sel)sel.innerHTML = vendors.map(v=>`<option value="${v.id}">${v.name}（${v.kind}）</option>`).join('')
     || `<option value="">外注先がありません</option>`;
 }
+let projRows=[];
 async function loadProjects(){
   const list=document.getElementById('projList');
-  const {data,error}=await sb.from('project_costs').select('*').order('profit',{ascending:false});
+  const [{data,error},{data:meta}]=await Promise.all([
+    sb.from('project_costs').select('*').order('profit',{ascending:false}),
+    sb.from('projects').select('id,status,client'),
+  ]);
   if(error){list.innerHTML=`<div class="empty">取得エラー: ${error.message}</div>`;return;}
-  if(!data||!data.length){list.innerHTML=`<div class="empty">案件がまだありません</div>`;return;}
-  list.innerHTML=data.map(p=>`
+  const m=Object.fromEntries((meta||[]).map(x=>[x.id,x]));
+  projRows=(data||[]).map(p=>({...p,...(m[p.id]||{})}));
+  renderProjects();
+}
+function renderProjects(){
+  const list=document.getElementById('projList');
+  const q=(document.getElementById('projSearch')?.value||'').trim().toLowerCase();
+  const st=document.getElementById('projStatus')?.value||'';
+  const rows=projRows.filter(p=>{
+    if(st&&p.status!==st)return false;
+    if(q&&!`${p.code||''} ${p.name||''} ${p.client||''}`.toLowerCase().includes(q))return false;
+    return true;
+  });
+  if(!rows.length){list.innerHTML=`<div class="empty">該当する案件がありません</div>`;return;}
+  list.innerHTML=rows.map(p=>`
     <div class="card"><div class="pad proj" onclick="openDetail('${p.id}')">
-      <div class="proj-top"><span class="dot" style="background:#1A1A1A"></span>
-        <span class="proj-name">${p.name}</span>
+      <div class="proj-top"><span class="dot s-${p.status}" style="width:9px;height:9px;border-radius:50%"></span>
+        <span class="proj-name">${p.code?p.code+' ':''}${p.name}</span>
         <div class="profit"><div class="v">粗利 ${man(p.profit)}</div><div class="r">${p.profit_rate}%</div></div></div>
-      <div class="proj-meta">受注 ${man(p.revenue)}・原価 ${man(p.cost)}</div>
+      <div class="proj-meta">${p.client?p.client+'・':''}受注 ${man(p.revenue)}・原価 ${man(p.cost)}・<b>${p.status||''}</b></div>
     </div></div>`).join('');
 }
 function toggleProjForm(show){
@@ -628,12 +668,12 @@ async function openDetail(id){
   // メンバー
   const memChips=(members||[]).map(m=>`<span class="chip">${personName(m.user_id)}</span>`).join('')||'<span class="task-meta">まだメンバーがいません</span>';
 
-  // 変更履歴
-  const logRows=(logs||[]).map(l=>`<div class="log-row">
+  // 変更履歴（クリックでDIFF展開）
+  const logRows=(logs||[]).map(l=>`<details class="log-d"><summary class="log-row">
       <span class="log-act la-${l.action}">${({INSERT:'追加',UPDATE:'変更',DELETE:'削除'})[l.action]||l.action}</span>
       <span class="lw">${logLabel(l)}</span>
       <span class="lt">${personName(l.actor_id)}・${new Date(l.created_at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
-    </div>`).join('') || `<div class="empty">まだ履歴はありません</div>`;
+    </summary><div class="log-diff">${diffHTML(l)}</div></details>`).join('') || `<div class="empty">まだ履歴はありません</div>`;
 
   body.innerHTML=`
     <div class="card pad">
@@ -710,6 +750,35 @@ function detSub(n){
   ['tasks','exp','ord','info'].forEach(k=>{
     const el=document.getElementById('dp-'+k); if(el)el.classList.toggle('hidden',k!==n);});
   document.querySelectorAll('.subtab').forEach(t=>t.classList.toggle('on',t.dataset.d===n));
+}
+const FIELD_JP={name:'案件名',title:'タイトル',amount:'金額',status:'状態',note:'メモ',
+  start_date:'開始日',end_date:'終了日',delivery_date:'納品日',client:'受注元',
+  progress:'進捗',leader_id:'リーダー',kind:'種別',vendor_id:'外注先',
+  to_dept_id:'内注先',spent_at:'日付',profit:'粗利',parent_task_id:'親タスク'};
+function fieldLabel(k){return FIELD_JP[k]||k;}
+function fmtVal(k,v){
+  if(v===null||v===undefined||v==='')return '空';
+  if(k==='leader_id'||k==='to_user_id'||k==='user_id'||k==='from_user')return personName(v);
+  if(k==='to_dept_id')return deptName(v);
+  if(k==='amount')return yen(v);
+  return String(v);
+}
+function diffHTML(l){
+  const o=l.diff?.old||{}, n=l.diff?.new||{};
+  const skip=new Set(['id','created_at','updated_at','owner_id','receipt_url','user_id','from_user']);
+  const keys=[...new Set([...Object.keys(o),...Object.keys(n)])].filter(k=>!skip.has(k));
+  const changed=keys.filter(k=>JSON.stringify(o[k])!==JSON.stringify(n[k]));
+  if(l.action==='INSERT'){
+    const list=keys.filter(k=>n[k]!==null&&n[k]!=='').map(k=>`<div class="dl"><span class="dk">${fieldLabel(k)}</span><span class="dn">${fmtVal(k,n[k])}</span></div>`).join('');
+    return list||'<div class="task-meta">—</div>';
+  }
+  if(l.action==='DELETE'){
+    const list=keys.filter(k=>o[k]!==null&&o[k]!=='').map(k=>`<div class="dl"><span class="dk">${fieldLabel(k)}</span><span class="do">${fmtVal(k,o[k])}</span></div>`).join('');
+    return list||'<div class="task-meta">—</div>';
+  }
+  if(!changed.length)return '<div class="task-meta">変更なし</div>';
+  return changed.map(k=>`<div class="dl"><span class="dk">${fieldLabel(k)}</span>
+    <span class="do">${fmtVal(k,o[k])}</span> → <span class="dn">${fmtVal(k,n[k])}</span></div>`).join('');
 }
 function logLabel(l){
   const t={projects:'案件',expenses:'経費',tasks:'タスク',orders:'発注'}[l.table_name]||l.table_name;
@@ -1125,6 +1194,7 @@ const FIN_COLS=[
   {key:'name',   label:'案件名', l:true, ed:true, fmt:r=>`<input class="fin-edit l fin-name" value="${esc(r.name)}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','name',this.value)">`},
   {key:'client', label:'受注元', l:true, ed:true, fmt:r=>`<input class="fin-edit l" value="${esc(r.client)}" placeholder="—" onclick="event.stopPropagation()" onchange="updProj('${r.id}','client',this.value)">`},
   {key:'status', label:'状態',   l:true, ed:true, fmt:r=>`<select class="st-sel ps-${r.status}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','status',this.value);this.className='st-sel ps-'+this.value">${statusOptions(r.status)}</select>`},
+  {key:'leader_id',label:'担当', l:true, fmt:r=>`<span class="fin-code">${r.leader_id?personName(r.leader_id):'—'}</span>`},
   {key:'revenue',label:'受注',   ed:true, fmt:r=>`<input class="fin-edit" inputmode="numeric" value="${r.revenue||0}" onclick="event.stopPropagation()" onchange="updProjNum('${r.id}','amount',this.value)">`},
   {key:'cost',   label:'原価',   fmt:r=>yen(r.cost)},
   {key:'outsource',label:'外注', fmt:r=>yen(r.outsource)},
@@ -1141,7 +1211,8 @@ async function updProj(id,field,value){
   if(error){toast('保存エラー: '+error.message);return;}
   toast('保存しました');
   const row=finRows.find(r=>r.id===id); if(row)row[field]=v;
-  if(field==='status'){ /* 表示のみ。再集計不要 */ }
+  const fin=document.getElementById('s-finance');
+  if(fin && !fin.classList.contains('hidden')) renderFinance();
   loadProjectOptions();
 }
 async function updProjNum(id,field,value){
@@ -1151,42 +1222,65 @@ async function updProjNum(id,field,value){
   toast('保存しました');
   await loadFinance(); // 粗利を再計算
 }
+let finFilter={q:'',status:'',month:''};
+function applyFinFilter(){
+  finFilter={
+    q:(document.getElementById('finSearch').value||'').trim().toLowerCase(),
+    status:document.getElementById('finStatus').value,
+    month:document.getElementById('finMonth').value};
+  renderFinance();
+}
+function filteredFin(){
+  return finRows.filter(r=>{
+    if(finFilter.status && r.status!==finFilter.status)return false;
+    if(finFilter.month && (r.delivery_date||'').slice(0,7)!==finFilter.month)return false;
+    if(finFilter.q){const hay=`${r.code||''} ${r.name||''} ${r.client||''}`.toLowerCase();
+      if(!hay.includes(finFilter.q))return false;}
+    return true;
+  });
+}
 async function loadFinance(){
   const table=document.getElementById('finTable');
   table.innerHTML=`<tbody><tr><td class="l" style="color:var(--sub)">読み込み中…</td></tr></tbody>`;
-  // 財務はビュー、状態・登録日は projects から取り、id で結合
   const [{data:costs,error:e1},{data:meta,error:e2}]=await Promise.all([
     sb.from('project_costs').select('*'),
-    sb.from('projects').select('id,status,created_at,client,delivery_date'),
+    sb.from('projects').select('id,status,created_at,client,delivery_date,leader_id'),
   ]);
   if(e1||e2){table.innerHTML=`<tbody><tr><td class="l">取得エラー: ${(e1||e2).message}</td></tr></tbody>`;return;}
   const m=Object.fromEntries((meta||[]).map(x=>[x.id,x]));
   finRows=(costs||[]).map(c=>({...c,...(m[c.id]||{})}));
-  renderFinSummary();
+  // 納品月の選択肢を構築
+  const months=[...new Set(finRows.map(r=>(r.delivery_date||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  const sel=document.getElementById('finMonth');
+  sel.innerHTML='<option value="">納品月：すべて</option>'+months.map(mo=>`<option value="${mo}" ${finFilter.month===mo?'selected':''}>${mo.replace('-','/')}</option>`).join('');
   renderFinance();
 }
-function renderFinSummary(){
-  const t=finRows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,prof:0});
+function renderFinSummary(rows){
+  const t=rows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,prof:0});
   document.getElementById('finSum').innerHTML=`
-    <div class="kpi"><div class="l">案件数</div><div class="n">${finRows.length}</div></div>
+    <div class="kpi"><div class="l">案件数</div><div class="n">${rows.length}</div></div>
     <div class="kpi"><div class="l">受注計</div><div class="n">${man(t.rev)}</div></div>
     <div class="kpi pf"><div class="l">粗利計</div><div class="n">${man(t.prof)}</div></div>`;
 }
 function renderFinance(){
-  const rows=[...finRows].sort((a,b)=>{
+  const rows=filteredFin().sort((a,b)=>{
     let x=a[finSort.key],y=b[finSort.key];
-    if(finSort.key==='name'){x=x||'';y=y||'';return finSort.dir*x.localeCompare(y,'ja');}
+    if(finSort.key==='name'||finSort.key==='leader_id'){
+      x=(finSort.key==='leader_id'?personName(x):x)||'';y=(finSort.key==='leader_id'?personName(y):y)||'';
+      return finSort.dir*x.localeCompare(y,'ja');}
     x=x??-Infinity;y=y??-Infinity;return finSort.dir*((x>y)-(x<y));
   });
+  renderFinSummary(rows);
   const head=FIN_COLS.map(c=>{
     const on=finSort.key===c.key;const ar=on?(finSort.dir<0?'▼':'▲'):'⇅';
     return `<th class="${c.l?'l':''} ${on?'sorted':''}" onclick="sortFin('${c.key}')">${c.label}<span class="ar">${ar}</span></th>`;
   }).join('');
   const body=rows.length? rows.map(r=>`<tr onclick="openDetail('${r.id}')">${
     FIN_COLS.map(c=>`<td class="${c.l?'l':''} ${c.ed?'ed':''}">${c.fmt(r)}</td>`).join('')
-  }</tr>`).join('') : `<tr><td class="l" colspan="${FIN_COLS.length}" style="color:var(--sub);text-align:center;padding:24px">案件がまだありません</td></tr>`;
-  const t=finRows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),out:a.out+(r.outsource||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,out:0,prof:0});
-  const tot=rows.length?`<tr class="tot"><td class="l"></td><td class="l">合計</td><td class="l"></td><td class="l"></td><td>${yen(t.rev)}</td><td>${yen(t.cost)}</td><td>${yen(t.out)}</td><td class="${t.prof<0?'neg':''}">${yen(t.prof)}</td><td></td><td></td><td></td></tr>`:'';
+  }</tr>`).join('') : `<tr><td class="l" colspan="${FIN_COLS.length}" style="color:var(--sub);text-align:center;padding:24px">該当する案件がありません</td></tr>`;
+  const t=rows.reduce((a,r)=>({revenue:a.revenue+(r.revenue||0),cost:a.cost+(r.cost||0),outsource:a.outsource+(r.outsource||0),profit:a.profit+(r.profit||0)}),{revenue:0,cost:0,outsource:0,profit:0});
+  const totMap={name:'合計',revenue:yen(t.revenue),cost:yen(t.cost),outsource:yen(t.outsource),profit:yen(t.profit)};
+  const tot=rows.length?`<tr class="tot">${FIN_COLS.map(c=>`<td class="${c.l?'l':''}">${totMap[c.key]||''}</td>`).join('')}</tr>`:'';
   document.getElementById('finTable').innerHTML=`<thead><tr>${head}</tr></thead><tbody>${body}${tot}</tbody>`;
 }
 function sortFin(key){
