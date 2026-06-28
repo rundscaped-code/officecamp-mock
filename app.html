@@ -200,7 +200,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>経費</div>
     <div class="tab" data-s="projects" onclick="nav('projects')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>案件</div>
-    <div class="tab" data-s="finance" onclick="nav('finance')">
+    <div class="tab hidden" data-s="finance" onclick="nav('finance')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>経理</div>
     <div class="tab" data-s="schedule" onclick="nav('schedule')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>予定</div>
@@ -214,7 +214,8 @@
 <script>
 const cfg = window.OC_CONFIG || {};
 const configured = cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR-PROJECT");
-let sb=null, projects=[], me=null, receiptPath=null;
+let sb=null, projects=[], me=null, myRole=null, receiptPath=null;
+const isAccounting = ()=> myRole==='経理' || myRole==='管理者';
 
 const yen = n => "¥"+Number(n||0).toLocaleString();
 const man = n => "¥"+Math.round(Number(n||0)/10000)+"万";
@@ -225,6 +226,7 @@ const views=['needConfig','loginView','s-expense','s-projects','s-detail','s-fin
 function showOnly(id){views.forEach(v=>document.getElementById(v).classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');}
 function nav(name){
+  if(name==='finance' && !isAccounting()){toast('経理ユーザーのみ閲覧できます');name='projects';}
   document.getElementById('tabbar').classList.remove('hidden');
   const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail',finance:'s-finance'};
   showOnly(map[name]);
@@ -248,8 +250,15 @@ async function loadMe(){
   const {data:{user}}=await sb.auth.getUser();
   me=user;
   const {data}=await sb.from('profiles').select('name,role').eq('id',user.id).single();
+  myRole=data?.role||null;
   document.getElementById('whoami').textContent =
     (data?.name||user.email)+"（"+(data?.role||'—')+"）として記録";
+  applyRole();
+}
+// 経理タブはロールで出し分け（経理/管理者のみ表示）
+function applyRole(){
+  const tab=document.querySelector('.tab[data-s="finance"]');
+  if(tab)tab.classList.toggle('hidden',!isAccounting());
 }
 async function loadProjectOptions(){
   const {data}=await sb.from('projects').select('id,name').neq('status','失注').order('created_at',{ascending:false});
