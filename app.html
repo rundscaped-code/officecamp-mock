@@ -342,7 +342,7 @@
       <button class="btn btn-ghost" id="addProjToggle" style="margin:4px 0 12px" onclick="toggleProjForm()">＋ 案件を追加</button>
       <div id="projForm" class="card pad hidden" style="margin-bottom:12px">
         <div class="field"><label>案件名</label><input class="control" id="npName" placeholder="○○ビル改修"></div>
-        <div class="field"><label>派生元の案件（任意・選ぶと派生番号になります）</label><select class="control" id="npParent"></select></div>
+        <div class="field"><label>派生元の案件（任意）</label><select class="control" id="npParent"></select></div>
         <div class="field"><label>受注元（任意）</label><input class="control" id="npClient" placeholder="◇◇建設"></div>
         <div class="field"><label>受注金額（円・任意）</label><input class="control" id="npAmt" inputmode="numeric" placeholder="0"></div>
         <div class="row-inline" style="margin-bottom:12px">
@@ -588,7 +588,7 @@ function toggleProjForm(show){
   const open = (show===undefined) ? f.classList.contains('hidden') : show;
   f.classList.toggle('hidden',!open);
   if(open){
-    document.getElementById('npParent').innerHTML='<option value="">（派生元なし・新規番号）</option>'+
+    document.getElementById('npParent').innerHTML='<option value="" selected>新規（派生元なし）</option>'+
       projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
     // 経理/管理のみリーダーを選べる。既定は登録者(自分)
     const lf=document.getElementById('npLeaderField');
