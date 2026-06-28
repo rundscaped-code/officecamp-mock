@@ -84,6 +84,25 @@
     opacity:0;transition:.3s;z-index:10;box-shadow:0 8px 20px rgba(0,0,0,.3)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .empty{text-align:center;color:var(--sub);font-size:14px;padding:30px 10px}
+  /* 経理 */
+  .fin-sum{display:flex;gap:8px;margin:4px 0 12px}
+  .fin-sum .kpi{flex:1}
+  .fin-tablewrap{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
+    border:1px solid var(--line);overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .fin-table{border-collapse:collapse;width:100%;min-width:480px;font-size:13px}
+  .fin-table th,.fin-table td{padding:11px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+  .fin-table th{position:sticky;top:0;background:var(--accent-soft);color:var(--ink);font-size:11px;
+    font-weight:700;cursor:pointer;user-select:none;z-index:1}
+  .fin-table th.l,.fin-table td.l{text-align:left}
+  .fin-table th .ar{opacity:.4;font-size:9px;margin-left:2px}
+  .fin-table th.sorted .ar{opacity:1}
+  .fin-table tbody tr{cursor:pointer}
+  .fin-table tbody tr:active{background:var(--bg)}
+  .fin-table tbody tr:last-child td{border-bottom:none}
+  .fin-table .pname{font-weight:700;max-width:130px;overflow:hidden;text-overflow:ellipsis}
+  .fin-table .neg{color:#B00020}
+  .fin-table .pill{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:700}
+  .fin-table .tot td{font-weight:700;background:var(--bg);border-top:2px solid var(--line)}
   /* ログイン */
   .login{flex:1;display:flex;flex-direction:column;justify-content:center;padding:24px;gap:14px}
   .login h1{font-size:26px;margin:0 0 4px}
@@ -160,6 +179,16 @@
     <div class="screen" id="detailBody"></div>
   </section>
 
+  <!-- 経理（案件を網羅・ソート・クリックで詳細） -->
+  <section id="s-finance" class="hidden" style="display:flex;flex-direction:column;flex:1">
+    <div class="head"><h1>経理</h1><div class="date">全案件・原価・粗利を一覧</div></div>
+    <div class="screen">
+      <div class="fin-sum" id="finSum"></div>
+      <div class="fin-tablewrap"><table class="fin-table" id="finTable"></table></div>
+      <p style="text-align:center;color:var(--sub);font-size:12px;margin-top:12px">見出しをタップで並べ替え・行をタップで案件詳細</p>
+    </div>
+  </section>
+
   <!-- 予定（暫定：DBから当日以降を表示） -->
   <section id="s-schedule" class="hidden" style="display:flex;flex-direction:column;flex:1">
     <div class="head"><h1>予定</h1><div class="date">Googleカレンダー連携は次フェーズ</div></div>
@@ -171,6 +200,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>経費</div>
     <div class="tab" data-s="projects" onclick="nav('projects')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>案件</div>
+    <div class="tab" data-s="finance" onclick="nav('finance')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>経理</div>
     <div class="tab" data-s="schedule" onclick="nav('schedule')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>予定</div>
   </nav>
@@ -190,16 +221,17 @@ const man = n => "¥"+Math.round(Number(n||0)/10000)+"万";
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);}
 
-const views=['needConfig','loginView','s-expense','s-projects','s-detail','s-schedule'];
+const views=['needConfig','loginView','s-expense','s-projects','s-detail','s-finance','s-schedule'];
 function showOnly(id){views.forEach(v=>document.getElementById(v).classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');}
 function nav(name){
   document.getElementById('tabbar').classList.remove('hidden');
-  const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail'};
+  const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail',finance:'s-finance'};
   showOnly(map[name]);
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.s===name));
   if(name==='projects')loadProjects();
   if(name==='schedule')loadSchedule();
+  if(name==='finance')loadFinance();
 }
 
 // ---- 認証 ----
@@ -293,6 +325,65 @@ async function loadSchedule(){
     <div style="font-weight:600">${e.title}</div>
     <div class="proj-meta">${new Date(e.start_at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
   </div>`).join('');
+}
+
+// ---- 経理（網羅一覧・ソート・クリックで詳細） ----
+let finRows=[], finSort={key:'profit',dir:-1};
+const FIN_COLS=[
+  {key:'name',   label:'案件',   l:true, fmt:r=>`<span class="pname">${r.name}</span>`},
+  {key:'status', label:'状態',   l:true, fmt:r=>statusPill(r.status)},
+  {key:'revenue',label:'受注',   fmt:r=>yen(r.revenue)},
+  {key:'cost',   label:'原価',   fmt:r=>yen(r.cost)},
+  {key:'profit', label:'粗利',   fmt:r=>`<span class="${r.profit<0?'neg':''}">${yen(r.profit)}</span>`},
+  {key:'profit_rate',label:'粗利率',fmt:r=>`<span class="${r.profit<0?'neg':''}">${r.profit_rate}%</span>`},
+  {key:'created_at',label:'登録', fmt:r=>r.created_at?new Date(r.created_at).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'}):'—'},
+];
+function statusPill(s){
+  const c={'進行':'b-go','見込':'b-may','完了':'b-go','失注':'b-lost'}[s]||'b-may';
+  return `<span class="pill ${c}">${s||'—'}</span>`;
+}
+async function loadFinance(){
+  const table=document.getElementById('finTable');
+  table.innerHTML=`<tbody><tr><td class="l" style="color:var(--sub)">読み込み中…</td></tr></tbody>`;
+  // 財務はビュー、状態・登録日は projects から取り、id で結合
+  const [{data:costs,error:e1},{data:meta,error:e2}]=await Promise.all([
+    sb.from('project_costs').select('*'),
+    sb.from('projects').select('id,status,created_at,client'),
+  ]);
+  if(e1||e2){table.innerHTML=`<tbody><tr><td class="l">取得エラー: ${(e1||e2).message}</td></tr></tbody>`;return;}
+  const m=Object.fromEntries((meta||[]).map(x=>[x.id,x]));
+  finRows=(costs||[]).map(c=>({...c,...(m[c.id]||{})}));
+  renderFinSummary();
+  renderFinance();
+}
+function renderFinSummary(){
+  const t=finRows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,prof:0});
+  document.getElementById('finSum').innerHTML=`
+    <div class="kpi"><div class="l">案件数</div><div class="n">${finRows.length}</div></div>
+    <div class="kpi"><div class="l">受注計</div><div class="n">${man(t.rev)}</div></div>
+    <div class="kpi pf"><div class="l">粗利計</div><div class="n">${man(t.prof)}</div></div>`;
+}
+function renderFinance(){
+  const rows=[...finRows].sort((a,b)=>{
+    let x=a[finSort.key],y=b[finSort.key];
+    if(finSort.key==='name'){x=x||'';y=y||'';return finSort.dir*x.localeCompare(y,'ja');}
+    x=x??-Infinity;y=y??-Infinity;return finSort.dir*((x>y)-(x<y));
+  });
+  const head=FIN_COLS.map(c=>{
+    const on=finSort.key===c.key;const ar=on?(finSort.dir<0?'▼':'▲'):'⇅';
+    return `<th class="${c.l?'l':''} ${on?'sorted':''}" onclick="sortFin('${c.key}')">${c.label}<span class="ar">${ar}</span></th>`;
+  }).join('');
+  const body=rows.length? rows.map(r=>`<tr onclick="openDetail('${r.id}')">${
+    FIN_COLS.map(c=>`<td class="${c.l?'l':''}">${c.fmt(r)}</td>`).join('')
+  }</tr>`).join('') : `<tr><td class="l" colspan="${FIN_COLS.length}" style="color:var(--sub);text-align:center;padding:24px">案件がまだありません</td></tr>`;
+  const t=finRows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,prof:0});
+  const tot=rows.length?`<tr class="tot"><td class="l">合計</td><td class="l"></td><td>${yen(t.rev)}</td><td>${yen(t.cost)}</td><td class="${t.prof<0?'neg':''}">${yen(t.prof)}</td><td></td><td></td></tr>`:'';
+  document.getElementById('finTable').innerHTML=`<thead><tr>${head}</tr></thead><tbody>${body}${tot}</tbody>`;
+}
+function sortFin(key){
+  if(finSort.key===key)finSort.dir*=-1;
+  else finSort={key,dir:(key==='name'||key==='status')?1:-1};
+  renderFinance();
 }
 
 // ---- 自然言語 ----
