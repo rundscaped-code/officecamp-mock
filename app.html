@@ -180,6 +180,10 @@
   .bpc{font-size:10px;color:var(--sub);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .bcard .bt{font-weight:700;font-size:14px;margin:3px 0 4px}
   .bempty{color:var(--gray);font-size:12px;text-align:center;padding:10px 0}
+  .bcard.dragging{opacity:.35}
+  .drag-ghost{position:fixed;z-index:50;pointer-events:none;transform:translate(-50%,-50%);
+    box-shadow:0 12px 28px rgba(0,0,0,.35);opacity:.95;rotate:-2deg}
+  .bcol.drop-hot{outline:2px dashed var(--accent);outline-offset:-3px;background:#E9E9EA}
   /* タイムライン（スプシ風カレンダー・横スクロール） */
   .tl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
   .tl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -380,6 +384,7 @@
         <input class="control fbi" id="finSearch" placeholder="🔍 案件名・番号・受注元" oninput="applyFinFilter()">
         <select class="control fbi" id="finStatus" onchange="applyFinFilter()">
           <option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option></select>
+        <select class="control fbi" id="finLeader" onchange="applyFinFilter()"><option value="">担当：すべて</option></select>
         <select class="control fbi" id="finMonth" onchange="applyFinFilter()"><option value="">納品月：すべて</option></select>
       </div>
       <div class="fin-sum" id="finSum"></div>
@@ -1091,7 +1096,7 @@ function groupByProject(tasks){const b={};tasks.forEach(t=>{(b[t.project_id]=b[t
 function bcard(t,pmeta){
   const m=pmeta[t.project_id]||{};
   const who=(t.task_assignees||[]).map(a=>personName(a.user_id)).join('、');
-  return `<div class="bcard" onclick="openTask('${t.id}')">
+  return `<div class="bcard" data-tid="${t.id}" onpointerdown="boardPointerDown(event,'${t.id}')" onclick="boardCardClick(event,'${t.id}')">
     <div class="bpc">${m.code||''}${m.name?' '+m.name:''}</div>
     <div class="bt">${t.title}</div>
     <div class="tk-sub">${dateText(t)}${who?'<br>担当：'+who:''}</div></div>`;
@@ -1100,10 +1105,49 @@ function boardHTML(tasks,pmeta){
   const cols=TASK_STATUS.map(st=>{
     const items=tasks.filter(t=>t.status===st);
     const cards=items.map(t=>bcard(t,pmeta)).join('')||'<div class="bempty">なし</div>';
-    return `<div class="bcol"><div class="bcol-h"><span class="st-dot s-${st}"></span>${st}<span class="bcount">${items.length}</span></div>${cards}</div>`;
+    return `<div class="bcol" data-status="${st}"><div class="bcol-h"><span class="st-dot s-${st}"></span>${st}<span class="bcount">${items.length}</span></div>${cards}</div>`;
   }).join('');
-  return `<div class="board">${cols}</div>`;
+  return `<div class="board" id="board">${cols}<div class="task-meta" style="width:100%;margin-top:4px">長押しでカードを掴んで列へドラッグ＝状態変更</div></div>`;
 }
+// ---- ボードの長押しドラッグ&ドロップ ----
+let bdrag=null;
+function boardPointerDown(e,taskId){
+  if(e.button&&e.button!==0)return;
+  const card=e.currentTarget, sx=e.clientX, sy=e.clientY;
+  let started=false;
+  const timer=setTimeout(start,220);
+  function start(){
+    started=true; bdrag={taskId};
+    card.classList.add('dragging');
+    const g=card.cloneNode(true); g.className='bcard drag-ghost'; g.style.width=card.offsetWidth+'px';
+    document.body.appendChild(g); bdrag.ghost=g; moveGhost(sx,sy);
+    if(navigator.vibrate)navigator.vibrate(15);
+  }
+  function moveGhost(x,y){ if(bdrag&&bdrag.ghost){bdrag.ghost.style.left=x+'px';bdrag.ghost.style.top=y+'px';} }
+  function colAt(x,y){ const el=document.elementFromPoint(x,y); return el&&el.closest('.bcol'); }
+  function hot(x,y){ document.querySelectorAll('.bcol.drop-hot').forEach(c=>c.classList.remove('drop-hot'));
+    const c=colAt(x,y); if(c)c.classList.add('drop-hot'); }
+  function onMove(ev){
+    if(!started){ if(Math.hypot(ev.clientX-sx,ev.clientY-sy)>8){clearTimeout(timer);cleanup();} return; }
+    ev.preventDefault(); moveGhost(ev.clientX,ev.clientY); hot(ev.clientX,ev.clientY);
+  }
+  function onUp(ev){
+    clearTimeout(timer);
+    if(started){ const c=colAt(ev.clientX,ev.clientY);
+      window._dragJustEnded=true;
+      if(c){ const st=c.dataset.status; updTask(taskId,'status',st); }
+      cleanup(); return; }
+    cleanup();
+  }
+  function cleanup(){
+    if(bdrag){ card.classList.remove('dragging'); bdrag.ghost&&bdrag.ghost.remove();
+      document.querySelectorAll('.bcol.drop-hot').forEach(c=>c.classList.remove('drop-hot')); bdrag=null; }
+    window.removeEventListener('pointermove',onMove); window.removeEventListener('pointerup',onUp);
+  }
+  window.addEventListener('pointermove',onMove,{passive:false});
+  window.addEventListener('pointerup',onUp);
+}
+function boardCardClick(e,id){ if(window._dragJustEnded){window._dragJustEnded=false;return;} openTask(id); }
 function timelineHTML(tasks,pmeta){
   const dated=tasks.filter(t=>t.start_date&&t.end_date);
   const undated=tasks.filter(t=>!(t.start_date&&t.end_date));
@@ -1222,17 +1266,19 @@ async function updProjNum(id,field,value){
   toast('保存しました');
   await loadFinance(); // 粗利を再計算
 }
-let finFilter={q:'',status:'',month:''};
+let finFilter={q:'',status:'',leader:'',month:''};
 function applyFinFilter(){
   finFilter={
     q:(document.getElementById('finSearch').value||'').trim().toLowerCase(),
     status:document.getElementById('finStatus').value,
+    leader:document.getElementById('finLeader').value,
     month:document.getElementById('finMonth').value};
   renderFinance();
 }
 function filteredFin(){
   return finRows.filter(r=>{
     if(finFilter.status && r.status!==finFilter.status)return false;
+    if(finFilter.leader && r.leader_id!==finFilter.leader)return false;
     if(finFilter.month && (r.delivery_date||'').slice(0,7)!==finFilter.month)return false;
     if(finFilter.q){const hay=`${r.code||''} ${r.name||''} ${r.client||''}`.toLowerCase();
       if(!hay.includes(finFilter.q))return false;}
@@ -1249,10 +1295,12 @@ async function loadFinance(){
   if(e1||e2){table.innerHTML=`<tbody><tr><td class="l">取得エラー: ${(e1||e2).message}</td></tr></tbody>`;return;}
   const m=Object.fromEntries((meta||[]).map(x=>[x.id,x]));
   finRows=(costs||[]).map(c=>({...c,...(m[c.id]||{})}));
-  // 納品月の選択肢を構築
+  // 納品月の選択肢
   const months=[...new Set(finRows.map(r=>(r.delivery_date||'').slice(0,7)).filter(Boolean))].sort().reverse();
-  const sel=document.getElementById('finMonth');
-  sel.innerHTML='<option value="">納品月：すべて</option>'+months.map(mo=>`<option value="${mo}" ${finFilter.month===mo?'selected':''}>${mo.replace('-','/')}</option>`).join('');
+  document.getElementById('finMonth').innerHTML='<option value="">納品月：すべて</option>'+months.map(mo=>`<option value="${mo}" ${finFilter.month===mo?'selected':''}>${mo.replace('-','/')}</option>`).join('');
+  // 担当者の選択肢（案件のリーダーに出現する人）
+  const leaders=[...new Set(finRows.map(r=>r.leader_id).filter(Boolean))];
+  document.getElementById('finLeader').innerHTML='<option value="">担当：すべて</option>'+leaders.map(uid=>`<option value="${uid}" ${finFilter.leader===uid?'selected':''}>${personName(uid)}</option>`).join('');
   renderFinance();
 }
 function renderFinSummary(rows){
