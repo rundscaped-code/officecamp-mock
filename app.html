@@ -190,21 +190,6 @@
         <div class="amount-row"><span class="yen">¥</span><input class="amount" id="amt" inputmode="numeric" placeholder="0"></div>
         <div class="field"><label>紐づく案件</label>
           <select class="control" id="proj"></select></div>
-        <div class="field"><label>種別</label>
-          <select class="control" id="kind" onchange="onKindChange()">
-            <option value="経費">経費（材料・備品など）</option>
-            <option value="外注">外注（外部・社内別部門への発注）</option>
-          </select></div>
-        <div class="field hidden" id="vendorField"><label>外注先</label>
-          <select class="control" id="vendor"></select>
-          <div id="vendorAdd" class="hidden" style="margin-top:8px;display:flex;gap:8px">
-            <input class="control" id="newVendor" placeholder="新しい外注先名" style="flex:1">
-            <select class="control" id="newVendorKind" style="width:120px;flex:none">
-              <option value="外部">外部</option><option value="社内部門">社内部門</option>
-            </select>
-            <button class="btn btn-ghost" style="width:auto;flex:none;padding:14px 16px" onclick="addVendor()">追加</button>
-          </div>
-        </div>
         <div class="field"><label>メモ（何を買ったか）</label>
           <input class="control" id="memo" placeholder="木材・ビス など"></div>
         <div class="field"><label>レシート（任意・撮ると金額を自動読み取り）</label>
@@ -249,10 +234,47 @@
     </div>
   </section>
 
-  <!-- ガント（全案件のタスクを期間で俯瞰） -->
+  <!-- タスク（全案件のタスクをガントで俯瞰） -->
   <section id="s-schedule" class="hidden" style="display:flex;flex-direction:column;flex:1">
-    <div class="head"><h1>ガント</h1><div class="date">案件横断のタスク進行</div></div>
+    <div class="head"><h1>タスク</h1><div class="date">案件横断のガント。案件名から詳細で追加・割り当て</div></div>
     <div class="screen" id="ganttBody"><div class="empty">読み込み中…</div></div>
+  </section>
+
+  <!-- 発注（内注/外注） -->
+  <section id="s-orders" class="hidden" style="display:flex;flex-direction:column;flex:1">
+    <div class="head"><h1>発注</h1><div class="date">内注・外注で仕事を投げる</div></div>
+    <div class="screen">
+      <button class="btn btn-ghost" style="margin:4px 0 12px" onclick="toggleOrderForm()">＋ 発注する</button>
+      <div id="orderForm" class="card pad hidden" style="margin-bottom:12px">
+        <div class="field"><label>案件（発注元）</label><select class="control" id="odProj"></select></div>
+        <div class="field"><label>種別</label>
+          <select class="control" id="odKind" onchange="onOrderKind()">
+            <option value="外注">外注（外部の業者へ）</option>
+            <option value="内注">内注（社内の人・別部門へ）</option>
+          </select></div>
+        <div class="field" id="odVendorField"><label>外注先</label>
+          <select class="control" id="odVendor"></select>
+          <div class="row-inline" style="margin-top:8px">
+            <input class="control" id="odNewVendor" placeholder="新しい外注先名" style="flex:1">
+            <select class="control" id="odNewVendorKind" class="mini" style="width:108px;flex:none">
+              <option value="外部">外部</option><option value="社内部門">社内部門</option></select>
+            <button class="btn btn-ghost mini" onclick="addVendorO()">追加</button>
+          </div>
+        </div>
+        <div class="field hidden" id="odUserField"><label>内注先（社内の担当者）</label>
+          <select class="control" id="odUser"></select></div>
+        <div class="field"><label>依頼内容</label><input class="control" id="odTitle" placeholder="例）図面作成・運搬 など"></div>
+        <div class="field"><label>金額（円）</label><input class="control" id="odAmount" inputmode="numeric" placeholder="0"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" style="flex:1" onclick="addOrder()">発注する</button>
+          <button class="btn btn-ghost" style="flex:1" onclick="toggleOrderForm(false)">キャンセル</button>
+        </div>
+      </div>
+      <div class="sec">自分が出した発注</div>
+      <div id="ordersOut"><div class="empty">読み込み中…</div></div>
+      <div class="sec">自分が受けた内注</div>
+      <div id="ordersIn"><div class="empty">—</div></div>
+    </div>
   </section>
 
   <nav class="tabbar hidden" id="tabbar">
@@ -260,10 +282,12 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>経費</div>
     <div class="tab" data-s="projects" onclick="nav('projects')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>案件</div>
+    <div class="tab" data-s="schedule" onclick="nav('schedule')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h10M3 10h14M3 15h7"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>タスク</div>
+    <div class="tab" data-s="orders" onclick="nav('orders')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>発注</div>
     <div class="tab hidden" data-s="finance" onclick="nav('finance')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>経理</div>
-    <div class="tab" data-s="schedule" onclick="nav('schedule')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h10M3 10h14M3 15h7"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>ガント</div>
   </nav>
   <div class="toast" id="toast"></div>
 </div>
@@ -283,18 +307,19 @@ const man = n => "¥"+Math.round(Number(n||0)/10000)+"万";
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);}
 
-const views=['needConfig','loginView','s-expense','s-projects','s-detail','s-finance','s-schedule'];
+const views=['needConfig','loginView','s-expense','s-projects','s-detail','s-finance','s-schedule','s-orders'];
 function showOnly(id){views.forEach(v=>document.getElementById(v).classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');}
 function nav(name){
   if(name==='finance' && !isAccounting()){toast('経理ユーザーのみ閲覧できます');name='projects';}
   document.getElementById('tabbar').classList.remove('hidden');
-  const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail',finance:'s-finance'};
+  const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail',finance:'s-finance',orders:'s-orders'};
   showOnly(map[name]);
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.s===name));
   if(name==='projects')loadProjects();
   if(name==='schedule')loadGantt();
   if(name==='finance')loadFinance();
+  if(name==='orders')loadOrders();
 }
 
 // ---- 認証 ----
@@ -364,23 +389,6 @@ async function loadVendors(){
   if(sel)sel.innerHTML = vendors.map(v=>`<option value="${v.id}">${v.name}（${v.kind}）</option>`).join('')
     || `<option value="">外注先がありません</option>`;
 }
-function onKindChange(){
-  const isG = document.getElementById('kind').value==='外注';
-  document.getElementById('vendorField').classList.toggle('hidden',!isG);
-  // 管理者/経理だけ外注先を追加できる
-  document.getElementById('vendorAdd').classList.toggle('hidden',!(isG && isManager()));
-}
-async function addVendor(){
-  const name=document.getElementById('newVendor').value.trim();
-  if(!name){toast('外注先名を入れてください');return;}
-  const kind=document.getElementById('newVendorKind').value;
-  const {data,error}=await sb.from('vendors').insert({name,kind}).select().single();
-  if(error){toast('追加エラー: '+error.message);return;}
-  document.getElementById('newVendor').value='';
-  await loadVendors();
-  document.getElementById('vendor').value=data.id;
-  toast('外注先「'+name+'」を追加');
-}
 async function loadProjects(){
   const list=document.getElementById('projList');
   const {data,error}=await sb.from('project_costs').select('*').order('profit',{ascending:false});
@@ -422,7 +430,7 @@ async function openDetail(id){
   document.querySelector('.tab[data-s="projects"]').classList.add('on');
   const body=document.getElementById('detailBody');
   body.innerHTML=`<div class="empty">読み込み中…</div>`;
-  const [{data:p},{data:exps},tasks,{data:members},{data:logs}]=await Promise.all([
+  const [{data:p},{data:exps},tasks,{data:members},{data:logs},{data:ords}]=await Promise.all([
     sb.from('project_costs').select('*').eq('id',id).single(),
     sb.from('expenses').select('amount,note,spent_at,status,kind,user_id,vendor:vendor_id(name,kind),author:user_id(name,email)')
       .eq('project_id',id).order('spent_at',{ascending:false}),
@@ -430,6 +438,8 @@ async function openDetail(id){
     sb.from('project_members').select('user_id').eq('project_id',id),
     sb.from('audit_log').select('table_name,action,actor_id,summary,diff,created_at')
       .eq('project_id',id).order('created_at',{ascending:false}).limit(40),
+    sb.from('orders').select('id,kind,amount,title,status,from_user,to_user_id,vendor:vendor_id(name)')
+      .eq('project_id',id).order('created_at',{ascending:false}),
   ]);
   document.getElementById('dName').textContent=p?.name||'—';
 
@@ -459,6 +469,15 @@ async function openDetail(id){
       </div>
     </div>`;
   }).join('') || `<div class="empty">タスクはまだありません</div>`;
+
+  // 発注
+  const ordRows=(ords||[]).map(o=>{
+    const dest=o.kind==='外注'?(o.vendor?.name||'外注先'):personName(o.to_user_id);
+    return `<div class="exp-row"><div><div class="n">${o.title}
+      <span class="badge ${o.kind==='内注'?'b-may':'b-go'}">${o.kind}</span></div>
+      <div class="d">宛先 ${dest}・${o.status}・依頼 ${personName(o.from_user)}</div></div>
+      <div class="a">${yen(o.amount)}</div></div>`;
+  }).join('') || `<div class="empty">発注はまだありません</div>`;
 
   // メンバー
   const memChips=(members||[]).map(m=>`<span class="chip">${personName(m.user_id)}</span>`).join('')||'<span class="task-meta">まだメンバーがいません</span>';
@@ -511,14 +530,19 @@ async function openDetail(id){
     <div class="card">${expRows}</div>
     <button class="btn btn-ghost" onclick="nav('expense')">＋ 経費を足す</button>
 
+    <div class="sec">発注（内注・外注）</div>
+    <div class="card">${ordRows}</div>
+    <button class="btn btn-ghost" onclick="nav('orders')">＋ 発注する</button>
+
     <div class="sec">変更履歴</div>
     <div class="card">${logRows}</div>`;
 }
 function logLabel(l){
-  const t={projects:'案件',expenses:'経費',tasks:'タスク'}[l.table_name]||l.table_name;
+  const t={projects:'案件',expenses:'経費',tasks:'タスク',orders:'発注'}[l.table_name]||l.table_name;
   const n=l.diff?.new||l.diff?.old||{};
   if(l.table_name==='expenses') return `${t}：${n.note||'（メモなし）'} ${n.amount?yen(n.amount):''}`;
   if(l.table_name==='tasks')    return `${t}：${n.title||''}`;
+  if(l.table_name==='orders')   return `${t}：${n.title||''} ${n.amount?yen(n.amount):''}`;
   if(l.table_name==='projects') return `${t}：${n.name||''}`;
   return t;
 }
@@ -554,6 +578,80 @@ async function addMember(){
   if(error){toast(error.message.includes('duplicate')?'すでにメンバー':'エラー: '+error.message);return;}
   toast(personName(uid)+' をメンバーに追加');
   openDetail(curDetail);
+}
+
+// ---- 発注（内注/外注） ----
+function toggleOrderForm(show){
+  const f=document.getElementById('orderForm');
+  const open=(show===undefined)?f.classList.contains('hidden'):show;
+  f.classList.toggle('hidden',!open);
+  if(open){fillOrderSelects();onOrderKind();document.getElementById('odTitle').focus();}
+}
+function fillOrderSelects(){
+  document.getElementById('odProj').innerHTML =
+    projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')||`<option value="">案件なし</option>`;
+  document.getElementById('odVendor').innerHTML =
+    vendors.map(v=>`<option value="${v.id}">${v.name}（${v.kind}）</option>`).join('')||`<option value="">外注先なし</option>`;
+  document.getElementById('odUser').innerHTML =
+    people.filter(p=>p.id!==me.id).map(p=>`<option value="${p.id}">${p.name||p.email}</option>`).join('')||`<option value="">社内ユーザーなし</option>`;
+}
+function onOrderKind(){
+  const g=document.getElementById('odKind').value==='外注';
+  document.getElementById('odVendorField').classList.toggle('hidden',!g);
+  document.getElementById('odUserField').classList.toggle('hidden',g);
+}
+async function addVendorO(){
+  const name=document.getElementById('odNewVendor').value.trim();
+  if(!name){toast('外注先名を入れてください');return;}
+  const kind=document.getElementById('odNewVendorKind').value;
+  const {data,error}=await sb.from('vendors').insert({name,kind}).select().single();
+  if(error){toast('追加エラー: '+error.message);return;}
+  document.getElementById('odNewVendor').value='';
+  await loadVendors(); fillOrderSelects();
+  document.getElementById('odVendor').value=data.id;
+  toast('外注先「'+name+'」を追加');
+}
+async function addOrder(){
+  const project_id=document.getElementById('odProj').value;
+  const kind=document.getElementById('odKind').value;
+  const title=document.getElementById('odTitle').value.trim();
+  const amount=parseInt((document.getElementById('odAmount').value||'0').replace(/[,，]/g,''),10)||0;
+  const vendor_id = kind==='外注' ? (document.getElementById('odVendor').value||null) : null;
+  const to_user_id = kind==='内注' ? (document.getElementById('odUser').value||null) : null;
+  if(!project_id){toast('案件を選んでください');return;}
+  if(!title){toast('依頼内容を入れてください');return;}
+  if(kind==='外注'&&!vendor_id){toast('外注先を選んでください');return;}
+  if(kind==='内注'&&!to_user_id){toast('内注先を選んでください');return;}
+  const {error}=await sb.from('orders').insert({project_id,kind,vendor_id,to_user_id,from_user:me.id,title,amount});
+  if(error){toast('発注エラー: '+error.message);return;}
+  toast(kind+'「'+title+'」を発注');
+  document.getElementById('odTitle').value='';document.getElementById('odAmount').value='';
+  toggleOrderForm(false);
+  loadOrders();
+}
+const ORDER_SELECT='id,project_id,kind,amount,title,status,from_user,to_user_id,created_at,'+
+  'vendor:vendor_id(name),proj:project_id(name)';
+function orderCard(o,received){
+  const dest = o.kind==='外注' ? (o.vendor?.name||'外注先') : personName(o.to_user_id);
+  const who = received ? `${personName(o.from_user)} から` : `宛先: ${dest}`;
+  const kc = o.kind==='内注'?'b-may':'b-go';
+  return `<div class="card pad">
+    <div class="task-h"><span class="tt">${o.title}</span>
+      <span class="badge ${kc}" style="margin-left:auto">${o.kind}</span></div>
+    <div class="task-meta">${o.proj?.name||'案件'}・${who}・${yen(o.amount)}・${o.status}</div>
+    <div class="task-meta">${new Date(o.created_at).toLocaleDateString('ja-JP')}</div>
+  </div>`;
+}
+async function loadOrders(){
+  fillOrderSelects();
+  const [{data:out},{data:inb}]=await Promise.all([
+    sb.from('orders').select(ORDER_SELECT).eq('from_user',me.id).order('created_at',{ascending:false}),
+    sb.from('orders').select(ORDER_SELECT).eq('to_user_id',me.id).order('created_at',{ascending:false}),
+  ]);
+  document.getElementById('ordersOut').innerHTML =
+    (out&&out.length)?out.map(o=>orderCard(o,false)).join(''):`<div class="empty">まだ発注はありません</div>`;
+  document.getElementById('ordersIn').innerHTML =
+    (inb&&inb.length)?inb.map(o=>orderCard(o,true)).join(''):`<div class="empty">受けた内注はありません</div>`;
 }
 // ---- タスク取得（共通） ----
 const TASK_SELECT='id,project_id,title,start_date,end_date,status,progress,leader_id,'+
@@ -738,19 +836,15 @@ async function record(){
   const amount=parseInt((document.getElementById('amt').value||'0').replace(/,/g,''),10);
   const project_id=document.getElementById('proj').value;
   const note=document.getElementById('memo').value.trim();
-  const kind=document.getElementById('kind').value;
-  const vendor_id = kind==='外注' ? (document.getElementById('vendor').value||null) : null;
   if(!amount||!project_id){toast('金額と案件を入れてください');return;}
-  if(kind==='外注' && !vendor_id){toast('外注先を選んでください');return;}
   const btn=document.getElementById('recBtn');btn.disabled=true;
-  const {error}=await sb.from('expenses').insert({project_id,amount,note,kind,vendor_id,receipt_url:receiptPath});
+  const {error}=await sb.from('expenses').insert({project_id,amount,note,receipt_url:receiptPath});
   btn.disabled=false;
   if(error){toast('保存エラー: '+error.message);return;}
   toast(yen(amount)+' を記録しました');
   document.getElementById('amt').value='';document.getElementById('memo').value='';
   document.getElementById('nlInput').value='';document.getElementById('parsed').classList.remove('show');
   document.getElementById('receipt').value='';document.getElementById('ocrMsg').textContent='';receiptPath=null;
-  document.getElementById('kind').value='経費';onKindChange();
 }
 
 // ---- 起動 ----
@@ -768,7 +862,6 @@ async function boot(){
   await loadPeople();
   await loadProjectOptions();
   await loadVendors();
-  onKindChange();
   nav('expense');
 }
 </script>
