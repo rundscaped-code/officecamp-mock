@@ -103,18 +103,26 @@
   .fin-table .neg{color:#B00020}
   .fin-table .pill{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:700}
   .fin-table .tot td{font-weight:700;background:var(--bg);border-top:2px solid var(--line)}
-  /* ガント / タスク */
-  .gwin{font-size:12px;color:var(--sub);margin:2px 4px 10px}
-  .gproj{font-size:13px;font-weight:700;margin:14px 4px 6px}
-  .gt-row{display:flex;align-items:center;gap:8px;padding:7px 0}
-  .gt-label{width:108px;flex:none;font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .gt-track{position:relative;flex:1;height:22px;background:var(--bg);border-radius:6px;overflow:hidden}
-  .gt-bar{position:absolute;top:3px;height:16px;border-radius:5px;background:var(--accent);
-    min-width:6px;display:flex;align-items:center;color:#fff;font-size:10px;font-weight:700;padding:0 5px;overflow:hidden}
-  .gt-fill{position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.28);border-radius:5px}
-  .gt-bar.s-未着手{background:#BFBFBF}.gt-bar.s-進行{background:#1A1A1A}
-  .gt-bar.s-完了{background:#5B8C5A}.gt-bar.s-保留{background:#C8A24B}
-  .gt-cap{font-size:10px;color:var(--sub);margin:0 0 0 116px}
+  /* ガントチャート */
+  .gwin{font-size:12px;color:var(--sub);margin:2px 4px 8px}
+  .gproj{font-size:14px;font-weight:700;margin:14px 4px 8px}
+  .gc{font-size:11px}
+  .gc-line{display:flex;align-items:center;min-height:30px}
+  .gc-nm{width:88px;flex:none;font-size:11.5px;font-weight:600;padding-right:8px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gc-tk{position:relative;flex:1;height:24px;background:var(--bg);border-radius:6px;overflow:hidden}
+  .gc-axis .gc-tk{background:transparent;height:16px;overflow:visible}
+  .gc-gl{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
+  .gc-axis .gc-lab{position:absolute;top:0;font-size:9px;color:var(--sub);transform:translateX(-50%);white-space:nowrap}
+  .gc-today{position:absolute;top:0;bottom:0;width:2px;background:#B00020;opacity:.55;z-index:2}
+  .gc-bar{position:absolute;top:3px;height:18px;border-radius:5px;background:var(--accent);
+    min-width:4px;display:flex;align-items:center;color:#fff;font-size:10px;font-weight:700;padding:0 6px;
+    overflow:hidden;white-space:nowrap;z-index:1}
+  .gc-fill{position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.30)}
+  .gc-bar.s-未着手{background:#9A9A9A}.gc-bar.s-進行{background:#1A1A1A}
+  .gc-bar.s-完了{background:#5B8C5A}.gc-bar.s-保留{background:#C8A24B}
+  .gc-legend{font-size:10px;color:var(--sub);margin:8px 0 0 96px;display:flex;gap:10px;flex-wrap:wrap}
+  .gc-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:3px;vertical-align:middle}
   .task-card{padding:12px 14px;border-top:1px solid var(--line)}
   .task-card:first-child{border-top:none}
   .task-h{display:flex;align-items:center;gap:8px}
@@ -162,7 +170,14 @@
 
   <!-- 経費入力 -->
   <section id="s-expense" class="hidden" style="display:flex;flex-direction:column;flex:1">
-    <div class="head"><h1>経費を記録</h1><div class="date" id="whoami">その場でパッと。あとは自動。</div></div>
+    <div class="head"><h1>経費を記録</h1>
+      <div class="date"><span id="whoami">その場でパッと。</span>
+        <a id="editNameLink" style="cursor:pointer" onclick="toggleNameEdit()">✎ 名前を変更</a></div>
+      <div id="nameEdit" class="hidden row-inline" style="margin-top:8px">
+        <input class="control" id="nameInput" placeholder="表示名（例：丹羽駿介）" style="flex:1">
+        <button class="btn btn-ghost mini" onclick="saveName()">保存</button>
+      </div>
+    </div>
     <div class="screen">
       <div class="nl">
         <div class="lab">✦ 文章で入力（自動で分解）</div>
@@ -297,9 +312,28 @@ async function loadMe(){
   me=user;
   const {data}=await sb.from('profiles').select('name,role').eq('id',user.id).single();
   myRole=data?.role||null;
+  const nm=data?.name||'';
   document.getElementById('whoami').textContent =
-    (data?.name||user.email)+"（"+(data?.role||'—')+"）として記録";
+    (nm||user.email)+"（"+(data?.role||'—')+"）として記録";
+  const ni=document.getElementById('nameInput'); if(ni)ni.value=nm;
   applyRole();
+  // 名前未登録なら入力欄を開いて促す
+  if(!nm)toggleNameEdit(true);
+}
+function toggleNameEdit(show){
+  const f=document.getElementById('nameEdit');
+  const open=(show===undefined)?f.classList.contains('hidden'):show;
+  f.classList.toggle('hidden',!open);
+  if(open)document.getElementById('nameInput').focus();
+}
+async function saveName(){
+  const name=document.getElementById('nameInput').value.trim();
+  if(!name){toast('名前を入れてください');return;}
+  const {error}=await sb.from('profiles').update({name}).eq('id',me.id);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('名前を「'+name+'」に設定');
+  toggleNameEdit(false);
+  await loadMe(); await loadPeople();
 }
 // 経理タブはロールで出し分け（経理/管理者のみ表示）
 function applyRole(){
@@ -412,16 +446,16 @@ async function openDetail(id){
   const g=ganttRows(tasks);
   const ganttBlock = g.rows ? `<div class="gwin">${g.win}</div>${g.rows}` : '';
   const taskList=(tasks||[]).map(t=>{
-    const asg=(t.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}</span>`).join('')||'<span class="task-meta">未アサイン</span>';
+    const asg=(t.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}</span>`).join('')||'<span class="task-meta">担当者なし</span>';
     return `<div class="task-card">
       <div class="task-h"><span class="tt">${t.title}</span>
         <span class="st ${t.status==='完了'?'st-ok':'st-wait'}" style="margin-left:auto">${t.status} ${t.progress||0}%</span></div>
       <div class="task-meta">${t.start_date?t.start_date+' 〜 '+(t.end_date||'未定'):'日付未設定'}
         ${t.leader_id?'・リーダー: '+personName(t.leader_id):''}</div>
-      <div style="margin-top:6px">${asg}</div>
+      <div style="margin-top:6px">担当者：${asg}</div>
       <div class="row-inline">
-        <select class="control" id="asg-${t.id}" style="flex:1">${peopleOptions('＋アサインする人')}</select>
-        <button class="btn btn-ghost mini" onclick="assignUser('${t.id}')">アサイン</button>
+        <select class="control" id="asg-${t.id}" style="flex:1">${peopleOptions('＋担当者を選ぶ')}</select>
+        <button class="btn btn-ghost mini" onclick="assignUser('${t.id}')">割り当て</button>
       </div>
     </div>`;
   }).join('') || `<div class="empty">タスクはまだありません</div>`;
@@ -464,13 +498,13 @@ async function openDetail(id){
       </div>
     </div>
 
-    <div class="sec">メンバー（この案件を見られる人）</div>
+    <div class="sec">担当メンバー（この案件を見られる人）</div>
     <div class="card pad"><div>${memChips}</div>
       <div class="row-inline">
         <select class="control" id="memSel" style="flex:1">${peopleOptions('＋メンバーを追加')}</select>
         <button class="btn btn-ghost mini" onclick="addMember()">追加</button>
       </div>
-      <div class="task-meta" style="margin-top:6px">タスクにアサインすると自動でメンバーになります。</div>
+      <div class="task-meta" style="margin-top:6px">タスクに担当者を割り当てると、自動でメンバーになります。</div>
     </div>
 
     <div class="sec">経費</div>
@@ -510,7 +544,7 @@ async function assignUser(taskId){
   if(!uid){toast('人を選んでください');return;}
   const {error}=await sb.from('task_assignees').insert({task_id:taskId,user_id:uid});
   if(error){toast(error.message.includes('duplicate')?'すでにアサイン済み':'エラー: '+error.message);return;}
-  toast(personName(uid)+' をアサイン');
+  toast(personName(uid)+' を割り当て');
   openDetail(curDetail);
 }
 async function addMember(){
@@ -530,26 +564,48 @@ async function fetchTasks(projectId){
   const {data}=await q;
   return data||[];
 }
-// ---- ガント描画（タスク配列→HTML） ----
+// ---- ガントチャート描画（タスク配列→HTML） ----
 const dnum = d => d? Math.floor(new Date(d+'T00:00:00').getTime()/86400000) : null;
+const todayNum = () => Math.floor(Date.now()/86400000) + Math.floor(new Date().getTimezoneOffset()*-1/1440);
 function ganttRows(tasks){
   const dated=tasks.filter(t=>t.start_date&&t.end_date);
-  if(!dated.length) return {win:'', rows:'', undated:tasks};
+  const undated=tasks.filter(t=>!(t.start_date&&t.end_date));
+  if(!dated.length) return {win:'', rows:'', undated};
   let lo=Infinity,hi=-Infinity;
   dated.forEach(t=>{lo=Math.min(lo,dnum(t.start_date));hi=Math.max(hi,dnum(t.end_date));});
-  const span=Math.max(1,hi-lo+1);
-  const fmt=d=>new Date(d+'T00:00:00').toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'});
-  const rows=dated.map(t=>{
+  // 前後に少し余白
+  lo-=1; hi+=1;
+  const span=Math.max(1,hi-lo);
+  const fmtD=n=>new Date(n*86400000).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'});
+  const pos=n=>((n-lo)/span*100);
+  // 週ごとの目盛り（多すぎる時は間引き）
+  const stepDays = span<=21?7 : span<=70?14 : 28;
+  let ticks='';
+  for(let d=lo; d<=hi; d+=stepDays){
+    const left=pos(d).toFixed(2);
+    ticks+=`<div class="gc-gl" style="left:${left}%"></div><div class="gc-lab" style="left:${left}%">${fmtD(d)}</div>`;
+  }
+  let gl='';
+  for(let d=lo; d<=hi; d+=stepDays) gl+=`<div class="gc-gl" style="left:${pos(d).toFixed(2)}%"></div>`;
+  const tdy=todayNum();
+  const today = (tdy>=lo&&tdy<=hi)?`<div class="gc-today" style="left:${pos(tdy).toFixed(2)}%"></div>`:'';
+  // 軸ヘッダ
+  let html=`<div class="gc"><div class="gc-line gc-axis"><div class="gc-nm"></div><div class="gc-tk">${ticks}</div></div>`;
+  // タスク行
+  dated.forEach(t=>{
     const s=dnum(t.start_date),e=dnum(t.end_date);
-    const left=((s-lo)/span*100).toFixed(2), width=((e-s+1)/span*100).toFixed(2);
-    return `<div class="gt-row"><div class="gt-label">${t.title}</div>
-      <div class="gt-track"><div class="gt-bar s-${t.status}" style="left:${left}%;width:${width}%">
-        <div class="gt-fill" style="width:${t.progress||0}%"></div>${t.progress||0}%</div></div></div>
-      <div class="gt-cap">${fmt(t.start_date)}–${fmt(t.end_date)}・${t.status}${t.leader_id?'・主:'+personName(t.leader_id):''}</div>`;
-  }).join('');
-  const undated=tasks.filter(t=>!(t.start_date&&t.end_date));
-  const win=`期間 ${fmt(dated.reduce((a,t)=>t.start_date<a?t.start_date:a,dated[0].start_date))} 〜 ${fmt(dated.reduce((a,t)=>t.end_date>a?t.end_date:a,dated[0].end_date))}`;
-  return {win, rows, undated};
+    const left=pos(s).toFixed(2), width=Math.max(1,(e-s+1)/span*100).toFixed(2);
+    html+=`<div class="gc-line"><div class="gc-nm" title="${t.title}">${t.title}</div>
+      <div class="gc-tk">${gl}${today}
+        <div class="gc-bar s-${t.status}" style="left:${left}%;width:${width}%">
+          <div class="gc-fill" style="width:${t.progress||0}%"></div>${t.progress||0}%</div></div></div>`;
+  });
+  html+=`<div class="gc-legend">
+    <span><i style="background:#9A9A9A"></i>未着手</span><span><i style="background:#1A1A1A"></i>進行</span>
+    <span><i style="background:#5B8C5A"></i>完了</span><span><i style="background:#C8A24B"></i>保留</span>
+    <span><i style="background:#B00020"></i>今日</span></div></div>`;
+  const win=`${fmtD(lo+1)} 〜 ${fmtD(hi-1)}`;
+  return {win, rows:html, undated};
 }
 // ---- ガントタブ：全案件横断 ----
 async function loadGantt(){
