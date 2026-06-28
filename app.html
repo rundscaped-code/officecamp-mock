@@ -185,7 +185,7 @@
   .tl-grid{min-width:max-content}
   .tl-row{display:flex;align-items:stretch;border-top:1px solid var(--line);min-height:34px}
   .tl-row:first-child{border-top:none}
-  .tl-name{position:sticky;left:0;z-index:2;width:128px;flex:none;background:#fff;padding:6px 8px;
+  .tl-name{position:sticky;left:0;z-index:2;width:160px;flex:none;background:#fff;padding:6px 8px;
     font-size:12px;font-weight:600;display:flex;align-items:center;border-right:1px solid var(--line);
     overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
   .tl-head{background:var(--accent-soft)}
@@ -195,6 +195,9 @@
   .tl-day small{display:block;font-size:8px;opacity:.8}
   .tl-day.we{background:#F2F2F3}
   .tl-day.td{background:#FDECEC;color:#B00020;font-weight:700}
+  .tl-task{gap:6px}
+  .tl-task .tl-tt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .st-mini{padding:3px 5px!important;font-size:11px;border-radius:6px;flex:none;width:auto;text-align:center}
   .tl-proj .tl-name{font-weight:800;font-size:12.5px;background:var(--bg)}
   .tl-proj .tl-cells{background:var(--bg)}
   .tl-bar{position:absolute;top:5px;height:22px;border-radius:6px;display:flex;align-items:center;
@@ -868,6 +871,10 @@ function statusSelect(t){
   return `<select class="st-sel s-${t.status}" onclick="event.stopPropagation()" onchange="updTask('${t.id}','status',this.value);this.className='st-sel s-'+this.value">${
     TASK_STATUS.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}</select>`;
 }
+function statusSelectMini(t){
+  return `<select class="st-sel st-mini s-${t.status}" onclick="event.stopPropagation()" onchange="updTask('${t.id}','status',this.value);this.className='st-sel st-mini s-'+this.value">${
+    TASK_STATUS.map(s=>`<option ${s===t.status?'selected':''}>${s.charAt(0)}</option>`).join('')}</select>`;
+}
 function dateText(t){
   const dl=deadlineInfo(t.end_date,t.status);
   return (t.start_date||t.end_date)
@@ -980,7 +987,7 @@ function timelineHTML(tasks,pmeta){
     byProj[pid].forEach(t=>{
       const s=dnum(t.start_date),e=dnum(t.end_date);
       const left=(s-lo)*DAYPX, w=(e-s+1)*DAYPX;
-      rows+=`<div class="tl-row"><div class="tl-name" title="${t.title}">${t.title}</div>
+      rows+=`<div class="tl-row"><div class="tl-name tl-task">${statusSelectMini(t)}<span class="tl-tt" title="${t.title}">${t.title}</span></div>
         <div class="tl-cells" style="${grid}">${todayLine}
           <div class="tl-bar s-${t.status}" style="left:${left}px;width:${w}px" onclick="openTask('${t.id}')">${t.title}</div></div></div>`;
     });
