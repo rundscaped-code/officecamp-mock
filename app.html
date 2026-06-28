@@ -133,6 +133,26 @@
   .row-inline{display:flex;gap:8px;align-items:center;margin-top:8px}
   .row-inline .control{padding:9px}
   .mini{width:auto;flex:none;padding:9px 12px;font-size:13px}
+  /* タスクリスト(Asana/Monday風) */
+  .tk-item{display:flex;gap:10px;align-items:flex-start;padding:11px 4px;border-top:1px solid var(--line)}
+  .tk-item:first-child{border-top:none}
+  .tk-st{width:4px;flex:none;align-self:stretch;border-radius:3px;background:#9A9A9A}
+  .tk-st.s-進行{background:#1A1A1A}.tk-st.s-完了{background:#5B8C5A}.tk-st.s-保留{background:#C8A24B}
+  .tk-main{flex:1;min-width:0}
+  .tk-title{font-size:14.5px;font-weight:700}
+  .tk-sub{font-size:12px;color:var(--sub);margin-top:3px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+  .tk-date{font-weight:600;color:var(--ink)}
+  .tk-who{display:inline-flex;gap:4px;flex-wrap:wrap}
+  .tk-prog{height:5px;background:var(--line);border-radius:3px;margin-top:7px;overflow:hidden}
+  .tk-prog i{display:block;height:100%;background:var(--accent)}
+  .tk-badge{font-size:10px;padding:1px 8px;border-radius:10px;font-weight:700;flex:none;background:var(--accent-soft);color:var(--accent)}
+  /* 経理スプレッドシート編集 */
+  .fin-edit{border:none;background:transparent;font:inherit;font-size:13px;color:var(--ink);width:100%;
+    text-align:right;padding:2px 3px;border-radius:4px;outline:none}
+  .fin-edit:focus{background:#fff;box-shadow:0 0 0 2px var(--accent) inset}
+  .fin-edit.l{text-align:left}
+  select.fin-edit{appearance:none;font-weight:700}
+  .fin-table td.ed{background:#FbFbFb}
   /* 変更履歴 */
   .log-row{display:flex;gap:8px;padding:9px 14px;border-top:1px solid var(--line);font-size:12.5px}
   .log-row:first-child{border-top:none}
@@ -230,7 +250,7 @@
     <div class="screen">
       <div class="fin-sum" id="finSum"></div>
       <div class="fin-tablewrap"><table class="fin-table" id="finTable"></table></div>
-      <p style="text-align:center;color:var(--sub);font-size:12px;margin-top:12px">見出しをタップで並べ替え・行をタップで案件詳細</p>
+      <p style="text-align:center;color:var(--sub);font-size:12px;margin-top:12px">案件名・状態・受注は<b>セルを直接編集</b>して保存／見出しで並べ替え／行タップで詳細</p>
     </div>
   </section>
 
@@ -705,42 +725,86 @@ function ganttRows(tasks){
   const win=`${fmtD(lo+1)} 〜 ${fmtD(hi-1)}`;
   return {win, rows:html, undated};
 }
-// ---- ガントタブ：全案件横断 ----
+// ---- タスクリスト（Asana/Monday風・何を/誰が/いつ） ----
+const DOW=['日','月','火','水','木','金','土'];
+function fmtDate(d){ if(!d)return null; const x=new Date(d+'T00:00:00');
+  return `${x.getMonth()+1}/${x.getDate()}(${DOW[x.getDay()]})`; }
+function taskItemHTML(t){
+  const who=(t.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}</span>`).join('')
+    || '<span style="color:var(--sub)">担当者なし</span>';
+  const period = (t.start_date||t.end_date)
+    ? `<span class="tk-date">${fmtDate(t.start_date)||'未定'} → ${fmtDate(t.end_date)||'未定'}</span>`
+    : '<span style="color:var(--sub)">日付未設定</span>';
+  return `<div class="tk-item">
+    <div class="tk-st s-${t.status}"></div>
+    <div class="tk-main">
+      <div class="tk-title">${t.title}</div>
+      <div class="tk-sub">
+        <span class="tk-badge">${t.status} ${t.progress||0}%</span>
+        ${period}
+        <span class="tk-who">担当：${who}</span>
+        ${t.leader_id?`<span>リーダー：${personName(t.leader_id)}</span>`:''}
+      </div>
+      <div class="tk-prog"><i style="width:${t.progress||0}%"></i></div>
+    </div>
+  </div>`;
+}
+// ---- タスクタブ：全案件横断（リスト＋ガント） ----
 async function loadGantt(){
   const body=document.getElementById('ganttBody');
   const tasks=await fetchTasks(null);
-  if(!tasks.length){body.innerHTML=`<div class="empty">タスクがまだありません。<br>案件詳細の「タスク」から追加できます。</div>`;return;}
+  if(!tasks.length){body.innerHTML=`<div class="empty">タスクがまだありません。<br>案件の詳細画面「タスク」から追加できます。</div>`;return;}
   const byProj={};
   tasks.forEach(t=>{(byProj[t.project_id]=byProj[t.project_id]||[]).push(t);});
   const pname={}; projects.forEach(p=>pname[p.id]=p.name);
-  // project_costs からも名前を補完
   const {data:pc}=await sb.from('project_costs').select('id,name');
   (pc||[]).forEach(p=>pname[p.id]=p.name);
   let html='';
   for(const pid of Object.keys(byProj)){
-    const g=ganttRows(byProj[pid]);
-    html+=`<div class="card pad"><div class="gproj" onclick="openDetail('${pid}')" style="cursor:pointer">▸ ${pname[pid]||'案件'}</div>
-      <div class="gwin">${g.win||'日付未設定のタスクのみ'}</div>${g.rows}
-      ${g.undated.length?`<div class="gt-cap" style="margin-left:0">日付未設定: ${g.undated.map(t=>t.title).join('、')}</div>`:''}</div>`;
+    const list=byProj[pid];
+    const g=ganttRows(list);
+    html+=`<div class="card pad">
+      <div class="gproj" onclick="openDetail('${pid}')" style="cursor:pointer">▸ ${pname[pid]||'案件'}</div>
+      ${list.map(taskItemHTML).join('')}
+      ${g.rows?`<div class="gwin" style="margin-top:12px">タイムライン（${g.win}）</div>${g.rows}`:''}
+    </div>`;
   }
   body.innerHTML=html;
 }
 
 // ---- 経理（網羅一覧・ソート・クリックで詳細） ----
 let finRows=[], finSort={key:'profit',dir:-1};
+const PROJ_STATUS=['見込','進行','完了','失注'];
+const esc = s => String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+function statusOptions(cur){
+  return PROJ_STATUS.map(s=>`<option ${s===cur?'selected':''}>${s}</option>`).join('');
+}
 const FIN_COLS=[
-  {key:'name',   label:'案件',   l:true, fmt:r=>`<span class="pname">${r.name}</span>`},
-  {key:'status', label:'状態',   l:true, fmt:r=>statusPill(r.status)},
-  {key:'revenue',label:'受注',   fmt:r=>yen(r.revenue)},
+  {key:'name',   label:'案件',   l:true, ed:true, fmt:r=>`<input class="fin-edit l" value="${esc(r.name)}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','name',this.value)">`},
+  {key:'status', label:'状態',   l:true, ed:true, fmt:r=>`<select class="fin-edit" onclick="event.stopPropagation()" onchange="updProj('${r.id}','status',this.value)">${statusOptions(r.status)}</select>`},
+  {key:'revenue',label:'受注',   ed:true, fmt:r=>`<input class="fin-edit" inputmode="numeric" value="${r.revenue||0}" onclick="event.stopPropagation()" onchange="updProjNum('${r.id}','amount',this.value)">`},
   {key:'cost',   label:'原価',   fmt:r=>yen(r.cost)},
   {key:'outsource',label:'外注', fmt:r=>yen(r.outsource)},
   {key:'profit', label:'粗利',   fmt:r=>`<span class="${r.profit<0?'neg':''}">${yen(r.profit)}</span>`},
   {key:'profit_rate',label:'粗利率',fmt:r=>`<span class="${r.profit<0?'neg':''}">${r.profit_rate}%</span>`},
   {key:'created_at',label:'登録', fmt:r=>r.created_at?new Date(r.created_at).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'}):'—'},
 ];
-function statusPill(s){
-  const c={'進行':'b-go','見込':'b-may','完了':'b-go','失注':'b-lost'}[s]||'b-may';
-  return `<span class="pill ${c}">${s||'—'}</span>`;
+async function updProj(id,field,value){
+  const v=(value==null?'':value).toString().trim();
+  if(field==='name'&&!v){toast('案件名は空にできません');loadFinance();return;}
+  const {error}=await sb.from('projects').update({[field]:v}).eq('id',id);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('保存しました');
+  const row=finRows.find(r=>r.id===id); if(row)row[field]=v;
+  if(field==='status'){ /* 表示のみ。再集計不要 */ }
+  loadProjectOptions();
+}
+async function updProjNum(id,field,value){
+  const n=parseInt((value||'0').toString().replace(/[,，]/g,''),10)||0;
+  const {error}=await sb.from('projects').update({[field]:n}).eq('id',id);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('保存しました');
+  await loadFinance(); // 粗利を再計算
 }
 async function loadFinance(){
   const table=document.getElementById('finTable');
@@ -774,7 +838,7 @@ function renderFinance(){
     return `<th class="${c.l?'l':''} ${on?'sorted':''}" onclick="sortFin('${c.key}')">${c.label}<span class="ar">${ar}</span></th>`;
   }).join('');
   const body=rows.length? rows.map(r=>`<tr onclick="openDetail('${r.id}')">${
-    FIN_COLS.map(c=>`<td class="${c.l?'l':''}">${c.fmt(r)}</td>`).join('')
+    FIN_COLS.map(c=>`<td class="${c.l?'l':''} ${c.ed?'ed':''}">${c.fmt(r)}</td>`).join('')
   }</tr>`).join('') : `<tr><td class="l" colspan="${FIN_COLS.length}" style="color:var(--sub);text-align:center;padding:24px">案件がまだありません</td></tr>`;
   const t=finRows.reduce((a,r)=>({rev:a.rev+(r.revenue||0),cost:a.cost+(r.cost||0),out:a.out+(r.outsource||0),prof:a.prof+(r.profit||0)}),{rev:0,cost:0,out:0,prof:0});
   const tot=rows.length?`<tr class="tot"><td class="l">合計</td><td class="l"></td><td>${yen(t.rev)}</td><td>${yen(t.cost)}</td><td>${yen(t.out)}</td><td class="${t.prof<0?'neg':''}">${yen(t.prof)}</td><td></td><td></td></tr>`:'';
