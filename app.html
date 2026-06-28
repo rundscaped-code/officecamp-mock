@@ -198,8 +198,13 @@
   .tl-task{gap:6px}
   .tl-task .tl-tt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .st-mini{padding:3px 5px!important;font-size:11px;border-radius:6px;flex:none;width:auto;text-align:center}
+  .tl-proj{min-height:30px}
   .tl-proj .tl-name{font-weight:800;font-size:12.5px;background:var(--bg)}
   .tl-proj .tl-cells{background:var(--bg)}
+  .tl-pspan{position:absolute;top:13px;height:7px;background:var(--accent);opacity:.30;border-radius:4px}
+  .tl-pcap{position:absolute;top:8px;width:3px;height:17px;background:var(--accent);opacity:.6;border-radius:2px}
+  .tl-deliv{position:absolute;top:9px;width:13px;height:13px;margin-left:-7px;background:#B00020;
+    transform:rotate(45deg);border-radius:2px;z-index:2}
   .tl-bar{position:absolute;top:5px;height:22px;border-radius:6px;display:flex;align-items:center;
     color:#fff;font-size:10px;font-weight:700;padding:0 7px;overflow:hidden;white-space:nowrap;cursor:pointer}
   .tl-bar.s-未着手{background:#9A9A9A}.tl-bar.s-進行{background:#1A1A1A}
@@ -972,7 +977,12 @@ function timelineHTML(tasks,pmeta){
   const DAYPX=40;
   let lo=Infinity,hi=-Infinity;
   dated.forEach(t=>{lo=Math.min(lo,dnum(t.start_date));hi=Math.max(hi,dnum(t.end_date));});
-  lo-=1; hi+=1; const days=hi-lo+1; const trackW=days*DAYPX; const tdy=todayNum();
+  // 案件の開始/終了/納品日も範囲に含めて広げる
+  Object.values(pmeta).forEach(m=>['start_date','end_date','delivery_date'].forEach(k=>{
+    if(m&&m[k]){const d=dnum(m[k]);lo=Math.min(lo,d);hi=Math.max(hi,d);}}));
+  const tdy=todayNum();
+  lo=Math.min(lo,tdy)-7; hi=Math.max(hi,tdy)+21;   // 前後に余白（先まで見える）
+  const days=hi-lo+1; const trackW=days*DAYPX;
   const grid=`width:${trackW}px;background-image:repeating-linear-gradient(to right,#ECECEC,#ECECEC 1px,transparent 1px,transparent ${DAYPX}px)`;
   const todayLine=(tdy>=lo&&tdy<=hi)?`<div class="tl-today" style="left:${(tdy-lo)*DAYPX}px"></div>`:'';
   // 日付ヘッダ
@@ -983,7 +993,17 @@ function timelineHTML(tasks,pmeta){
   const byProj=groupByProject(dated);
   for(const pid of Object.keys(byProj)){
     const m=pmeta[pid]||{};
-    rows+=`<div class="tl-row tl-proj"><div class="tl-name" onclick="openDetail('${pid}')">${m.code||''} ${m.name||'案件'}</div><div class="tl-cells" style="${grid}">${todayLine}</div></div>`;
+    // 案件期間（ヒゲ帯）＝タスクの最早〜最遅 ＋ 案件自体の開始/終了
+    let ps=Infinity,pe=-Infinity;
+    byProj[pid].forEach(t=>{ps=Math.min(ps,dnum(t.start_date));pe=Math.max(pe,dnum(t.end_date));});
+    if(m.start_date)ps=Math.min(ps,dnum(m.start_date));
+    if(m.end_date)pe=Math.max(pe,dnum(m.end_date));
+    let span='';
+    if(isFinite(ps)){const l=(ps-lo)*DAYPX, w=(pe-ps+1)*DAYPX;
+      span=`<div class="tl-pspan" style="left:${l}px;width:${w}px"></div>
+        <div class="tl-pcap" style="left:${l}px"></div><div class="tl-pcap" style="left:${l+w-3}px"></div>`;}
+    const deliv=m.delivery_date?`<div class="tl-deliv" title="納品 ${fmtDate(m.delivery_date)}" style="left:${(dnum(m.delivery_date)-lo)*DAYPX}px"></div>`:'';
+    rows+=`<div class="tl-row tl-proj"><div class="tl-name" onclick="openDetail('${pid}')">${m.code||''} ${m.name||'案件'}</div><div class="tl-cells" style="${grid}">${todayLine}${span}${deliv}</div></div>`;
     byProj[pid].forEach(t=>{
       const s=dnum(t.start_date),e=dnum(t.end_date);
       const left=(s-lo)*DAYPX, w=(e-s+1)*DAYPX;
@@ -1016,8 +1036,12 @@ async function loadGantt(){
       `<div class="vbtn ${curTaskView===v?'on':''}" onclick="setTaskView('${v}')">${l}</div>`).join('')}</div>`;
   if(!tasks.length){body.innerHTML=bar+`<div class="empty">タスクがまだありません。<br>案件の詳細画面「タスク」から追加できます。</div>`;return;}
   const pmeta={};
-  const {data:pc}=await sb.from('project_costs').select('id,name,code');
+  const [{data:pc},{data:pp}]=await Promise.all([
+    sb.from('project_costs').select('id,name,code'),
+    sb.from('projects').select('id,start_date,end_date,delivery_date'),
+  ]);
   (pc||[]).forEach(p=>pmeta[p.id]=p);
+  (pp||[]).forEach(p=>{pmeta[p.id]=Object.assign(pmeta[p.id]||{},p);});
   const view = curTaskView==='board' ? boardHTML(tasks,pmeta)
              : curTaskView==='timeline' ? timelineHTML(tasks,pmeta)
              : listHTML(tasks,pmeta);
