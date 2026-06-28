@@ -155,6 +155,20 @@
   .tk-lean:active{background:var(--bg)}
   .tk-lean-main{min-width:0;flex:1}
   .tk-chev{color:var(--gray);font-size:20px;flex:none}
+  /* 案件詳細のサブタブ */
+  .subtabs{display:flex;gap:6px;margin:14px 2px 12px}
+  .subtab{flex:1;text-align:center;padding:9px 4px;font-size:13px;font-weight:700;color:var(--sub);
+    background:var(--card);border:1px solid var(--line);border-radius:12px;cursor:pointer}
+  .subtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .dpane{animation:fade .15s}
+  @keyframes fade{from{opacity:.4}to{opacity:1}}
+  /* タスクタブ：案件カード（折りたたみ） */
+  details.pj-card{margin-bottom:12px}
+  details.pj-card>summary{list-style:none;outline:none}
+  details.pj-card>summary::-webkit-details-marker{display:none}
+  .pj-marker{transition:transform .15s;color:var(--gray);font-size:13px}
+  details[open]>summary .pj-marker{transform:rotate(90deg)}
+  .pj-detail-link{margin-left:auto;font-size:12px;color:var(--accent);font-weight:700;cursor:pointer}
   /* タスクタブ：案件を大きく、タスクが枝分かれ */
   .pj-head{display:flex;align-items:baseline;gap:8px;cursor:pointer;margin-bottom:4px}
   .pj-code{font-size:12px;font-weight:700;color:var(--sub);background:var(--accent-soft);padding:1px 8px;border-radius:8px}
@@ -264,6 +278,7 @@
         <div class="field"><label>受注元（任意）</label><input class="control" id="npClient" placeholder="◇◇建設"></div>
         <div class="field"><label>受注金額（円・任意）</label><input class="control" id="npAmt" inputmode="numeric" placeholder="0"></div>
         <div class="field"><label>納品日（任意）</label><input class="control" id="npDeliv" type="date"></div>
+        <div class="field hidden" id="npLeaderField"><label>案件リーダー</label><select class="control" id="npLeader"></select></div>
         <div style="display:flex;gap:8px">
           <button class="btn" id="npSave" style="flex:1" onclick="addProject()">追加</button>
           <button class="btn btn-ghost" style="flex:1" onclick="toggleProjForm(false)">キャンセル</button>
@@ -474,6 +489,13 @@ function toggleProjForm(show){
   if(open){
     document.getElementById('npParent').innerHTML='<option value="">（派生元なし・新規番号）</option>'+
       projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+    // 経理/管理のみリーダーを選べる。既定は登録者(自分)
+    const lf=document.getElementById('npLeaderField');
+    lf.classList.toggle('hidden',!isManager());
+    if(isManager()){
+      document.getElementById('npLeader').innerHTML=
+        people.map(p=>`<option value="${p.id}" ${p.id===me.id?'selected':''}>${p.name||p.email}</option>`).join('');
+    }
     document.getElementById('npName').focus();
   }
 }
@@ -484,9 +506,10 @@ async function addProject(){
   const delivery_date=document.getElementById('npDeliv').value||null;
   const client=document.getElementById('npClient').value.trim()||null;
   const parent_id=document.getElementById('npParent').value||null;
+  const leader_id = isManager() ? (document.getElementById('npLeader').value||me.id) : me.id;
   const btn=document.getElementById('npSave');btn.disabled=true;
   try{
-    const {error}=await sb.from('projects').insert({name,client,amount,delivery_date,parent_id,owner_id:me.id,status:'進行'});
+    const {error}=await sb.from('projects').insert({name,client,amount,delivery_date,parent_id,owner_id:me.id,leader_id,status:'進行'});
     if(error){toast('追加エラー: '+error.message);return;}
     toast('案件「'+name+'」を追加');
     document.getElementById('npName').value='';document.getElementById('npClient').value='';document.getElementById('npAmt').value='';document.getElementById('npDeliv').value='';
@@ -504,7 +527,7 @@ async function openDetail(id){
   body.innerHTML=`<div class="empty">読み込み中…</div>`;
   const [{data:p},{data:pmeta},{data:exps},tasks,{data:members},{data:logs},{data:ords}]=await Promise.all([
     sb.from('project_costs').select('*').eq('id',id).single(),
-    sb.from('projects').select('delivery_date,client').eq('id',id).single(),
+    sb.from('projects').select('delivery_date,client,leader_id').eq('id',id).single(),
     sb.from('expenses').select('amount,note,spent_at,status,kind,user_id,vendor:vendor_id(name,kind),author:user_id(name,email)')
       .eq('project_id',id).order('spent_at',{ascending:false}),
     fetchTasks(id),
@@ -557,48 +580,70 @@ async function openDetail(id){
         <div class="kpi"><div class="l">原価</div><div class="n">${man(p.cost)}</div></div>
         <div class="kpi pf"><div class="l">粗利</div><div class="n">${man(p.profit)}</div></div>
       </div>
-      <div class="task-meta" style="margin-top:8px">
-        ${pmeta?.client?'受注元：'+pmeta.client+'　':''}${p.outsource?`うち外注 ${man(p.outsource)}　`:''}
-        納品日：<span class="${deadlineInfo(pmeta?.delivery_date,'').cls}">${pmeta?.delivery_date?fmtDate(pmeta.delivery_date):'未設定'}</span></div>
     </div>
 
-    <div class="sec">タスク（ガント）</div>
-    <div class="card pad">${ganttBlock}${taskList}</div>
-    <button class="btn btn-ghost" onclick="toggleTaskForm()">＋ タスクを追加</button>
-    <div id="taskForm" class="card pad hidden" style="margin-top:10px">
-      <div class="field"><label>タスク名</label><input class="control" id="tkTitle" placeholder="基礎工事・図面作成 など"></div>
-      <div class="row-inline" style="margin:0 0 10px">
-        <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700">開始</label>
-          <input class="control" id="tkStart" type="date"></div>
-        <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700">終了</label>
-          <input class="control" id="tkEnd" type="date"></div>
-      </div>
-      <div class="field"><label>リーダー（進める人）</label><select class="control" id="tkLeader">${peopleOptions('—未設定—')}</select></div>
-      <div style="display:flex;gap:8px">
-        <button class="btn" style="flex:1" onclick="addTask()">追加</button>
-        <button class="btn btn-ghost" style="flex:1" onclick="toggleTaskForm(false)">キャンセル</button>
+    <div class="subtabs">
+      <div class="subtab" data-d="tasks" onclick="detSub('tasks')">タスク</div>
+      <div class="subtab" data-d="exp" onclick="detSub('exp')">経費</div>
+      <div class="subtab" data-d="ord" onclick="detSub('ord')">発注</div>
+      <div class="subtab" data-d="info" onclick="detSub('info')">情報</div>
+    </div>
+
+    <div class="dpane" id="dp-tasks">
+      <div class="card pad">${ganttBlock}${taskList}</div>
+      <button class="btn btn-ghost" onclick="toggleTaskForm()">＋ タスクを追加</button>
+      <div id="taskForm" class="card pad hidden" style="margin-top:10px">
+        <div class="field"><label>タスク名</label><input class="control" id="tkTitle" placeholder="基礎工事・図面作成 など"></div>
+        <div class="row-inline" style="margin:0 0 10px">
+          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700">開始</label>
+            <input class="control" id="tkStart" type="date"></div>
+          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700">終了</label>
+            <input class="control" id="tkEnd" type="date"></div>
+        </div>
+        <div class="field"><label>リーダー（進める人）</label><select class="control" id="tkLeader">${peopleOptions('—未設定—')}</select></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" style="flex:1" onclick="addTask()">追加</button>
+          <button class="btn btn-ghost" style="flex:1" onclick="toggleTaskForm(false)">キャンセル</button>
+        </div>
       </div>
     </div>
 
-    <div class="sec">担当メンバー（この案件を見られる人）</div>
-    <div class="card pad"><div>${memChips}</div>
-      <div class="row-inline">
-        <select class="control" id="memSel" style="flex:1">${peopleOptions('＋メンバーを追加')}</select>
-        <button class="btn btn-ghost mini" onclick="addMember()">追加</button>
-      </div>
-      <div class="task-meta" style="margin-top:6px">タスクに担当者を割り当てると、自動でメンバーになります。</div>
+    <div class="dpane hidden" id="dp-exp">
+      <div class="card">${expRows}</div>
+      <button class="btn btn-ghost" onclick="nav('expense')">＋ 経費を足す</button>
     </div>
 
-    <div class="sec">経費</div>
-    <div class="card">${expRows}</div>
-    <button class="btn btn-ghost" onclick="nav('expense')">＋ 経費を足す</button>
+    <div class="dpane hidden" id="dp-ord">
+      <div class="card">${ordRows}</div>
+      <button class="btn btn-ghost" onclick="nav('orders')">＋ 発注する</button>
+    </div>
 
-    <div class="sec">発注（内注・外注）</div>
-    <div class="card">${ordRows}</div>
-    <button class="btn btn-ghost" onclick="nav('orders')">＋ 発注する</button>
-
-    <div class="sec">変更履歴</div>
-    <div class="card">${logRows}</div>`;
+    <div class="dpane hidden" id="dp-info">
+      <div class="sec">案件情報</div>
+      <div class="card pad"><div class="task-meta" style="line-height:2">
+        番号：${p.code||'—'}<br>受注元：${pmeta?.client||'—'}<br>
+        リーダー：${pmeta?.leader_id?personName(pmeta.leader_id):'—'}<br>
+        納品日：<span class="${deadlineInfo(pmeta?.delivery_date,'').cls}">${pmeta?.delivery_date?fmtDate(pmeta.delivery_date):'未設定'}</span>
+        ${p.outsource?`<br>うち外注：${man(p.outsource)}`:''}</div></div>
+      <div class="sec">担当メンバー（この案件を見られる人）</div>
+      <div class="card pad"><div>${memChips}</div>
+        <div class="row-inline">
+          <select class="control" id="memSel" style="flex:1">${peopleOptions('＋メンバーを追加')}</select>
+          <button class="btn btn-ghost mini" onclick="addMember()">追加</button>
+        </div>
+        <div class="task-meta" style="margin-top:6px">タスクに担当者を割り当てると、自動でメンバーになります。</div>
+      </div>
+      <div class="sec">変更履歴</div>
+      <div class="card">${logRows}</div>
+    </div>`;
+  detSub(curSub);
+}
+let curSub='tasks';
+function detSub(n){
+  curSub=n;
+  ['tasks','exp','ord','info'].forEach(k=>{
+    const el=document.getElementById('dp-'+k); if(el)el.classList.toggle('hidden',k!==n);});
+  document.querySelectorAll('.subtab').forEach(t=>t.classList.toggle('on',t.dataset.d===n));
 }
 function logLabel(l){
   const t={projects:'案件',expenses:'経費',tasks:'タスク',orders:'発注'}[l.table_name]||l.table_name;
@@ -868,12 +913,15 @@ async function loadGantt(){
     const list=byProj[pid];
     const m=pmeta[pid]||{};
     const g=ganttRows(list);
-    html+=`<div class="card pad">
-      <div class="pj-head" onclick="openDetail('${pid}')">
-        ${m.code?`<span class="pj-code">${m.code}</span>`:''}<span class="pj-name">${m.name||'案件'}</span></div>
-      <div class="pj-tasks">${list.map(taskItemHTML).join('')}</div>
+    html+=`<details open class="card pad pj-card">
+      <summary class="pj-head">
+        <span class="pj-marker">▶</span>
+        ${m.code?`<span class="pj-code">${m.code}</span>`:''}<span class="pj-name">${m.name||'案件'}</span>
+        <span class="pj-detail-link" onclick="event.stopPropagation();event.preventDefault();openDetail('${pid}')">詳細 ›</span>
+      </summary>
+      <div class="pj-tasks" style="margin-top:8px">${list.map(taskItemHTML).join('')}</div>
       ${g.rows?`<div class="gwin" style="margin-top:14px">タイムライン（${g.win}）</div>${g.rows}`:''}
-    </div>`;
+    </details>`;
   }
   body.innerHTML=html;
 }
