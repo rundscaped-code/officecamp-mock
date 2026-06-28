@@ -162,6 +162,23 @@
   .subtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .dpane{animation:fade .15s}
   @keyframes fade{from{opacity:.4}to{opacity:1}}
+  /* タスクタブ：ビュー切替 */
+  .viewbar{display:flex;gap:6px;background:var(--accent-soft);padding:4px;border-radius:12px;margin:2px 0 14px}
+  .vbtn{flex:1;text-align:center;padding:8px 4px;font-size:13px;font-weight:700;color:var(--sub);border-radius:9px;cursor:pointer}
+  .vbtn.on{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+  /* ボード（ステータス別の列） */
+  .board{display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
+  .bcol{flex:0 0 220px;background:var(--bg);border-radius:14px;padding:10px}
+  .bcol-h{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;margin-bottom:10px}
+  .bcount{margin-left:auto;color:var(--sub);font-size:12px;background:#fff;border-radius:10px;padding:0 8px}
+  .st-dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .st-dot.s-未着手{background:#9A9A9A}.st-dot.s-進行{background:#1A1A1A}
+  .st-dot.s-完了{background:#5B8C5A}.st-dot.s-保留{background:#C8A24B}
+  .bcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px;margin-bottom:9px;cursor:pointer;box-shadow:var(--shadow)}
+  .bcard:active{background:var(--bg)}
+  .bpc{font-size:10px;color:var(--sub);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bcard .bt{font-weight:700;font-size:14px;margin:3px 0 4px}
+  .bempty{color:var(--gray);font-size:12px;text-align:center;padding:10px 0}
   /* タスクタブ：案件カード（折りたたみ） */
   details.pj-card{margin-bottom:12px}
   details.pj-card>summary{list-style:none;outline:none}
@@ -306,7 +323,7 @@
 
   <!-- タスク（全案件のタスクをガントで俯瞰） -->
   <section id="s-schedule" class="hidden" style="display:flex;flex-direction:column;flex:1">
-    <div class="head"><h1>タスク</h1><div class="date">案件横断のガント。案件名から詳細で追加・割り当て</div></div>
+    <div class="head"><h1>タスク</h1><div class="date">ボード／タイムライン／リストで切替</div></div>
     <div class="screen" id="ganttBody"><div class="empty">読み込み中…</div></div>
   </section>
 
@@ -898,32 +915,64 @@ function refreshTasks(){
   const detOpen=!document.getElementById('s-detail').classList.contains('hidden');
   if(detOpen&&curDetail)openDetail(curDetail); else loadGantt();
 }
-// ---- タスクタブ：全案件横断（リスト＋ガント） ----
-async function loadGantt(){
-  const body=document.getElementById('ganttBody');
-  const tasks=await fetchTasks(null);
-  if(!tasks.length){body.innerHTML=`<div class="empty">タスクがまだありません。<br>案件の詳細画面「タスク」から追加できます。</div>`;return;}
-  const byProj={};
-  tasks.forEach(t=>{(byProj[t.project_id]=byProj[t.project_id]||[]).push(t);});
-  const pmeta={};
-  const {data:pc}=await sb.from('project_costs').select('id,name,code');
-  (pc||[]).forEach(p=>pmeta[p.id]=p);
-  let html='';
-  for(const pid of Object.keys(byProj)){
-    const list=byProj[pid];
+// ---- タスクタブ：ボード / タイムライン / リスト ----
+let curTaskView='board';
+function setTaskView(v){curTaskView=v;loadGantt();}
+function groupByProject(tasks){const b={};tasks.forEach(t=>{(b[t.project_id]=b[t.project_id]||[]).push(t);});return b;}
+function bcard(t,pmeta){
+  const m=pmeta[t.project_id]||{};
+  const who=(t.task_assignees||[]).map(a=>personName(a.user_id)).join('、');
+  return `<div class="bcard" onclick="openTask('${t.id}')">
+    <div class="bpc">${m.code||''}${m.name?' '+m.name:''}</div>
+    <div class="bt">${t.title}</div>
+    <div class="tk-sub">${dateText(t)}${who?'<br>担当：'+who:''}</div></div>`;
+}
+function boardHTML(tasks,pmeta){
+  const cols=TASK_STATUS.map(st=>{
+    const items=tasks.filter(t=>t.status===st);
+    const cards=items.map(t=>bcard(t,pmeta)).join('')||'<div class="bempty">なし</div>';
+    return `<div class="bcol"><div class="bcol-h"><span class="st-dot s-${st}"></span>${st}<span class="bcount">${items.length}</span></div>${cards}</div>`;
+  }).join('');
+  return `<div class="board">${cols}</div>`;
+}
+function timelineHTML(tasks,pmeta){
+  const byProj=groupByProject(tasks);
+  return Object.keys(byProj).map(pid=>{
+    const m=pmeta[pid]||{}; const g=ganttRows(byProj[pid]);
+    return `<div class="card pad">
+      <div class="pj-head" onclick="openDetail('${pid}')">
+        ${m.code?`<span class="pj-code">${m.code}</span>`:''}<span class="pj-name">${m.name||'案件'}</span></div>
+      ${g.rows?`<div class="gwin">${g.win}</div>${g.rows}`
+        :'<div class="task-meta">日付未設定のタスクのみ：'+byProj[pid].map(t=>t.title).join('、')+'</div>'}</div>`;
+  }).join('');
+}
+function listHTML(tasks,pmeta){
+  const byProj=groupByProject(tasks);
+  return Object.keys(byProj).map(pid=>{
     const m=pmeta[pid]||{};
-    const g=ganttRows(list);
-    html+=`<details open class="card pad pj-card">
-      <summary class="pj-head">
-        <span class="pj-marker">▶</span>
+    return `<details open class="card pad pj-card">
+      <summary class="pj-head"><span class="pj-marker">▶</span>
         ${m.code?`<span class="pj-code">${m.code}</span>`:''}<span class="pj-name">${m.name||'案件'}</span>
         <span class="pj-detail-link" onclick="event.stopPropagation();event.preventDefault();openDetail('${pid}')">詳細 ›</span>
       </summary>
-      <div class="pj-tasks" style="margin-top:8px">${list.map(taskItemHTML).join('')}</div>
-      ${g.rows?`<div class="gwin" style="margin-top:14px">タイムライン（${g.win}）</div>${g.rows}`:''}
+      <div class="pj-tasks" style="margin-top:8px">${byProj[pid].map(taskItemHTML).join('')}</div>
     </details>`;
-  }
-  body.innerHTML=html;
+  }).join('');
+}
+async function loadGantt(){
+  const body=document.getElementById('ganttBody');
+  const tasks=await fetchTasks(null);
+  const bar=`<div class="viewbar">
+    ${[['board','ボード'],['timeline','タイムライン'],['list','リスト']].map(([v,l])=>
+      `<div class="vbtn ${curTaskView===v?'on':''}" onclick="setTaskView('${v}')">${l}</div>`).join('')}</div>`;
+  if(!tasks.length){body.innerHTML=bar+`<div class="empty">タスクがまだありません。<br>案件の詳細画面「タスク」から追加できます。</div>`;return;}
+  const pmeta={};
+  const {data:pc}=await sb.from('project_costs').select('id,name,code');
+  (pc||[]).forEach(p=>pmeta[p.id]=p);
+  const view = curTaskView==='board' ? boardHTML(tasks,pmeta)
+             : curTaskView==='timeline' ? timelineHTML(tasks,pmeta)
+             : listHTML(tasks,pmeta);
+  body.innerHTML=bar+view;
 }
 
 // ---- 経理（網羅一覧・ソート・クリックで詳細） ----
