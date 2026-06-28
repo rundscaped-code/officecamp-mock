@@ -179,6 +179,29 @@
   .bpc{font-size:10px;color:var(--sub);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .bcard .bt{font-weight:700;font-size:14px;margin:3px 0 4px}
   .bempty{color:var(--gray);font-size:12px;text-align:center;padding:10px 0}
+  /* タイムライン（スプシ風カレンダー・横スクロール） */
+  .tl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .tl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tl-grid{min-width:max-content}
+  .tl-row{display:flex;align-items:stretch;border-top:1px solid var(--line);min-height:34px}
+  .tl-row:first-child{border-top:none}
+  .tl-name{position:sticky;left:0;z-index:2;width:128px;flex:none;background:#fff;padding:6px 8px;
+    font-size:12px;font-weight:600;display:flex;align-items:center;border-right:1px solid var(--line);
+    overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
+  .tl-head{background:var(--accent-soft)}
+  .tl-head .tl-name{background:var(--accent-soft);z-index:3;font-weight:700}
+  .tl-cells{position:relative;flex:none}
+  .tl-day{width:40px;flex:none;text-align:center;font-size:10px;color:var(--sub);padding:4px 0;line-height:1.2}
+  .tl-day small{display:block;font-size:8px;opacity:.8}
+  .tl-day.we{background:#F2F2F3}
+  .tl-day.td{background:#FDECEC;color:#B00020;font-weight:700}
+  .tl-proj .tl-name{font-weight:800;font-size:12.5px;background:var(--bg)}
+  .tl-proj .tl-cells{background:var(--bg)}
+  .tl-bar{position:absolute;top:5px;height:22px;border-radius:6px;display:flex;align-items:center;
+    color:#fff;font-size:10px;font-weight:700;padding:0 7px;overflow:hidden;white-space:nowrap;cursor:pointer}
+  .tl-bar.s-未着手{background:#9A9A9A}.tl-bar.s-進行{background:#1A1A1A}
+  .tl-bar.s-完了{background:#5B8C5A}.tl-bar.s-保留{background:#C8A24B}
+  .tl-today{position:absolute;top:0;bottom:0;width:2px;background:#B00020;opacity:.55;z-index:1}
   /* タスクタブ：案件カード（折りたたみ） */
   details.pj-card{margin-bottom:12px}
   details.pj-card>summary{list-style:none;outline:none}
@@ -936,15 +959,34 @@ function boardHTML(tasks,pmeta){
   return `<div class="board">${cols}</div>`;
 }
 function timelineHTML(tasks,pmeta){
-  const byProj=groupByProject(tasks);
-  return Object.keys(byProj).map(pid=>{
-    const m=pmeta[pid]||{}; const g=ganttRows(byProj[pid]);
-    return `<div class="card pad">
-      <div class="pj-head" onclick="openDetail('${pid}')">
-        ${m.code?`<span class="pj-code">${m.code}</span>`:''}<span class="pj-name">${m.name||'案件'}</span></div>
-      ${g.rows?`<div class="gwin">${g.win}</div>${g.rows}`
-        :'<div class="task-meta">日付未設定のタスクのみ：'+byProj[pid].map(t=>t.title).join('、')+'</div>'}</div>`;
-  }).join('');
+  const dated=tasks.filter(t=>t.start_date&&t.end_date);
+  const undated=tasks.filter(t=>!(t.start_date&&t.end_date));
+  if(!dated.length) return '<div class="empty">日付つきのタスクがありません。<br>タスクに開始日・終了日を入れるとここに並びます。</div>';
+  const DAYPX=40;
+  let lo=Infinity,hi=-Infinity;
+  dated.forEach(t=>{lo=Math.min(lo,dnum(t.start_date));hi=Math.max(hi,dnum(t.end_date));});
+  lo-=1; hi+=1; const days=hi-lo+1; const trackW=days*DAYPX; const tdy=todayNum();
+  const grid=`width:${trackW}px;background-image:repeating-linear-gradient(to right,#ECECEC,#ECECEC 1px,transparent 1px,transparent ${DAYPX}px)`;
+  const todayLine=(tdy>=lo&&tdy<=hi)?`<div class="tl-today" style="left:${(tdy-lo)*DAYPX}px"></div>`:'';
+  // 日付ヘッダ
+  let head='';
+  for(let d=lo;d<=hi;d++){const dt=new Date(d*86400000);const dow=dt.getDay();
+    head+=`<div class="tl-day ${dow===0||dow===6?'we':''} ${d===tdy?'td':''}">${dt.getMonth()+1}/${dt.getDate()}<small>${DOW[dow]}</small></div>`;}
+  let rows=`<div class="tl-row tl-head"><div class="tl-name">タスク</div><div class="tl-cells" style="width:${trackW}px;display:flex">${head}</div></div>`;
+  const byProj=groupByProject(dated);
+  for(const pid of Object.keys(byProj)){
+    const m=pmeta[pid]||{};
+    rows+=`<div class="tl-row tl-proj"><div class="tl-name" onclick="openDetail('${pid}')">${m.code||''} ${m.name||'案件'}</div><div class="tl-cells" style="${grid}">${todayLine}</div></div>`;
+    byProj[pid].forEach(t=>{
+      const s=dnum(t.start_date),e=dnum(t.end_date);
+      const left=(s-lo)*DAYPX, w=(e-s+1)*DAYPX;
+      rows+=`<div class="tl-row"><div class="tl-name" title="${t.title}">${t.title}</div>
+        <div class="tl-cells" style="${grid}">${todayLine}
+          <div class="tl-bar s-${t.status}" style="left:${left}px;width:${w}px" onclick="openTask('${t.id}')">${t.title}</div></div></div>`;
+    });
+  }
+  const note=undated.length?`<div class="task-meta" style="margin-top:8px">日付未設定：${undated.map(t=>t.title).join('、')}</div>`:'';
+  return `<div class="tl"><div class="tl-scroll"><div class="tl-grid">${rows}</div></div></div>${note}`;
 }
 function listHTML(tasks,pmeta){
   const byProj=groupByProject(tasks);
