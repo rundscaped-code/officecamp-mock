@@ -137,6 +137,16 @@
     font-weight:700;padding:0 8px;overflow:hidden;white-space:nowrap;cursor:pointer;z-index:1}
   .gbar.s-未着手{background:#9AA0A6}.gbar.s-進行{background:var(--accent)}.gbar.s-完了{background:var(--good)}.gbar.s-保留{background:var(--warn)}
   .gtoday{position:absolute;top:0;bottom:0;width:2px;background:var(--bad);opacity:.6;z-index:2}
+  /* タスク詳細モーダル */
+  .tasklink{color:var(--accent);cursor:pointer;font-weight:600}
+  .tasklink:hover{text-decoration:underline}
+  .modal.wide{width:600px}
+  .tm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .tm-grid .field{margin:0}
+  .sub-line{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+  .sub-line:first-child{border-top:none}
+  .sub-line .st{flex:1;min-width:0}
+  .modal-b.scroll{max-height:calc(90vh - 120px);overflow:auto}
   /* master-detail */
   .md{display:grid;grid-template-columns:minmax(420px,1.1fr) minmax(360px,1fr);gap:16px;align-items:start}
   .md .list-card{max-height:calc(100dvh - 150px);overflow:auto}
@@ -226,7 +236,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=4"></script>
+<script src="shared.js?v=5"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -379,7 +389,7 @@ async function selectProject(id){
   const box=document.getElementById('projDetail');
   if(!box)return;
   box.innerHTML='<div class="empty">読み込み中…</div>';
-  const {p,expenses,orders,members}=await OC.loadProjectDetail(id);
+  const {p,expenses,orders,members,tasks}=await OC.loadProjectDetail(id);
   const leader=p.leader_id?OC.personName(p.leader_id):'—';
   box.innerHTML=`
     <div class="dh"><div><div class="nm">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name||'—')}</div>
@@ -403,6 +413,11 @@ async function selectProject(id){
     ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>
       <div class="muted" style="font-size:12px">${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}${e.kind==='外注'&&e.vendor?'・外注 '+esc(e.vendor.name):''}</div></div>
       <div class="a">${OC.yen(e.amount)} <span class="muted" style="font-size:11px">${esc(e.status||'')}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
+    <div class="seclabel">タスク（${(tasks||[]).filter(t=>!t.parent_task_id).length}）</div>
+    ${(tasks||[]).filter(t=>!t.parent_task_id).map(t=>{const sc=(tasks||[]).filter(s=>s.parent_task_id===t.id).length;
+      return `<div class="ln"><div><span class="tasklink" onclick="openTaskModal('${t.id}')">${esc(t.title)}</span>${sc?' <span class="muted" style="font-size:11px">＋'+sc+'</span>':''}
+      <div class="muted" style="font-size:12px"><span class="pill" style="background:transparent;padding:0"><i class="dot s-${t.status||'未着手'}"></i>${esc(t.status||'未着手')}</span>　${t.start_date?OC.fmtDate(t.start_date):'—'} → ${t.end_date?OC.fmtDate(t.end_date):'—'}</div></div>
+      <div class="a" style="font-weight:400">${(t.task_assignees||[]).map(a=>'<span class="achip">'+esc(OC.personName(a.user_id))+'</span>').join(' ')}</div></div>`;}).join('')||'<div class="muted" style="font-size:13px;padding:6px 0">タスクはありません</div>'}
     <div class="seclabel">発注（${orders.length}）</div>
     ${orders.length?orders.map(o=>`<div class="ln"><div><b>${esc(o.title)}</b> <span class="pill">${esc(o.kind)}</span>
       <div class="muted" style="font-size:12px">宛先 ${o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))}・${esc(o.status||'')}</div></div>
@@ -639,21 +654,68 @@ function asgHTML(t){
   const opts=OC.people.filter(p=>!taken.includes(p.id)).map(p=>`<option value="${p.id}">${esc(p.name||p.email)}</option>`).join('');
   return `<span class="achips">${chips}<select class="addasg" onchange="assignPick('${t.id}',this)"><option value="">＋</option>${opts}</select></span>`;
 }
-function titleSpan(t){return `<span class="editable-title" onclick="editTitle('${t.id}',this)">${esc(t.title)}</span>`;}
-function editTitle(id,el){
-  const t=tasksCache.find(x=>x.id===id);const cur=t?t.title:el.textContent;
-  el.outerHTML=`<input class="einput" style="width:100%;max-width:340px" value="${esc(cur)}" onblur="saveTitle('${id}',this.value)" onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value='';this.blur();}">`;
-  const inp=document.querySelector('input.einput');if(inp){inp.focus();inp.select();}
-}
-async function saveTitle(id,val){val=val.trim();if(!val){paintTasks();return;}await saveTaskField(id,'title',val);}
+function titleSpan(t){return `<span class="tasklink" onclick="openTaskModal('${t.id}')">${esc(t.title)}</span>`;}
 async function saveTaskField(id,field,value){
   let v=value;if((field==='start_date'||field==='end_date')&&v==='')v=null;if(field==='progress')v=parseInt(value,10)||0;
   const {error}=await OC.updateTask(id,{[field]:v});
   if(error){toast('保存エラー: '+error.message);return;}
   toast('保存しました');reloadTasks();
 }
-async function assignPick(id,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.assignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast('担当を追加');reloadTasks();}
-async function removeAsg(id,uid){const {error}=await OC.unassignTask(id,uid);if(error){toast('エラー: '+error.message);return;}reloadTasks();}
+async function assignPick(id,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.assignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast('担当を追加');refreshAfterTaskEdit(id);}
+async function removeAsg(id,uid){const {error}=await OC.unassignTask(id,uid);if(error){toast('エラー: '+error.message);return;}refreshAfterTaskEdit(id);}
+// --- タスク詳細モーダル ---
+async function refreshAfterTaskEdit(id){ try{tasksCache=await OC.loadAllTasks();}catch(e){} paintTasks(); if(document.getElementById('tmRoot'))openTaskModal(id,true); }
+async function openTaskModal(id,silent){
+  let t=tasksCache.find(x=>x.id===id);
+  if(!t){ try{tasksCache=await OC.loadAllTasks();}catch(e){} t=tasksCache.find(x=>x.id===id); }
+  if(!t){toast('タスクが見つかりません');return;}
+  const subs=tasksCache.filter(s=>s.parent_task_id===id);
+  const proj=t.proj||(OC.projects.find(p=>p.id===t.project_id)||{});
+  const asg=asgHTML(t);
+  modal(`<div class="modal wide" id="tmRoot"><div class="modal-h">タスク詳細
+    <span class="muted" style="font-weight:600;font-size:12px;margin-left:8px">${esc(proj.code?proj.code+' ':'')}${esc(proj.name||'')}</span></div>
+    <div class="modal-b scroll">
+      <div class="field"><label class="fl">タイトル</label><input id="tmTitle" class="input" value="${esc(t.title||'')}"></div>
+      <div class="tm-grid">
+        <div class="field"><label class="fl">状態</label><select id="tmStatus" class="input">${TSTATUS.map(s=>`<option ${s===(t.status||'未着手')?'selected':''}>${s}</option>`).join('')}</select></div>
+        <div class="field"><label class="fl">進捗（%）</label><input id="tmProg" class="input" type="number" min="0" max="100" value="${t.progress!=null?t.progress:0}"></div>
+        <div class="field"><label class="fl">開始日</label><input id="tmStart" class="input" type="date" value="${t.start_date||''}"></div>
+        <div class="field"><label class="fl">終了日</label><input id="tmEnd" class="input" type="date" value="${t.end_date||''}"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label class="fl">担当</label>${asg}</div>
+      <div class="field"><label class="fl">メモ</label><textarea id="tmNote" class="input" rows="2">${esc(t.note||'')}</textarea></div>
+      <div class="seclabel">サブタスク（${subs.length}）</div>
+      ${subs.map(s=>`<div class="sub-line">
+        <span class="st"><span class="tasklink" onclick="openTaskModal('${s.id}')">${esc(s.title)}</span></span>
+        <select class="einput" onchange="saveSubField('${s.id}','${id}','status',this.value)">${TSTATUS.map(x=>`<option ${x===(s.status||'未着手')?'selected':''}>${x}</option>`).join('')}</select>
+      </div>`).join('')||'<div class="muted" style="font-size:12.5px;padding:4px 0">サブタスクはありません</div>'}
+      <div class="sub-line"><input id="tmNewSub" class="input" placeholder="サブタスクを追加…" style="flex:1" onkeydown="if(event.key==='Enter')addSub('${id}')"><button class="btn ghost sm" onclick="addSub('${id}')">追加</button></div>
+    </div>
+    <div class="modal-f"><button class="btn ghost" onclick="closeModal()">閉じる</button><button class="btn" onclick="saveTaskModal('${id}')">保存</button></div>
+  </div>`);
+}
+async function saveTaskModal(id){
+  const v=x=>document.getElementById(x).value;
+  const patch={title:v('tmTitle').trim()||'(無題)',status:v('tmStatus'),progress:parseInt(v('tmProg'),10)||0,
+    start_date:v('tmStart')||null,end_date:v('tmEnd')||null,note:v('tmNote')};
+  const {error}=await OC.updateTask(id,patch);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('保存しました');closeModal();reloadTasks();
+  if(curView==='projects'&&curProject)selectProject(curProject);
+}
+async function saveSubField(sid,parentId,field,value){
+  let v=value;if((field==='start_date'||field==='end_date')&&v==='')v=null;
+  const {error}=await OC.updateTask(sid,{[field]:v});
+  if(error){toast('保存エラー: '+error.message);return;}
+  refreshAfterTaskEdit(parentId);
+}
+async function addSub(parentId){
+  const inp=document.getElementById('tmNewSub');const title=(inp?inp.value:'').trim();if(!title)return;
+  const parent=tasksCache.find(x=>x.id===parentId);
+  const {error}=await OC.addTask({project_id:parent?parent.project_id:null,parent_task_id:parentId,title,status:'未着手'});
+  if(error){toast('追加エラー: '+error.message);return;}
+  toast('サブタスクを追加');refreshAfterTaskEdit(parentId);
+}
 function taskGroups(){const g={};tasksCache.forEach(t=>{const k=t.project_id||'_';(g[k]=g[k]||{proj:t.proj,items:[]}).items.push(t);});return Object.values(g);}
 // --- リスト ---
 function paintTaskList(body){
@@ -713,7 +775,7 @@ function paintTaskTimeline(body){
   const head=`<div class="grow ghead"><div class="gname">案件 / タスク</div><div class="gcells" style="width:${totalW}px;display:flex">${days.map(d=>{
     const wd=d.getDay();const ds=ymd(d);return `<div class="gday ${wd===0||wd===6?'we':''} ${ds===today?'td':''}">${d.getMonth()+1}/${d.getDate()}<br>${'日月火水木金土'[wd]}</div>`;}).join('')}</div></div>`;
   const bar=t=>{if(!t.start_date||!t.end_date)return '';const left=dDiff(minD,t.start_date)*W;const w=(dDiff(t.start_date,t.end_date)+1)*W;
-    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="editTitle('${t.id}',this)" title="${esc(t.title)}">${esc(t.title)}</div>`;};
+    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openTaskModal('${t.id}')" title="${esc(t.title)}">${esc(t.title)}</div>`;};
   const rows=taskGroups().map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
