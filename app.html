@@ -12,6 +12,24 @@
     --accent:#1A1A1A;--accent-soft:#EDEDED;--amber:#6E6E6E;--gray:#BFBFBF;
     --shadow:0 4px 18px rgba(0,0,0,.06);--radius:16px;
   }
+  [data-theme="dark"]{
+    --bg:#15161A;--card:#1E1F24;--ink:#ECECEC;--sub:#9597A0;--line:#2D2E34;
+    --accent:#EDEDED;--accent-soft:#2C2D33;--amber:#9AA0A6;--gray:#55565B;
+    --shadow:0 4px 18px rgba(0,0,0,.45);
+  }
+  [data-theme="dark"] .btn{color:#16171A}
+  [data-theme="dark"] .btn-ghost{background:var(--card);color:var(--ink)}
+  [data-theme="dark"] .toast{background:#000;color:#fff}
+  [data-theme="dark"] .st-sel.s-未着手,[data-theme="dark"] .st-wait{background:#2C2D33;color:#9AA0A6}
+  /* 設定（アカウント）まわり */
+  .acct-btn{position:fixed;top:max(env(safe-area-inset-top),10px);right:14px;z-index:40;
+    width:40px;height:40px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);
+    color:var(--ink);font-size:18px;cursor:pointer;box-shadow:var(--shadow);display:none}
+  .acct-btn.show{display:block}
+  .sheet{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center}
+  .sheet.hidden{display:none}
+  .sheet-card{background:var(--card);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px 20px max(env(safe-area-inset-bottom),20px);display:flex;flex-direction:column;gap:10px}
+  .sheet-h{font-size:18px;font-weight:800;margin-bottom:2px}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0}
   body{background:var(--bg);color:var(--ink);
@@ -290,6 +308,27 @@
 <body>
 <div class="wrap" id="wrap">
 
+  <button id="acctBtn" class="acct-btn" onclick="toggleSettings(true)" aria-label="設定">⚙</button>
+  <div id="settings" class="sheet hidden" onclick="if(event.target===this)toggleSettings(false)">
+    <div class="sheet-card">
+      <div class="sheet-h">設定</div>
+      <div id="whoamiSheet" class="date" style="margin-bottom:6px">—</div>
+      <button class="btn btn-ghost" onclick="toggleNameEdit()">✎ 表示名を変更</button>
+      <div id="nameEdit" class="hidden row-inline">
+        <input class="control" id="nameInput" placeholder="表示名（例：丹羽駿介）" style="flex:1">
+        <button class="btn btn-ghost mini" onclick="saveName()">保存</button>
+      </div>
+      <button class="btn btn-ghost" onclick="togglePwEdit()">🔑 パスワードを設定 / 変更</button>
+      <div id="pwEdit" class="hidden row-inline">
+        <input class="control" id="pwInput" type="password" autocomplete="new-password" placeholder="新しいパスワード（6文字以上）" style="flex:1">
+        <button class="btn btn-ghost mini" onclick="savePassword()">設定</button>
+      </div>
+      <button class="btn btn-ghost" id="themeBtn" onclick="toggleTheme()">🌗 ライト / ダーク切替</button>
+      <button class="btn" onclick="logout()">⏻ ログアウト</button>
+      <button class="btn btn-ghost" onclick="toggleSettings(false)">閉じる</button>
+    </div>
+  </div>
+
   <!-- 設定未投入バナー -->
   <div id="needConfig" class="login hidden">
     <h1>オフィスキャンプ 案件管理</h1>
@@ -301,28 +340,19 @@
   <div id="loginView" class="login hidden">
     <h1>オフィスキャンプ</h1>
     <p>案件・経費・予定の管理。会社のメールでログインします。</p>
-    <input id="loginEmail" class="control" type="email" inputmode="email" placeholder="you@officecamp.jp">
-    <button class="btn" id="loginBtn" onclick="sendMagicLink()">ログインリンクを送る</button>
+    <input id="loginEmail" class="control" type="email" inputmode="email" autocomplete="username" placeholder="you@officecamp.jp">
+    <input id="loginPass" class="control" type="password" autocomplete="current-password" placeholder="パスワード" onkeydown="if(event.key==='Enter')signIn()">
+    <button class="btn" id="loginBtn" onclick="signIn()">ログイン</button>
+    <p style="text-align:center;margin:0"><a id="magicLink" style="cursor:pointer;color:var(--sub);font-size:13px" onclick="toggleMagic()">初回ログイン・パスワードを忘れた方</a></p>
     <p id="loginMsg" style="color:var(--accent)"></p>
   </div>
 
   <!-- 経費入力 -->
   <section id="s-expense" class="hidden" style="display:flex;flex-direction:column;flex:1">
     <div class="head"><h1>経費を記録</h1>
-      <div class="date"><span id="whoami">その場でパッと。</span>
-        <a id="editNameLink" style="cursor:pointer" onclick="toggleNameEdit()">✎ 名前を変更</a></div>
-      <div id="nameEdit" class="hidden row-inline" style="margin-top:8px">
-        <input class="control" id="nameInput" placeholder="表示名（例：丹羽駿介）" style="flex:1">
-        <button class="btn btn-ghost mini" onclick="saveName()">保存</button>
-      </div>
+      <div class="date"><span id="whoami">その場でパッと。</span></div>
     </div>
     <div class="screen">
-      <div class="nl">
-        <div class="lab">✦ 文章で入力（自動で分解）</div>
-        <input class="nl-input" id="nlInput" placeholder="例）○○ビル改修で木材3000円" oninput="runNL()">
-        <div class="parsed" id="parsed"></div>
-        <div class="nl-hint">打つだけ → 金額・案件・メモに自動で振り分け。確認して記録。</div>
-      </div>
       <div class="sec">内容</div>
       <div class="card pad">
         <div class="amount-row"><span class="yen">¥</span><input class="amount" id="amt" inputmode="numeric" placeholder="0"></div>
@@ -486,12 +516,65 @@ function nav(name){
 }
 
 // ---- 認証 ----
+async function signIn(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const password=document.getElementById('loginPass').value;
+  const msg=document.getElementById('loginMsg');
+  if(!email||!password){msg.textContent="メールとパスワードを入力してください。";return;}
+  msg.textContent="ログイン中…";
+  const {error}=await sb.auth.signInWithPassword({email,password});
+  // 成功時は onAuthStateChange が boot() を呼ぶ
+  if(error)msg.textContent="ログインできません: "+(error.message==='Invalid login credentials'?'メールかパスワードが違います':error.message);
+}
+let loginMode='password';
+function toggleMagic(){
+  loginMode = loginMode==='password' ? 'magic' : 'password';
+  const pass=document.getElementById('loginPass');
+  const btn=document.getElementById('loginBtn');
+  const link=document.getElementById('magicLink');
+  const msg=document.getElementById('loginMsg');
+  if(loginMode==='magic'){
+    pass.classList.add('hidden');
+    btn.textContent="ログインリンクを送る"; btn.setAttribute('onclick','sendMagicLink()');
+    link.textContent="パスワードでログインに戻る";
+    msg.textContent="メール内のリンクで初回ログイン／パスワード再設定ができます。ログイン後「🔑 パスワード」で設定してください。";
+  }else{
+    pass.classList.remove('hidden');
+    btn.textContent="ログイン"; btn.setAttribute('onclick','signIn()');
+    link.textContent="初回ログイン・パスワードを忘れた方"; msg.textContent="";
+  }
+}
 async function sendMagicLink(){
   const email=document.getElementById('loginEmail').value.trim();
-  if(!email)return;
+  if(!email){document.getElementById('loginMsg').textContent="メールを入力してください。";return;}
   const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.href}});
   document.getElementById('loginMsg').textContent =
     error ? ("エラー: "+error.message) : "メールを確認してください。リンクから戻るとログインできます。";
+}
+function togglePwEdit(){document.getElementById('pwEdit').classList.toggle('hidden');}
+async function savePassword(){
+  const p=document.getElementById('pwInput').value;
+  if(!p||p.length<6){toast('6文字以上で入力してください');return;}
+  const {error}=await sb.auth.updateUser({password:p});
+  toast(error?('エラー: '+error.message):'パスワードを設定しました');
+  if(!error){document.getElementById('pwInput').value='';document.getElementById('pwEdit').classList.add('hidden');}
+}
+async function logout(){await sb.auth.signOut();location.reload();}
+function toggleSettings(show){
+  const s=document.getElementById('settings');
+  const open=(show===undefined)?s.classList.contains('hidden'):show;
+  s.classList.toggle('hidden',!open);
+}
+function applyTheme(){
+  let t=null; try{t=localStorage.getItem('oc_theme');}catch(e){}
+  if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
+  document.documentElement.dataset.theme=t;
+}
+function toggleTheme(){
+  const cur=document.documentElement.dataset.theme==='dark'?'dark':'light';
+  const next=cur==='dark'?'light':'dark';
+  document.documentElement.dataset.theme=next;
+  try{localStorage.setItem('oc_theme',next);}catch(e){}
 }
 
 // ---- データ ----
@@ -504,6 +587,8 @@ async function loadMe(){
   const nm=data?.name||'';
   document.getElementById('whoami').textContent =
     (nm||user.email)+"（"+(data?.role||'—')+"）として記録";
+  const ws=document.getElementById('whoamiSheet');
+  if(ws)ws.textContent=(nm||user.email)+"（"+(data?.role||'—')+"）";
   const ni=document.getElementById('nameInput'); if(ni)ni.value=nm;
   applyRole();
   // 名前未登録なら入力欄を開いて促す
@@ -1394,12 +1479,12 @@ async function record(){
   if(error){toast('保存エラー: '+error.message);return;}
   toast(yen(amount)+' を記録しました');
   document.getElementById('amt').value='';document.getElementById('memo').value='';
-  document.getElementById('nlInput').value='';document.getElementById('parsed').classList.remove('show');
   document.getElementById('receipt').value='';document.getElementById('ocrMsg').textContent='';receiptPath=null;
 }
 
 // ---- 起動 ----
 (async function init(){
+  applyTheme();
   if(!configured){showOnly('needConfig');return;}
   sb=supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
   const {data:{session}}=await sb.auth.getSession();
@@ -1408,13 +1493,16 @@ async function record(){
     return;}
   boot();
 })();
+let booted=false;
 async function boot(){
+  if(booted)return; booted=true;
   await loadMe();
   await loadPeople();
   await loadDepartments();
   await loadProjectOptions();
   await loadVendors();
-  nav('expense');
+  document.getElementById('acctBtn').classList.add('show');
+  nav('projects');
 }
 </script>
 </body>
