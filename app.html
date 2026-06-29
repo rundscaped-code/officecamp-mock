@@ -850,7 +850,7 @@ function renderProjTable(rows){
     <th class="l" onclick="setProjSort('name')">案件${ar('name')}</th>
     <th onclick="setProjSort('revenue')">受注${ar('revenue')}</th>
     <th onclick="setProjSort('profit')">粗利${ar('profit')}</th>
-    <th onclick="setProjSort('profit_rate')">率${ar('profit_rate')}</th>
+    <th onclick="setProjSort('profit_rate')">粗利率${ar('profit_rate')}</th>
     <th class="l" onclick="setProjSort('status')">状態${ar('status')}</th>
   </tr></thead><tbody>`;
   const body=sorted.map(p=>`<tr data-pid="${p.id}" onclick="openDetail('${p.id}')">
