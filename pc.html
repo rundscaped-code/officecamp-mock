@@ -93,6 +93,50 @@
   td .einput{width:100%;max-width:none;padding:4px 6px;text-align:inherit}
   td.ed{padding:6px 8px}
   .link{color:var(--accent);cursor:pointer}
+  /* クリックで編集（経理セル等） */
+  .fcell{cursor:text;border-radius:6px}
+  .fcell:hover{box-shadow:inset 0 0 0 1px var(--line)}
+  .editable-title{cursor:text;border-radius:6px;padding:1px 3px}
+  .editable-title:hover{box-shadow:inset 0 0 0 1px var(--line)}
+  /* ビュー切替 */
+  .viewbar{display:inline-flex;gap:3px;background:var(--accent-soft);padding:3px;border-radius:10px}
+  .viewbar button{border:none;background:transparent;color:var(--sub);font-weight:700;font-size:13px;padding:7px 14px;border-radius:8px;cursor:pointer}
+  .viewbar button.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+  /* タスク担当チップ */
+  .achips{display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center}
+  .achip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;padding:2px 7px;border-radius:20px;background:var(--accent-soft);color:var(--accent)}
+  .achip b{cursor:pointer;opacity:.6}.achip b:hover{opacity:1}
+  .addasg{border:1px dashed var(--line);background:transparent;color:var(--sub);border-radius:20px;font-size:11.5px;padding:2px 8px;cursor:pointer;appearance:none}
+  /* ボード */
+  .board{display:flex;gap:14px;align-items:flex-start;overflow-x:auto;padding-bottom:8px}
+  .bcol{flex:0 0 280px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px;min-height:120px}
+  .bcol.over{border-color:var(--accent);background:var(--accent-soft)}
+  .bcol-h{display:flex;align-items:center;gap:7px;font-weight:800;font-size:13px;margin:2px 4px 10px}
+  .bcol-h .c{margin-left:auto;color:var(--sub);font-weight:700;background:var(--panel);border-radius:10px;padding:0 8px}
+  .bcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:9px;box-shadow:var(--shadow);cursor:grab}
+  .bcard.drag{opacity:.4}
+  .bcard .bpj{font-size:11px;color:var(--sub);font-weight:700;margin-bottom:3px}
+  .bcard .bt{font-weight:700;font-size:13.5px;margin-bottom:6px}
+  .bcard .bd{font-size:11.5px;color:var(--sub);margin-top:5px}
+  /* タイムライン（ガント） */
+  .gwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+  .grid-g{min-width:max-content}
+  .grow{display:flex;align-items:stretch;border-top:1px solid var(--line);min-height:34px}
+  .grow:first-child{border-top:none}
+  .gname{position:sticky;left:0;z-index:2;width:200px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+    padding:7px 10px;font-size:12.5px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .gcells{position:relative;flex:none}
+  .ghead .gname{background:var(--accent-soft);font-weight:800;z-index:3}
+  .ghead{background:var(--accent-soft)}
+  .gday{width:30px;flex:none;text-align:center;font-size:9.5px;color:var(--sub);padding:4px 0;line-height:1.25;border-left:1px solid var(--line)}
+  .gday.we{background:rgba(0,0,0,.03)}.gday.td{background:#FDECEC;color:var(--bad);font-weight:700}
+  [data-theme="dark"] .gday.we{background:rgba(255,255,255,.04)}
+  .gproj .gname{font-weight:800;background:var(--bg)}
+  .gproj .gcells{background:var(--bg)}
+  .gbar{position:absolute;top:6px;height:21px;border-radius:6px;display:flex;align-items:center;color:#fff;font-size:10.5px;
+    font-weight:700;padding:0 8px;overflow:hidden;white-space:nowrap;cursor:pointer;z-index:1}
+  .gbar.s-未着手{background:#9AA0A6}.gbar.s-進行{background:var(--accent)}.gbar.s-完了{background:var(--good)}.gbar.s-保留{background:var(--warn)}
+  .gtoday{position:absolute;top:0;bottom:0;width:2px;background:var(--bad);opacity:.6;z-index:2}
   /* master-detail */
   .md{display:grid;grid-template-columns:minmax(420px,1.1fr) minmax(360px,1fr);gap:16px;align-items:start}
   .md .list-card{max-height:calc(100dvh - 150px);overflow:auto}
@@ -182,7 +226,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=3"></script>
+<script src="shared.js?v=4"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -543,41 +587,142 @@ function paintFinance(){
     <th onclick="sortFin('profit_rate')">率${ar('profit_rate')}</th>
     <th class="l">納品</th>
   </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:default">
-    <td class="l"><b><span class="link" onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b></td>
-    <td class="l ed"><select class="einput" onchange="saveProjField('${p.id}','status',this.value)">${pstatusOptions(p.status)}</select></td>
-    <td class="l ed"><select class="einput" onchange="saveProjField('${p.id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></td>
-    <td class="ed"><input class="einput" type="number" value="${p.revenue||0}" style="text-align:right" onchange="saveProjField('${p.id}','amount',this.value)"></td>
+    <td class="l"><b><span class="link" onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
+    <td class="l fcell" onclick="finEdit(this,'${p.id}','status')"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'—')}</span></td>
+    <td class="l fcell" onclick="finEdit(this,'${p.id}','leader_id')">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
+    <td class="fcell" onclick="finEdit(this,'${p.id}','amount')">${OC.yen(p.revenue)}</td>
     <td>${OC.yen(p.cost)}</td><td>${OC.yen(p.outsource)}</td>
     <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.yen(p.profit)}</b></td><td>${p.profit_rate}%</td>
-    <td class="l ed"><input class="einput" type="date" value="${p.delivery_date||''}" onchange="saveProjField('${p.id}','delivery_date',this.value)"></td>
+    <td class="l fcell" onclick="finEdit(this,'${p.id}','delivery_date')">${OC.fmtDate(p.delivery_date)}</td>
   </tr>`).join('')||'<tr><td class="empty" colspan="9">該当する案件がありません</td></tr>'}</tbody></table>`;
 }
 
-// ---- タスク（案件ごと） ----
+function finEdit(td,pid,field){
+  if(td.querySelector('select,input'))return;
+  const p=OC.projects.find(x=>x.id===pid);if(!p)return;
+  let ctrl;
+  if(field==='status')ctrl=`<select class="einput" onchange="saveProjField('${pid}','status',this.value)" onblur="paintFinance()">${pstatusOptions(p.status)}</select>`;
+  else if(field==='leader_id')ctrl=`<select class="einput" onchange="saveProjField('${pid}','leader_id',this.value)" onblur="paintFinance()">${leaderOptions(p.leader_id)}</select>`;
+  else if(field==='amount')ctrl=`<input class="einput" type="number" style="text-align:right" value="${p.revenue||0}" onblur="saveProjField('${pid}','amount',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
+  else ctrl=`<input class="einput" type="date" value="${p.delivery_date||''}" onblur="saveProjField('${pid}','delivery_date',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
+  td.innerHTML=ctrl;const el=td.querySelector('select,input');if(el)el.focus();
+}
+// ---- タスク（タイムライン / ボード / リスト） ----
+const TSTATUS=['未着手','進行','完了','保留'];
+let taskView='list', tasksCache=[];
 async function renderTasks(c){
   c.innerHTML='<div class="empty">読み込み中…</div>';
-  let tasks;
-  try{ tasks=await OC.loadAllTasks(); }
+  try{ tasksCache=await OC.loadAllTasks(); }
   catch(e){ c.innerHTML='<div class="card"><div class="card-b empty">タスクの読み込みに失敗しました：'+esc(e.message||e)+'</div></div>'; return; }
-  if(!tasks||!tasks.length){c.innerHTML='<div class="card"><div class="card-b empty">タスクはまだありません</div></div>';return;}
-  const groups={};
-  tasks.forEach(t=>{const k=t.project_id||'_';(groups[k]=groups[k]||{proj:t.proj,items:[]}).items.push(t);});
-  const stPill=s=>`<span class="pill" style="background:transparent"><i class="dot s-${s||'未着手'}"></i>${esc(s||'未着手')}</span>`;
-  c.innerHTML=Object.values(groups).map(g=>{
+  document.getElementById('topActions').innerHTML=`<div class="viewbar">
+    <button id="tvTimeline" onclick="setTaskView('timeline')">タイムライン</button>
+    <button id="tvBoard" onclick="setTaskView('board')">ボード</button>
+    <button id="tvList" onclick="setTaskView('list')">リスト</button></div>`;
+  c.innerHTML='<div id="taskBody"></div>';
+  paintTasks();
+}
+function setTaskView(v){taskView=v;paintTasks();}
+async function reloadTasks(){ try{tasksCache=await OC.loadAllTasks();}catch(e){} paintTasks(); }
+function paintTasks(){
+  ['timeline','board','list'].forEach(v=>{const b=document.getElementById('tv'+v.charAt(0).toUpperCase()+v.slice(1));if(b)b.classList.toggle('on',taskView===v);});
+  const body=document.getElementById('taskBody');if(!body)return;
+  if(!tasksCache.length){body.innerHTML='<div class="card"><div class="card-b empty">タスクはまだありません</div></div>';return;}
+  if(taskView==='list')return paintTaskList(body);
+  if(taskView==='board')return paintTaskBoard(body);
+  if(taskView==='timeline')return paintTaskTimeline(body);
+}
+// --- 共通の編集パーツ ---
+function statusSel(t){return `<select class="einput" onchange="saveTaskField('${t.id}','status',this.value)">${TSTATUS.map(s=>`<option ${s===(t.status||'未着手')?'selected':''}>${s}</option>`).join('')}</select>`;}
+function asgHTML(t){
+  const chips=(t.task_assignees||[]).map(a=>`<span class="achip">${esc(OC.personName(a.user_id))}<b onclick="removeAsg('${t.id}','${a.user_id}')">×</b></span>`).join('');
+  const taken=(t.task_assignees||[]).map(a=>a.user_id);
+  const opts=OC.people.filter(p=>!taken.includes(p.id)).map(p=>`<option value="${p.id}">${esc(p.name||p.email)}</option>`).join('');
+  return `<span class="achips">${chips}<select class="addasg" onchange="assignPick('${t.id}',this)"><option value="">＋</option>${opts}</select></span>`;
+}
+function titleSpan(t){return `<span class="editable-title" onclick="editTitle('${t.id}',this)">${esc(t.title)}</span>`;}
+function editTitle(id,el){
+  const t=tasksCache.find(x=>x.id===id);const cur=t?t.title:el.textContent;
+  el.outerHTML=`<input class="einput" style="width:100%;max-width:340px" value="${esc(cur)}" onblur="saveTitle('${id}',this.value)" onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value='';this.blur();}">`;
+  const inp=document.querySelector('input.einput');if(inp){inp.focus();inp.select();}
+}
+async function saveTitle(id,val){val=val.trim();if(!val){paintTasks();return;}await saveTaskField(id,'title',val);}
+async function saveTaskField(id,field,value){
+  let v=value;if((field==='start_date'||field==='end_date')&&v==='')v=null;if(field==='progress')v=parseInt(value,10)||0;
+  const {error}=await OC.updateTask(id,{[field]:v});
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('保存しました');reloadTasks();
+}
+async function assignPick(id,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.assignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast('担当を追加');reloadTasks();}
+async function removeAsg(id,uid){const {error}=await OC.unassignTask(id,uid);if(error){toast('エラー: '+error.message);return;}reloadTasks();}
+function taskGroups(){const g={};tasksCache.forEach(t=>{const k=t.project_id||'_';(g[k]=g[k]||{proj:t.proj,items:[]}).items.push(t);});return Object.values(g);}
+// --- リスト ---
+function paintTaskList(body){
+  body.innerHTML=taskGroups().map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
-    const taskRow=(t,sub)=>`<tr style="cursor:default">
-      <td class="l" style="${sub?'padding-left:30px':''}">${sub?'<span class="muted">↳ </span>':''}${esc(t.title)}</td>
-      <td class="l">${stPill(t.status)}</td>
-      <td class="l">${OC.fmtDate(t.start_date)} → ${OC.fmtDate(t.end_date)}</td>
-      <td class="l">${(t.task_assignees||[]).map(a=>'<span class="pill">'+esc(OC.personName(a.user_id))+'</span>').join(' ')||'<span class="muted">—</span>'}</td>
-      <td>${t.progress!=null?t.progress+'%':'—'}</td></tr>`;
+    const row=(t,sub)=>`<tr style="cursor:default">
+      <td class="l" style="${sub?'padding-left:28px':''}">${sub?'<span class="muted">↳ </span>':''}${titleSpan(t)}</td>
+      <td class="l ed" style="width:110px">${statusSel(t)}</td>
+      <td class="l ed" style="width:150px"><input class="einput" type="date" value="${t.start_date||''}" onchange="saveTaskField('${t.id}','start_date',this.value)"></td>
+      <td class="l ed" style="width:150px"><input class="einput" type="date" value="${t.end_date||''}" onchange="saveTaskField('${t.id}','end_date',this.value)"></td>
+      <td class="l">${asgHTML(t)}</td></tr>`;
     return `<div class="card" style="margin-bottom:16px"><div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'案件なし')}
-      <span class="muted" style="margin-left:auto;font-weight:700">${g.items.length}件</span></div>
+      <span class="muted" style="margin-left:auto;font-weight:700">${tops.length}件</span></div>
       <div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
-        <th class="l">タスク</th><th class="l">状態</th><th class="l">期間</th><th class="l">担当</th><th>進捗</th>
-      </tr></thead><tbody>${tops.map(t=>taskRow(t,false)+subs(t).map(s=>taskRow(s,true)).join('')).join('')}</tbody></table></div></div>`;
+        <th class="l">タスク</th><th class="l">状態</th><th class="l">開始</th><th class="l">終了</th><th class="l">担当</th>
+      </tr></thead><tbody>${tops.map(t=>row(t,false)+subs(t).map(s=>row(s,true)).join('')).join('')}</tbody></table></div></div>`;
   }).join('');
+}
+// --- ボード（ドラッグで状態変更） ---
+function paintTaskBoard(body){
+  const tops=tasksCache.filter(t=>!t.parent_task_id);
+  body.innerHTML=`<div class="board">${TSTATUS.map(st=>{
+    const list=tops.filter(t=>(t.status||'未着手')===st);
+    return `<div class="bcol" data-st="${st}" ondragover="boardOver(event,this)" ondragleave="this.classList.remove('over')" ondrop="boardDrop(event,this)">
+      <div class="bcol-h"><i class="dot s-${st}"></i>${st}<span class="c">${list.length}</span></div>
+      ${list.map(t=>`<div class="bcard" draggable="true" ondragstart="boardDrag(event,'${t.id}')" ondragend="this.classList.remove('drag')">
+        <div class="bpj">${esc(t.proj?.name||'案件なし')}</div>
+        <div class="bt">${titleSpan(t)}</div>
+        ${asgHTML(t)}
+        <div class="bd">${t.start_date?OC.fmtDate(t.start_date):''}${t.end_date?' → '+OC.fmtDate(t.end_date):''}</div>
+      </div>`).join('')||'<div class="muted" style="font-size:12px;padding:8px 4px">なし</div>'}
+    </div>`;
+  }).join('')}</div>`;
+}
+let _dragTask=null;
+function boardDrag(e,id){_dragTask=id;e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',id);}catch(_){}; e.target.classList.add('drag');}
+function boardOver(e,col){e.preventDefault();col.classList.add('over');}
+function boardDrop(e,col){e.preventDefault();col.classList.remove('over');const id=_dragTask||e.dataTransfer.getData('text/plain');const st=col.dataset.st;_dragTask=null;
+  const t=tasksCache.find(x=>x.id===id);if(!t||(t.status||'未着手')===st)return;saveTaskField(id,'status',st);}
+// --- タイムライン（ガント） ---
+function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function pD(s){return new Date(s+'T00:00:00');}
+function dDiff(a,b){return Math.round((pD(b)-pD(a))/86400000);}
+function paintTaskTimeline(body){
+  const dated=tasksCache.filter(t=>t.start_date||t.end_date);
+  if(!dated.length){body.innerHTML='<div class="card"><div class="card-b empty">日付の入ったタスクがありません（リスト/ボードで日付を入れると表示されます）</div></div>';return;}
+  let min=null,max=null;
+  dated.forEach(t=>{[t.start_date,t.end_date].forEach(d=>{if(!d)return;if(!min||d<min)min=d;if(!max||d>max)max=d;});});
+  const minD=ymd((d=>{d.setDate(d.getDate()-2);return d;})(pD(min)));
+  const maxD=ymd((d=>{d.setDate(d.getDate()+2);return d;})(pD(max)));
+  const n=dDiff(minD,maxD)+1, W=30, totalW=n*W;
+  const today=ymd(new Date());
+  const days=[];for(let i=0;i<n;i++){const d=pD(minD);d.setDate(d.getDate()+i);days.push(d);}
+  const todayLeft=(today>=minD&&today<=maxD)?dDiff(minD,today)*W:-1;
+  const todayBar=todayLeft>=0?`<div class="gtoday" style="left:${todayLeft+W/2}px"></div>`:'';
+  const head=`<div class="grow ghead"><div class="gname">案件 / タスク</div><div class="gcells" style="width:${totalW}px;display:flex">${days.map(d=>{
+    const wd=d.getDay();const ds=ymd(d);return `<div class="gday ${wd===0||wd===6?'we':''} ${ds===today?'td':''}">${d.getMonth()+1}/${d.getDate()}<br>${'日月火水木金土'[wd]}</div>`;}).join('')}</div></div>`;
+  const bar=t=>{if(!t.start_date||!t.end_date)return '';const left=dDiff(minD,t.start_date)*W;const w=(dDiff(t.start_date,t.end_date)+1)*W;
+    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="editTitle('${t.id}',this)" title="${esc(t.title)}">${esc(t.title)}</div>`;};
+  const rows=taskGroups().map(g=>{
+    const tops=g.items.filter(t=>!t.parent_task_id);
+    const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
+    const projRow=`<div class="grow gproj"><div class="gname">${g.proj?.code?'['+esc(g.proj.code)+'] ':''}${esc(g.proj?.name||'案件なし')}</div><div class="gcells" style="width:${totalW}px">${todayBar}</div></div>`;
+    const taskRow=(t,sub)=>`<div class="grow"><div class="gname" style="${sub?'padding-left:24px':''}">${sub?'↳ ':''}${esc(t.title)}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;
+    return projRow+tops.map(t=>taskRow(t,false)+subs(t).map(s=>taskRow(s,true)).join('')).join('');
+  }).join('');
+  body.innerHTML=`<div class="muted" style="font-size:12px;margin-bottom:8px">バーをクリックでタイトル編集・状態は色（灰=未着手／青=進行／緑=完了／黄=保留）。期間の編集はリスト表示で。</div>
+    <div class="gwrap"><div class="grid-g">${head}${rows}</div></div>`;
 }
 
 // ---- 発注 ----
