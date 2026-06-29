@@ -25,6 +25,21 @@
   OC.signOut   = () => OC.sb.auth.signOut();
   OC.sendMagic = (email) => OC.sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.href } });
   OC.setPassword = (password) => OC.sb.auth.updateUser({ password });
+  OC.createMember = async function (payload) {
+    const { data: { session } } = await OC.sb.auth.getSession();
+    if (!session?.access_token) throw new Error('ログイン状態を確認できません');
+    const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/create-member`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'メンバーを作成できませんでした');
+    return body;
+  };
 
   // ---- 整形ヘルパ ----
   OC.yen = (n) => '¥' + Number(n || 0).toLocaleString();
