@@ -255,7 +255,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=7"></script>
+<script src="shared.js?v=8"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -965,6 +965,9 @@ function deptMultiOptions(selected){
   const set=new Set(selected||[]);
   return OC.departments.map(d=>`<option value="${d.id}" ${set.has(d.id)?'selected':''}>${esc(d.name)}</option>`).join('');
 }
+function roleOptions(selected){
+  return ['メンバー','経理','管理者'].map(r=>`<option value="${r}" ${r===selected?'selected':''}>${r}</option>`).join('');
+}
 async function renderMembers(c){
   document.getElementById('topActions').innerHTML=OC.myRole==='管理者'?'<button class="btn" onclick="openMemberModal()">＋ メンバー発行</button>':'';
   if(OC.myRole!=='管理者'){
@@ -982,7 +985,7 @@ async function renderMembers(c){
           const loginBtn=p.id===OC.me.id
             ? '<span class="muted">自分</span>'
             : `<button class="btn ghost sm" onclick="adminLoginAs('${p.id}')">このIDでログイン</button>`;
-          return `<tr style="cursor:default"><td class="l"><b>${esc(p.name||'未設定')}</b></td><td class="l">${esc(p.email||'')}</td><td class="l"><span class="role-tag">${esc(p.role||'—')}</span></td><td class="l">${esc(depts)}</td><td class="l">${loginBtn}</td></tr>`;
+          return `<tr style="cursor:default"><td class="l"><b>${esc(p.name||'未設定')}</b></td><td class="l">${esc(p.email||'')}</td><td class="l"><span class="role-tag">${esc(p.role||'—')}</span></td><td class="l">${esc(depts)}</td><td class="l"><button class="btn ghost sm" onclick="openMemberEdit('${p.id}')">編集</button> ${loginBtn}</td></tr>`;
         }).join('') || '<tr><td class="empty" colspan="5">メンバーがいません</td></tr>'}</tbody>
       </table>
     </div>
@@ -1006,9 +1009,7 @@ function openMemberModal(){
     <div class="field"><label class="fl">名前</label><input id="mName" class="input" placeholder="例）丹羽 駿介"></div>
     <div class="field"><label class="fl">メール（ログインID）</label><input id="mEmail" class="input" type="email" autocomplete="off" placeholder="name@example.com"></div>
     <div class="field"><label class="fl">初期パスワード</label><div class="pwbox"><input id="mPass" class="input" value="${esc(pw)}"><button class="btn ghost sm" onclick="document.getElementById('mPass').value=genPassword()">再生成</button></div></div>
-    <div class="field"><label class="fl">ロール</label><select id="mRole" class="input">
-      <option value="建築">建築</option><option value="デザイン">デザイン</option><option value="SE">SE</option><option value="経理">経理</option><option value="管理者">管理者</option>
-    </select></div>
+    <div class="field"><label class="fl">ロール</label><select id="mRole" class="input">${roleOptions('メンバー')}</select></div>
     <div class="field"><label class="fl">所属部署（最大3・Ctrl/⌘で複数選択）</label><select id="mDepts" class="input" multiple size="4">${deptMultiOptions([])}</select></div>
     <div class="muted" style="font-size:12px;line-height:1.6">発行後、このメールと初期パスワードを本人に渡してください。本人はログイン後に左下「パスワード」から変更できます。</div>
     </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="mSave" onclick="saveMember()">発行</button></div></div>`);
@@ -1033,6 +1034,40 @@ async function saveMember(){
   }catch(e){
     toast('発行エラー: '+e.message);
     document.getElementById('mSave').disabled=false;
+  }
+}
+function openMemberEdit(userId){
+  const p=OC.peopleById[userId];
+  if(!p){toast('メンバーが見つかりません');return;}
+  modal(`<div class="modal"><div class="modal-h">メンバーを編集</div><div class="modal-b">
+    <div class="field"><label class="fl">名前</label><input id="emName" class="input" value="${esc(p.name||'')}"></div>
+    <div class="field"><label class="fl">メール（ログインID）</label><input class="input" value="${esc(p.email||'')}" disabled></div>
+    <div class="field"><label class="fl">ロール</label><select id="emRole" class="input">${roleOptions(p.role||'メンバー')}</select></div>
+    <div class="field"><label class="fl">所属部署（最大3・Ctrl/⌘で複数選択）</label><select id="emDepts" class="input" multiple size="4">${deptMultiOptions(OC.peopleDepts[userId]||[])}</select></div>
+    <div class="muted" style="font-size:12px;line-height:1.6">ロールは権限、所属部署は所属先です。建築/デザイン/SEなどは部署側で管理します。</div>
+    </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="emSave" onclick="saveMemberEdit('${userId}')">保存</button></div></div>`);
+}
+async function saveMemberEdit(userId){
+  const name=document.getElementById('emName').value.trim();
+  const role=document.getElementById('emRole').value;
+  const department_ids=Array.from(document.getElementById('emDepts').selectedOptions).map(o=>o.value).filter(Boolean);
+  if(!name){toast('名前を入力してください');return;}
+  if(department_ids.length>3){toast('所属部署は最大3つまでです');return;}
+  document.getElementById('emSave').disabled=true;
+  try{
+    await OC.updateMember({id:userId,name,role,department_ids});
+    await OC.loadPeople();
+    if(userId===OC.me.id)await OC.loadMe();
+    closeModal();
+    toast('メンバーを更新しました');
+    renderMembers(document.getElementById('content'));
+    document.getElementById('meName').textContent=OC.meName||'—';
+    document.getElementById('meRole').textContent=OC.myRole||'—';
+    document.getElementById('financeNav').classList.toggle('hidden',!OC.isAccounting());
+    document.getElementById('membersNav').classList.toggle('hidden',OC.myRole!=='管理者');
+  }catch(e){
+    toast('更新エラー: '+e.message);
+    document.getElementById('emSave').disabled=false;
   }
 }
 
