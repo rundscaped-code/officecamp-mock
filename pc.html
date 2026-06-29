@@ -394,7 +394,10 @@ async function selectProject(id){
   box.innerHTML=`
     <div class="dh"><div><div class="nm">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name||'—')}</div>
       <div class="muted" style="margin-top:4px"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></div></div>
-      <button class="btn sm" style="margin-left:auto" onclick="openExpModal('${id}')">＋ 経費</button></div>
+      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn ghost sm" onclick="openTaskAddModal('${id}')">＋ タスク</button>
+        <button class="btn ghost sm" onclick="openOrderModal('${id}')">＋ 発注</button>
+        <button class="btn sm" onclick="openExpModal('${id}')">＋ 経費</button></div></div>
     <div class="kpis" style="grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0 4px">
       <div class="kpi"><div class="l">受注</div><div class="n" style="font-size:20px">${OC.yen(p.revenue)}</div></div>
       <div class="kpi"><div class="l">原価</div><div class="n" style="font-size:20px">${OC.yen(p.cost)}</div></div>
@@ -524,6 +527,28 @@ function paintExpenses(){
     <div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
       <th class="l">日付</th><th class="l">メモ</th><th class="l">入力者</th><th>金額</th><th class="l">状態</th>
     </tr></thead><tbody>${expRowsHTML(g.items)}</tbody></table></div></div>`).join('');
+}
+function openTaskAddModal(pid){
+  modal(`<div class="modal"><div class="modal-h">タスクを追加</div><div class="modal-b">
+    <div class="field"><label class="fl">タイトル</label><input id="ntTitle" class="input" placeholder="図面作成 など"></div>
+    <div class="tm-grid">
+      <div class="field"><label class="fl">状態</label><select id="ntStatus" class="input">${TSTATUS.map(s=>`<option ${s==='未着手'?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="field"><label class="fl">進捗（%）</label><input id="ntProg" class="input" type="number" min="0" max="100" value="0"></div>
+      <div class="field"><label class="fl">開始日</label><input id="ntStart" class="input" type="date"></div>
+      <div class="field"><label class="fl">終了日</label><input id="ntEnd" class="input" type="date"></div>
+    </div></div>
+    <div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" onclick="saveNewTask('${pid}')">追加</button></div></div>`);
+  setTimeout(()=>{const e=document.getElementById('ntTitle');if(e)e.focus();},30);
+}
+async function saveNewTask(pid){
+  const v=x=>document.getElementById(x).value;
+  const title=v('ntTitle').trim();if(!title){toast('タイトルを入れてください');return;}
+  const {error}=await OC.addTask({project_id:pid,title,status:v('ntStatus'),progress:parseInt(v('ntProg'),10)||0,start_date:v('ntStart')||null,end_date:v('ntEnd')||null});
+  if(error){toast('追加エラー: '+error.message);return;}
+  closeModal();toast('タスクを追加');
+  try{tasksCache=await OC.loadAllTasks();}catch(e){}
+  if(curView==='tasks')paintTasks();
+  if(curView==='projects'&&curProject)selectProject(curProject);
 }
 function openExpModal(projectId){
   const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${esc(p.name)}</option>`).join('');
@@ -803,8 +828,8 @@ async function renderOrders(c){
     <div class="card"><div class="card-h">自分が受けた内注</div><div class="card-b" style="padding:0">${tbl(inbound,true,'受けた内注はありません')}</div></div>
   </div>`;
 }
-function openOrderModal(){
-  const projOpts=OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+function openOrderModal(pid){
+  const projOpts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===pid?'selected':''}>${esc(p.name)}</option>`).join('');
   const vendorOpts=OC.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}（${esc(v.kind)}）</option>`).join('');
   const deptOpts=OC.departments.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
   modal(`<div class="modal"><div class="modal-h">発注する</div><div class="modal-b">
@@ -843,6 +868,7 @@ async function saveOrder(){
   if(error){toast('発注エラー: '+error.message);document.getElementById('oSave').disabled=false;return;}
   closeModal();toast(kind+'「'+title+'」を発注');
   if(curView==='orders')renderOrders(document.getElementById('content'));
+  if(curView==='projects'&&curProject)selectProject(curProject);
 }
 
 // ---- 起動 ----
