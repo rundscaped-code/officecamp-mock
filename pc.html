@@ -123,8 +123,10 @@
   .grid-g{min-width:max-content}
   .grow{display:flex;align-items:stretch;border-top:1px solid var(--line);min-height:34px}
   .grow:first-child{border-top:none}
-  .gname{position:sticky;left:0;z-index:2;width:200px;flex:none;background:var(--panel);border-right:1px solid var(--line);
-    padding:7px 10px;font-size:12.5px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .gname{position:sticky;left:0;z-index:2;width:250px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+    padding:7px 10px;font-size:12.5px;display:flex;align-items:center;gap:0;overflow:hidden;white-space:nowrap}
+  .gnttl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .gnasg{margin-left:auto;padding-left:8px;flex:none;font-size:11px;font-weight:700;color:var(--accent);max-width:96px;overflow:hidden;text-overflow:ellipsis}
   .gcells{position:relative;flex:none}
   .ghead .gname{background:var(--accent-soft);font-weight:800;z-index:3}
   .ghead{background:var(--accent-soft)}
@@ -321,7 +323,7 @@ async function renderHome(c){
       <div class="kpi"><div class="l">案件数</div><div class="n">${ps.length}</div><div class="s">進行中 ${active.length}</div></div>
       <div class="kpi"><div class="l">受注合計</div><div class="n">${OC.yen(rev)}</div></div>
       <div class="kpi"><div class="l">粗利合計</div><div class="n">${OC.yen(prof)}</div><div class="s">率 ${rev?Math.round(prof/rev*100):0}%</div></div>
-      <div class="kpi"><div class="l">登録メンバー</div><div class="n">${OC.people.length}</div></div>
+      ${OC.isManager()?`<div class="kpi"><div class="l">登録メンバー</div><div class="n">${OC.people.length}</div></div>`:`<div class="kpi"><div class="l">進行中の案件</div><div class="n">${active.length}</div></div>`}
     </div>
     <div class="grid2">
       <div class="card"><div class="card-h">粗利トップ案件</div><div class="card-b" style="padding:0">
@@ -659,7 +661,14 @@ function finEdit(td,pid,field){
 // ---- タスク（タイムライン / ボード / リスト） ----
 const TSTATUS=['未着手','進行','完了','保留'];
 function stColor(s){return ({'未着手':'#9AA0A6','進行':'var(--accent)','完了':'var(--good)','保留':'var(--warn)'})[s||'未着手']||'#9AA0A6';}
-let taskView='list', tasksCache=[];
+let taskView='list', tasksCache=[], taskFilter={proj:'',status:'',asg:''};
+function gv(id){const e=document.getElementById(id);return e?e.value:'';}
+function visibleTasks(){return tasksCache.filter(t=>{
+  if(taskFilter.proj&&t.project_id!==taskFilter.proj)return false;
+  if(taskFilter.status&&(t.status||'未着手')!==taskFilter.status)return false;
+  if(taskFilter.asg&&!(t.task_assignees||[]).some(a=>a.user_id===taskFilter.asg))return false;
+  return true;});}
+function setTaskFilter(){taskFilter={proj:gv('tfProj'),status:gv('tfStatus'),asg:gv('tfAsg')};paintTasks();}
 async function renderTasks(c){
   c.innerHTML='<div class="empty">読み込み中…</div>';
   try{ tasksCache=await OC.loadAllTasks(); }
@@ -668,7 +677,14 @@ async function renderTasks(c){
     <button id="tvTimeline" onclick="setTaskView('timeline')">タイムライン</button>
     <button id="tvBoard" onclick="setTaskView('board')">ボード</button>
     <button id="tvList" onclick="setTaskView('list')">リスト</button></div>`;
-  c.innerHTML='<div id="taskBody"></div>';
+  const projOpts=OC.projects.map(p=>`<option value="${p.id}" ${p.id===taskFilter.proj?'selected':''}>${esc(p.name)}</option>`).join('');
+  const asgOpts=OC.people.map(p=>`<option value="${p.id}" ${p.id===taskFilter.asg?'selected':''}>${esc(p.name||p.email)}</option>`).join('');
+  c.innerHTML=`<div class="toolbar">
+    <select id="tfProj" class="input" onchange="setTaskFilter()"><option value="">案件：すべて</option>${projOpts}</select>
+    <select id="tfStatus" class="input" onchange="setTaskFilter()"><option value="">状態：すべて</option>${TSTATUS.map(s=>`<option ${s===taskFilter.status?'selected':''}>${s}</option>`).join('')}</select>
+    <select id="tfAsg" class="input" onchange="setTaskFilter()"><option value="">担当：すべて</option>${asgOpts}</select>
+    <span class="muted" id="tfCount" style="margin-left:auto"></span>
+  </div><div id="taskBody"></div>`;
   paintTasks();
 }
 function setTaskView(v){taskView=v;paintTasks();}
@@ -676,7 +692,9 @@ async function reloadTasks(){ try{tasksCache=await OC.loadAllTasks();}catch(e){}
 function paintTasks(){
   ['timeline','board','list'].forEach(v=>{const b=document.getElementById('tv'+v.charAt(0).toUpperCase()+v.slice(1));if(b)b.classList.toggle('on',taskView===v);});
   const body=document.getElementById('taskBody');if(!body)return;
+  updTfCount();
   if(!tasksCache.length){body.innerHTML='<div class="card"><div class="card-b empty">タスクはまだありません</div></div>';return;}
+  if(!visibleTasks().length){body.innerHTML='<div class="card"><div class="card-b empty">条件に合うタスクがありません</div></div>';return;}
   if(taskView==='list')return paintTaskList(body);
   if(taskView==='board')return paintTaskBoard(body);
   if(taskView==='timeline')return paintTaskTimeline(body);
@@ -751,7 +769,8 @@ async function addSub(parentId){
   if(error){toast('追加エラー: '+error.message);return;}
   toast('サブタスクを追加');refreshAfterTaskEdit(parentId);
 }
-function taskGroups(){const g={};tasksCache.forEach(t=>{const k=t.project_id||'_';(g[k]=g[k]||{proj:t.proj,items:[]}).items.push(t);});return Object.values(g);}
+function taskGroups(){const g={};visibleTasks().forEach(t=>{const k=t.project_id||'_';(g[k]=g[k]||{proj:t.proj,items:[]}).items.push(t);});return Object.values(g);}
+function updTfCount(){const e=document.getElementById('tfCount');if(e)e.textContent=visibleTasks().length+' 件';}
 // --- リスト ---
 function paintTaskList(body){
   body.innerHTML=taskGroups().map(g=>{
@@ -773,7 +792,7 @@ function paintTaskList(body){
 }
 // --- ボード（ドラッグで状態変更） ---
 function paintTaskBoard(body){
-  const tops=tasksCache.filter(t=>!t.parent_task_id);
+  const tops=visibleTasks().filter(t=>!t.parent_task_id);
   body.innerHTML=`<div class="board">${TSTATUS.map(st=>{
     const list=tops.filter(t=>(t.status||'未着手')===st);
     return `<div class="bcol" data-st="${st}" ondragover="boardOver(event,this)" ondragleave="this.classList.remove('over')" ondrop="boardDrop(event,this)">
@@ -797,7 +816,7 @@ function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'
 function pD(s){return new Date(s+'T00:00:00');}
 function dDiff(a,b){return Math.round((pD(b)-pD(a))/86400000);}
 function paintTaskTimeline(body){
-  const dated=tasksCache.filter(t=>t.start_date||t.end_date);
+  const dated=visibleTasks().filter(t=>t.start_date||t.end_date);
   if(!dated.length){body.innerHTML='<div class="card"><div class="card-b empty">日付の入ったタスクがありません（リスト/ボードで日付を入れると表示されます）</div></div>';return;}
   let min=null,max=null;
   dated.forEach(t=>{[t.start_date,t.end_date].forEach(d=>{if(!d)return;if(!min||d<min)min=d;if(!max||d>max)max=d;});});
@@ -814,13 +833,13 @@ function paintTaskTimeline(body){
     const prog=t.status==='完了'?100:(t.progress||0);
     const fill=prog>0?`<div class="gfill" style="width:${prog}%"></div>`:'';
     const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
-    const lbl=esc(t.title)+(who?`<span class="gasg">${who}</span>`:'');
-    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openTaskModal('${t.id}')" title="${esc(t.title)}（${esc(t.status||'未着手')}・${prog}%${who?'・'+who:''}）">${fill}<span style="position:relative;z-index:1">${lbl}</span></div>`;};
+    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openTaskModal('${t.id}')" title="${esc(t.title)}（${esc(t.status||'未着手')}・${prog}%${who?'・'+who:''}）">${fill}<span style="position:relative;z-index:1">${esc(t.title)}</span></div>`;};
   const rows=taskGroups().map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
     const projRow=`<div class="grow gproj"><div class="gname">${g.proj?.code?'['+esc(g.proj.code)+'] ':''}${esc(g.proj?.name||'案件なし')}</div><div class="gcells" style="width:${totalW}px">${todayBar}</div></div>`;
-    const taskRow=(t,sub)=>`<div class="grow"><div class="gname" style="${sub?'padding-left:24px':''}">${sub?'↳ ':''}${esc(t.title)}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;
+    const taskRow=(t,sub)=>{const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
+      return `<div class="grow"><div class="gname" style="${sub?'padding-left:20px':''}"><i class="dot s-${t.status||'未着手'}" style="margin-right:6px"></i><span class="gnttl">${sub?'↳ ':''}${esc(t.title)}</span>${who?'<span class="gnasg">'+who+'</span>':''}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;};
     return projRow+tops.map(t=>taskRow(t,false)+subs(t).map(s=>taskRow(s,true)).join('')).join('');
   }).join('');
   body.innerHTML=`<div class="vlegend">
