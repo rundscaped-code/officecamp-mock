@@ -127,6 +127,8 @@
     padding:7px 10px;font-size:12.5px;display:flex;align-items:center;gap:0;overflow:hidden;white-space:nowrap}
   .gnttl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .gnasg{margin-left:auto;padding-left:8px;flex:none;font-size:11px;font-weight:700;color:var(--accent);max-width:96px;overflow:hidden;text-overflow:ellipsis}
+  .gaddbtn{margin-left:auto;flex:none;border:1px solid var(--line);background:var(--panel);color:var(--accent);border-radius:6px;width:22px;height:22px;font-size:13px;font-weight:800;cursor:pointer;line-height:1}
+  .gaddbtn:hover{background:var(--accent-soft)}
   .gcells{position:relative;flex:none}
   .ghead .gname{background:var(--accent-soft);font-weight:800;z-index:3}
   .ghead{background:var(--accent-soft)}
@@ -791,8 +793,10 @@ function paintTaskList(body){
       <td class="l ed" style="width:150px"><input class="einput" type="date" value="${t.start_date||''}" onchange="saveTaskField('${t.id}','start_date',this.value)"></td>
       <td class="l ed" style="width:150px"><input class="einput" type="date" value="${t.end_date||''}" onchange="saveTaskField('${t.id}','end_date',this.value)"></td>
       <td class="l">${asgHTML(t)}</td></tr>`;
+    const pid=(g.items[0]||{}).project_id;
     return `<div class="card" style="margin-bottom:16px"><div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'案件なし')}
-      <span class="muted" style="margin-left:auto;font-weight:700">${tops.length}件</span></div>
+      <span class="muted" style="margin-left:auto;font-weight:700">${tops.length}件</span>
+      ${pid?`<button class="btn ghost" style="padding:3px 11px;font-size:11.5px;margin-left:10px" onclick="openTaskAddModal('${pid}')">＋ タスク</button>`:''}</div>
       <div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
         <th style="width:6px;padding:0"></th><th class="l">タスク</th><th class="l">変更</th><th class="l">開始</th><th class="l">終了</th><th class="l">担当</th>
       </tr></thead><tbody>${tops.map(t=>row(t,false)+subs(t).map(s=>row(s,true)).join('')).join('')}</tbody></table></div></div>`;
@@ -843,9 +847,11 @@ function paintTaskTimeline(body){
   const rows=taskGroups().map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
-    const projRow=`<div class="grow gproj"><div class="gname">${g.proj?.code?'['+esc(g.proj.code)+'] ':''}${esc(g.proj?.name||'案件なし')}</div><div class="gcells" style="width:${totalW}px">${todayBar}</div></div>`;
+    const pid=(g.items[0]||{}).project_id;
+    const projName=`${g.proj?.code?'['+esc(g.proj.code)+'] ':''}${esc(g.proj?.name||'案件なし')}`;
+    const projRow=`<div class="grow gproj"><div class="gname"><span class="gnttl">${pid?`<span class="tasklink" onclick="go('projects');setTimeout(()=>selectProject('${pid}'),40)">${projName}</span>`:projName}</span>${pid?`<button class="gaddbtn" title="タスクを追加" onclick="openTaskAddModal('${pid}')">＋</button>`:''}</div><div class="gcells" style="width:${totalW}px">${todayBar}</div></div>`;
     const taskRow=(t,sub)=>{const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
-      return `<div class="grow"><div class="gname" style="${sub?'padding-left:20px':''}"><i class="dot s-${t.status||'未着手'}" style="margin-right:6px"></i><span class="gnttl">${sub?'↳ ':''}${esc(t.title)}</span>${who?'<span class="gnasg">'+who+'</span>':''}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;};
+      return `<div class="grow"><div class="gname" style="${sub?'padding-left:20px':''}"><i class="dot s-${t.status||'未着手'}" style="margin-right:6px"></i><span class="gnttl"><span class="tasklink" onclick="openTaskModal('${t.id}')">${sub?'↳ ':''}${esc(t.title)}</span></span>${who?'<span class="gnasg">'+who+'</span>':''}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;};
     return projRow+tops.map(t=>taskRow(t,false)+subs(t).map(s=>taskRow(s,true)).join('')).join('');
   }).join('');
   body.innerHTML=`<div class="vlegend">
