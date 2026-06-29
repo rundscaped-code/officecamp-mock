@@ -137,6 +137,15 @@
     font-weight:700;padding:0 8px;overflow:hidden;white-space:nowrap;cursor:pointer;z-index:1}
   .gbar.s-未着手{background:#9AA0A6}.gbar.s-進行{background:var(--accent)}.gbar.s-完了{background:var(--good)}.gbar.s-保留{background:var(--warn)}
   .gtoday{position:absolute;top:0;bottom:0;width:2px;background:var(--bad);opacity:.6;z-index:2}
+  .gfill{position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.32);border-right:1px solid rgba(255,255,255,.55)}
+  .gasg{margin-left:6px;opacity:.85;font-weight:600}
+  /* タスク状態の色分け（リスト） */
+  .stpill{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:20px;margin-right:6px;color:#fff;vertical-align:middle}
+  .stpill.st-未着手{background:#9AA0A6}.stpill.st-進行{background:var(--accent)}.stpill.st-完了{background:var(--good)}.stpill.st-保留{background:var(--warn)}
+  .trow.s-row-完了{opacity:.72}
+  .trow.s-row-進行 td.l:nth-child(2){font-weight:600}
+  .vlegend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--sub);margin:0 0 10px}
+  .vlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
   /* タスク詳細モーダル */
   .tasklink{color:var(--accent);cursor:pointer;font-weight:600}
   .tasklink:hover{text-decoration:underline}
@@ -649,6 +658,7 @@ function finEdit(td,pid,field){
 }
 // ---- タスク（タイムライン / ボード / リスト） ----
 const TSTATUS=['未着手','進行','完了','保留'];
+function stColor(s){return ({'未着手':'#9AA0A6','進行':'var(--accent)','完了':'var(--good)','保留':'var(--warn)'})[s||'未着手']||'#9AA0A6';}
 let taskView='list', tasksCache=[];
 async function renderTasks(c){
   c.innerHTML='<div class="empty">読み込み中…</div>';
@@ -747,8 +757,9 @@ function paintTaskList(body){
   body.innerHTML=taskGroups().map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
-    const row=(t,sub)=>`<tr style="cursor:default">
-      <td class="l" style="${sub?'padding-left:28px':''}">${sub?'<span class="muted">↳ </span>':''}${titleSpan(t)}</td>
+    const row=(t,sub)=>`<tr class="trow s-row-${t.status||'未着手'}" style="cursor:default">
+      <td style="width:6px;padding:0;background:${stColor(t.status)}"></td>
+      <td class="l" style="${sub?'padding-left:28px':''}">${sub?'<span class="muted">↳ </span>':''}<span class="stpill st-${t.status||'未着手'}">${esc(t.status||'未着手')}</span> ${titleSpan(t)}</td>
       <td class="l ed" style="width:110px">${statusSel(t)}</td>
       <td class="l ed" style="width:150px"><input class="einput" type="date" value="${t.start_date||''}" onchange="saveTaskField('${t.id}','start_date',this.value)"></td>
       <td class="l ed" style="width:150px"><input class="einput" type="date" value="${t.end_date||''}" onchange="saveTaskField('${t.id}','end_date',this.value)"></td>
@@ -756,7 +767,7 @@ function paintTaskList(body){
     return `<div class="card" style="margin-bottom:16px"><div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'案件なし')}
       <span class="muted" style="margin-left:auto;font-weight:700">${tops.length}件</span></div>
       <div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
-        <th class="l">タスク</th><th class="l">状態</th><th class="l">開始</th><th class="l">終了</th><th class="l">担当</th>
+        <th style="width:6px;padding:0"></th><th class="l">タスク</th><th class="l">変更</th><th class="l">開始</th><th class="l">終了</th><th class="l">担当</th>
       </tr></thead><tbody>${tops.map(t=>row(t,false)+subs(t).map(s=>row(s,true)).join('')).join('')}</tbody></table></div></div>`;
   }).join('');
 }
@@ -800,7 +811,11 @@ function paintTaskTimeline(body){
   const head=`<div class="grow ghead"><div class="gname">案件 / タスク</div><div class="gcells" style="width:${totalW}px;display:flex">${days.map(d=>{
     const wd=d.getDay();const ds=ymd(d);return `<div class="gday ${wd===0||wd===6?'we':''} ${ds===today?'td':''}">${d.getMonth()+1}/${d.getDate()}<br>${'日月火水木金土'[wd]}</div>`;}).join('')}</div></div>`;
   const bar=t=>{if(!t.start_date||!t.end_date)return '';const left=dDiff(minD,t.start_date)*W;const w=(dDiff(t.start_date,t.end_date)+1)*W;
-    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openTaskModal('${t.id}')" title="${esc(t.title)}">${esc(t.title)}</div>`;};
+    const prog=t.status==='完了'?100:(t.progress||0);
+    const fill=prog>0?`<div class="gfill" style="width:${prog}%"></div>`:'';
+    const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
+    const lbl=esc(t.title)+(who?`<span class="gasg">${who}</span>`:'');
+    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openTaskModal('${t.id}')" title="${esc(t.title)}（${esc(t.status||'未着手')}・${prog}%${who?'・'+who:''}）">${fill}<span style="position:relative;z-index:1">${lbl}</span></div>`;};
   const rows=taskGroups().map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
@@ -808,7 +823,10 @@ function paintTaskTimeline(body){
     const taskRow=(t,sub)=>`<div class="grow"><div class="gname" style="${sub?'padding-left:24px':''}">${sub?'↳ ':''}${esc(t.title)}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;
     return projRow+tops.map(t=>taskRow(t,false)+subs(t).map(s=>taskRow(s,true)).join('')).join('');
   }).join('');
-  body.innerHTML=`<div class="muted" style="font-size:12px;margin-bottom:8px">バーをクリックでタイトル編集・状態は色（灰=未着手／青=進行／緑=完了／黄=保留）。期間の編集はリスト表示で。</div>
+  body.innerHTML=`<div class="vlegend">
+      <span><i style="background:#9AA0A6"></i>未着手</span><span><i style="background:var(--accent)"></i>進行</span>
+      <span><i style="background:var(--good)"></i>完了</span><span><i style="background:var(--warn)"></i>保留</span>
+      <span style="color:var(--bad)">┃今日</span><span>バー内の白＝進捗、右の名前＝担当。クリックで詳細。</span></div>
     <div class="gwrap"><div class="grid-g">${head}${rows}</div></div>`;
 }
 
@@ -819,7 +837,7 @@ async function renderOrders(c){
   const {out,inbound}=await OC.loadOrders();
   const oCard=(o,recv)=>`<tr style="cursor:default">
     <td class="l"><b>${esc(o.title)}</b> <span class="pill">${esc(o.kind)}</span></td>
-    <td class="l">${esc(o.proj?.name||'—')}</td>
+    <td class="l">${o.project_id?`<span class="link" onclick="go('projects');setTimeout(()=>selectProject('${o.project_id}'),40)">${esc(o.proj?.name||'案件')}</span>`:'—'}</td>
     <td class="l">${recv?('依頼 '+esc(OC.personName(o.from_user))):('宛先 '+(o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))))}</td>
     <td><b>${OC.yen(o.amount)}</b></td><td class="l">${esc(o.status||'')}</td></tr>`;
   const tbl=(rows,recv,empty)=>rows.length?`<table class="tbl"><thead><tr><th class="l">依頼</th><th class="l">案件</th><th class="l">${recv?'相手':'宛先'}</th><th>金額</th><th class="l">状態</th></tr></thead><tbody>${rows.map(o=>oCard(o,recv)).join('')}</tbody></table>`:`<div class="empty">${empty}</div>`;
