@@ -58,6 +58,21 @@
     if (!res.ok) throw new Error(body.error || 'ログインリンクを発行できませんでした');
     return body;
   };
+  OC.updateMember = async function (payload) {
+    const { data: { session } } = await OC.sb.auth.getSession();
+    if (!session?.access_token) throw new Error('ログイン状態を確認できません');
+    const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/update-member`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'メンバーを更新できませんでした');
+    return body;
+  };
 
   // ---- 整形ヘルパ ----
   OC.yen = (n) => '¥' + Number(n || 0).toLocaleString();
