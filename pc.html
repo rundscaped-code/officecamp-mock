@@ -201,6 +201,9 @@
   .pwbox{display:flex;gap:8px}
   .pwbox .input{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .role-tag{font-size:11.5px;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+  .impbar{display:none;margin:14px 28px 0;padding:10px 12px;border:2px solid #111;background:#fff;color:#111;align-items:center;gap:10px;font-size:13px;font-weight:800}
+  .impbar.show{display:flex}
+  .impbar .sub{font-weight:600;color:#555}
 </style>
 </head>
 <body>
@@ -246,6 +249,7 @@
       <div class="spacer"></div>
       <div id="topActions"></div>
     </header>
+    <div id="impersonationBar" class="impbar"></div>
     <div class="content"><div class="maxw" id="content"></div></div>
   </main>
 </div>
@@ -255,7 +259,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=8"></script>
+<script src="shared.js?v=9"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -308,7 +312,7 @@ function go(v){
     toast('経理ユーザーのみ閲覧できます');
     v='projects';
   }
-  if(v==='members' && OC.myRole!=='管理者'){
+  if(v==='members' && (!OC.isActualAdmin() || OC.impersonatingUser)){
     toast('管理者のみ利用できます');
     v='home';
   }
@@ -324,6 +328,45 @@ function go(v){
   if(v==='tasks')return renderTasks(c);
   if(v==='orders')return renderOrders(c);
   if(v==='members')return renderMembers(c);
+}
+function updateImpersonationBar(){
+  const bar=document.getElementById('impersonationBar');
+  if(!bar)return;
+  if(!OC.impersonatingUser){
+    bar.classList.remove('show');
+    bar.innerHTML='';
+    return;
+  }
+  const u=OC.impersonatingUser;
+  bar.innerHTML=`<span>管理者として ${esc(u.name||u.email)} を代理操作中</span>
+    <span class="sub">表示・作成主体は代理先ユーザー基準です</span>
+    <span style="margin-left:auto"></span>
+    <button class="btn ghost sm" onclick="stopImpersonation()">代理操作を終了</button>`;
+  bar.classList.add('show');
+}
+function refreshShell(){
+  document.getElementById('meName').textContent=OC.meName||'—';
+  document.getElementById('meRole').textContent=OC.myRole||'—';
+  document.getElementById('financeNav').classList.toggle('hidden',!OC.isAccounting());
+  document.getElementById('membersNav').classList.toggle('hidden',!OC.isActualAdmin()||!!OC.impersonatingUser);
+  updateImpersonationBar();
+}
+function startImpersonation(userId){
+  const p=OC.peopleById[userId]||{};
+  const label=p.name||p.email||'このID';
+  if(!confirm(label+' を代理操作します。管理者セッションのまま、画面と作成主体をこのユーザー基準に切り替えます。'))return;
+  try{
+    OC.startImpersonation(userId);
+    toast(label+' を代理操作中');
+    refreshShell();
+    go('home');
+  }catch(e){toast('代理操作エラー: '+e.message);}
+}
+function stopImpersonation(){
+  OC.stopImpersonation();
+  toast('代理操作を終了しました');
+  refreshShell();
+  go('home');
 }
 
 // ---- ホーム（ダッシュボード） ----
@@ -474,7 +517,8 @@ async function saveProjField(id,field,value){
 }
 function openProjModal(){
   const opts=OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
-  const leaderField=OC.isManager()?`<div class="field"><label class="fl">案件リーダー</label><select id="mLeader" class="input">${OC.people.map(p=>`<option value="${p.id}" ${p.id===OC.me.id?'selected':''}>${esc(p.name||p.email)}</option>`).join('')}</select></div>`:'';
+  const effectiveId=OC.effectiveUserId();
+  const leaderField=OC.isManager()?`<div class="field"><label class="fl">案件リーダー</label><select id="mLeader" class="input">${OC.people.map(p=>`<option value="${p.id}" ${p.id===effectiveId?'selected':''}>${esc(p.name||p.email)}</option>`).join('')}</select></div>`:'';
   modal(`<div class="modal"><div class="modal-h">案件を追加</div><div class="modal-b">
     <div class="field"><label class="fl">案件名</label><input id="mName" class="input" placeholder="○○ビル改修"></div>
     <div class="field"><label class="fl">受注元（任意）</label><input id="mClient" class="input" placeholder="◇◇建設"></div>
@@ -491,8 +535,8 @@ async function saveProj(){
   const amount=parseInt((document.getElementById('mAmt').value||'0').replace(/[,，]/g,''),10)||0;
   const payload={name,client:document.getElementById('mClient').value.trim()||null,amount,
     start_date:document.getElementById('mStart').value||null,delivery_date:document.getElementById('mDeliv').value||null,
-    parent_id:document.getElementById('mParent').value||null,owner_id:OC.me.id,
-    leader_id:OC.isManager()?(document.getElementById('mLeader').value||OC.me.id):OC.me.id,status:'進行'};
+    parent_id:document.getElementById('mParent').value||null,owner_id:OC.effectiveUserId(),
+    leader_id:OC.isManager()?(document.getElementById('mLeader').value||OC.effectiveUserId()):OC.effectiveUserId(),status:'進行'};
   document.getElementById('mSave').disabled=true;
   const {error}=await OC.addProject(payload);
   if(error){toast('追加エラー: '+error.message);document.getElementById('mSave').disabled=false;return;}
@@ -944,7 +988,7 @@ async function saveOrder(){
   if(kind==='外注'&&!vendor_id){toast('外注先を選んでください');return;}
   if(kind==='内注'&&!to_dept_id){toast('内注先（部門）を選んでください');return;}
   document.getElementById('oSave').disabled=true;
-  const {error}=await OC.addOrder({project_id,kind,vendor_id,to_dept_id,to_user_id,from_user:OC.me.id,title,amount});
+  const {error}=await OC.addOrder({project_id,kind,vendor_id,to_dept_id,to_user_id,from_user:OC.effectiveUserId(),title,amount});
   if(error){toast('発注エラー: '+error.message);document.getElementById('oSave').disabled=false;return;}
   closeModal();toast(kind+'「'+title+'」を発注');
   if(curView==='orders')renderOrders(document.getElementById('content'));
@@ -984,24 +1028,12 @@ async function renderMembers(c){
           const depts=(OC.peopleDepts[p.id]||[]).map(OC.deptName).join('、') || '—';
           const loginBtn=p.id===OC.me.id
             ? '<span class="muted">自分</span>'
-            : `<button class="btn ghost sm" onclick="adminLoginAs('${p.id}')">このIDでログイン</button>`;
+            : `<button class="btn ghost sm" onclick="startImpersonation('${p.id}')">代理操作</button>`;
           return `<tr style="cursor:default"><td class="l"><b>${esc(p.name||'未設定')}</b></td><td class="l">${esc(p.email||'')}</td><td class="l"><span class="role-tag">${esc(p.role||'—')}</span></td><td class="l">${esc(depts)}</td><td class="l"><button class="btn ghost sm" onclick="openMemberEdit('${p.id}')">編集</button> ${loginBtn}</td></tr>`;
         }).join('') || '<tr><td class="empty" colspan="5">メンバーがいません</td></tr>'}</tbody>
       </table>
     </div>
   </div>`;
-}
-async function adminLoginAs(userId){
-  const p=OC.peopleById[userId]||{};
-  const label=p.name||p.email||'このID';
-  if(!confirm(label+' としてログインします。現在の管理者セッションから切り替わります。続けますか？'))return;
-  try{
-    const res=await OC.adminLoginLink(userId);
-    if(!res.action_link)throw new Error('ログインリンクが返りませんでした');
-    location.href=res.action_link;
-  }catch(e){
-    toast('ログイン切替エラー: '+e.message);
-  }
 }
 function openMemberModal(){
   const pw=genPassword();
@@ -1078,8 +1110,7 @@ async function boot(){
   document.getElementById('meRole').textContent=OC.myRole||'—';
   await Promise.all([OC.loadPeople(),OC.loadDepartments(),OC.loadVendors(),OC.projectOptions()]);
   await OC.loadProjects();
-  document.getElementById('financeNav').classList.toggle('hidden',!OC.isAccounting());
-  document.getElementById('membersNav').classList.toggle('hidden',OC.myRole!=='管理者');
+  refreshShell();
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   go('home');

@@ -8,6 +8,7 @@
   const OC = (window.OC = {
     cfg, configured, sb: null,
     me: null, meName: '', myRole: null, myDept: null, myDepts: [],
+    impersonatingId: null, impersonatingUser: null,
     people: [], peopleById: {}, peopleDepts: {}, departments: [], vendors: [],
     projects: [], projOpts: [],
   });
@@ -80,7 +81,31 @@
   OC.deptName = (id) => (OC.departments.find((d) => d.id === id) || {}).name || '部門';
   OC.personName = (id) => { const p = OC.peopleById[id]; return p ? (p.name || p.email) : '—'; };
   OC.fmtDate = (d) => (d ? new Date(d.length <= 10 ? d + 'T00:00:00' : d).toLocaleDateString('ja-JP') : '—');
-  OC.isManager = () => OC.myRole === '経理' || OC.myRole === '管理者';
+  OC.loadImpersonation = function () {
+    let id = null;
+    try { id = localStorage.getItem('oc_impersonating_user_id'); } catch (e) {}
+    OC.impersonatingId = id && OC.peopleById[id] ? id : null;
+    OC.impersonatingUser = OC.impersonatingId ? OC.peopleById[OC.impersonatingId] : null;
+    return OC.impersonatingUser;
+  };
+  OC.startImpersonation = function (id) {
+    if (!OC.peopleById[id]) throw new Error('対象ユーザーが見つかりません');
+    try { localStorage.setItem('oc_impersonating_user_id', id); } catch (e) {}
+    OC.loadImpersonation();
+  };
+  OC.stopImpersonation = function () {
+    try { localStorage.removeItem('oc_impersonating_user_id'); } catch (e) {}
+    OC.impersonatingId = null;
+    OC.impersonatingUser = null;
+  };
+  OC.effectiveUser = () => OC.impersonatingUser || OC.me;
+  OC.effectiveUserId = () => (OC.effectiveUser() || {}).id;
+  OC.effectiveRole = () => (OC.impersonatingUser ? OC.impersonatingUser.role : OC.myRole);
+  OC.effectiveDepts = () => OC.impersonatingId
+    ? (OC.peopleDepts[OC.impersonatingId] || [])
+    : (OC.myDepts || []);
+  OC.isActualAdmin = () => OC.myRole === '管理者';
+  OC.isManager = () => OC.effectiveRole() === '経理' || OC.effectiveRole() === '管理者';
   OC.isAccounting = OC.isManager;
 
   // ---- ユーザー/マスタ ----
@@ -102,6 +127,7 @@
     (pd || []).forEach((r) => { (OC.peopleDepts[r.profile_id] = OC.peopleDepts[r.profile_id] || []).push(r.department_id); });
     OC.people.forEach((p) => { if (p.department_id) { const a = (OC.peopleDepts[p.id] = OC.peopleDepts[p.id] || []); if (!a.includes(p.department_id)) a.push(p.department_id); } });
     if (OC.me) OC.myDepts = OC.peopleDepts[OC.me.id] || (OC.myDept ? [OC.myDept] : []);
+    OC.loadImpersonation();
     return OC.people;
   };
   OC.loadDepartments = async function () {
@@ -149,11 +175,11 @@
     if (limit) q = q.limit(limit);
     const { data } = await q; return data || [];
   };
-  OC.addExpense = (project_id, amount, note) => OC.sb.from('expenses').insert({ project_id, amount, note });
+  OC.addExpense = (project_id, amount, note) => OC.sb.from('expenses').insert({ project_id, amount, note, user_id: OC.effectiveUserId() });
 
   // ---- タスク ----
   OC.updateTask = (id, patch) => OC.sb.from('tasks').update(patch).eq('id', id);
-  OC.addTask = (payload) => OC.sb.from('tasks').insert(payload).select().single();
+  OC.addTask = (payload) => OC.sb.from('tasks').insert({ created_by: OC.effectiveUserId(), ...payload }).select().single();
   OC.assignTask = (task_id, user_id) => OC.sb.from('task_assignees').insert({ task_id, user_id });
   OC.unassignTask = (task_id, user_id) => OC.sb.from('task_assignees').delete().match({ task_id, user_id });
   OC.loadAllTasks = async function () {
@@ -164,13 +190,14 @@
   };
 
   // ---- 発注 ----
-  OC.addOrder = (payload) => OC.sb.from('orders').insert(payload);
+  OC.addOrder = (payload) => OC.sb.from('orders').insert({ from_user: OC.effectiveUserId(), ...payload });
   OC.loadOrders = async function () {
     const sel = 'id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,vendor:vendor_id(name),proj:project_id(name)';
-    const deptList = (OC.myDepts && OC.myDepts.length) ? OC.myDepts : (OC.myDept ? [OC.myDept] : []);
-    const inFilter = ['to_user_id.eq.' + OC.me.id].concat(deptList.map((d) => 'to_dept_id.eq.' + d)).join(',');
+    const effectiveId = OC.effectiveUserId();
+    const deptList = OC.effectiveDepts();
+    const inFilter = ['to_user_id.eq.' + effectiveId].concat(deptList.map((d) => 'to_dept_id.eq.' + d)).join(',');
     const [{ data: out }, { data: inb }] = await Promise.all([
-      OC.sb.from('orders').select(sel).eq('from_user', OC.me.id).order('created_at', { ascending: false }),
+      OC.sb.from('orders').select(sel).eq('from_user', effectiveId).order('created_at', { ascending: false }),
       OC.sb.from('orders').select(sel).or(inFilter).order('created_at', { ascending: false }),
     ]);
     return { out: out || [], inbound: inb || [] };

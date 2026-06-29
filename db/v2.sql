@@ -213,7 +213,8 @@ create policy ta_cud on public.task_assignees for all to authenticated
 -- ============================================================
 -- 6. 集計ビュー更新 — 外注計を追加
 -- ============================================================
-create or replace view public.project_costs as
+drop view if exists public.project_costs;
+create view public.project_costs as
 select
   p.id,
   p.name,
