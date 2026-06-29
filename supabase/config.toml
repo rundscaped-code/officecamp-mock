@@ -3,8 +3,5 @@ project_id = "ejxcfomztjtkmhuitjas"
 [functions.create-member]
 verify_jwt = false
 
-[functions.admin-login-link]
-verify_jwt = false
-
 [functions.update-member]
 verify_jwt = false
