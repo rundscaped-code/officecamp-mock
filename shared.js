@@ -80,14 +80,15 @@
     OC.projOpts = data || []; return OC.projOpts;
   };
   OC.loadProjectDetail = async function (id) {
-    const [{ data: p }, { data: pmeta }, { data: exps }, { data: ords }, { data: members }] = await Promise.all([
+    const [{ data: p }, { data: pmeta }, { data: exps }, { data: ords }, { data: members }, { data: tasks }] = await Promise.all([
       OC.sb.from('project_costs').select('*').eq('id', id).single(),
       OC.sb.from('projects').select('status,delivery_date,start_date,client,leader_id,note').eq('id', id).single(),
       OC.sb.from('expenses').select('amount,note,spent_at,status,kind,author:user_id(name,email),vendor:vendor_id(name)').eq('project_id', id).order('spent_at', { ascending: false }),
       OC.sb.from('orders').select('id,kind,amount,title,status,from_user,to_user_id,to_dept_id,vendor:vendor_id(name)').eq('project_id', id).order('created_at', { ascending: false }),
       OC.sb.from('project_members').select('user_id').eq('project_id', id),
+      OC.sb.from('tasks').select('id,title,status,start_date,end_date,progress,parent_task_id,task_assignees(user_id)').eq('project_id', id).order('start_date', { nullsFirst: false }),
     ]);
-    return { p: { ...(p || {}), ...(pmeta || {}) }, expenses: exps || [], orders: ords || [], members: members || [] };
+    return { p: { ...(p || {}), ...(pmeta || {}) }, expenses: exps || [], orders: ords || [], members: members || [], tasks: tasks || [] };
   };
   OC.addProject = (payload) => OC.sb.from('projects').insert(payload);
   OC.updateProject = (id, patch) => OC.sb.from('projects').update(patch).eq('id', id);
