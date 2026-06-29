@@ -341,6 +341,58 @@
     .proj:hover{background:var(--accent-soft)}
     .proj.sel{background:var(--accent-soft);outline:2px solid var(--accent);outline-offset:-2px;border-radius:14px}
     .detail-empty{display:flex;align-items:center;justify-content:center;height:60vh;color:var(--sub);font-size:15px}
+
+    /* ===== PCネイティブ: アプリシェル／密度 ===== */
+    /* セクション見出しを上部ツールバー化 */
+    .head{position:sticky;top:0;z-index:5;background:var(--bg);
+      border-bottom:1px solid var(--line);padding:16px 28px!important}
+    .head h1{font-size:20px;font-weight:800}
+    #s-projects .head,#s-detail .head{padding-left:24px!important;padding-right:20px!important}
+    /* サイドバー上部にブランド */
+    .tabbar::before{content:"OFFICE CAMP";display:block;font-size:12px;font-weight:800;
+      letter-spacing:1.5px;color:var(--sub);padding:4px 14px 14px}
+    /* ボタンは内容幅に（フル幅をやめる）+ ホバー */
+    .btn,.btn-ghost{width:auto;display:inline-block;padding:10px 18px;font-size:14px;border-radius:12px;
+      box-shadow:none;transition:filter .12s,background .12s}
+    .btn:hover{filter:brightness(1.12)}
+    .btn-ghost:hover{background:var(--accent-soft)}
+    .sheet-card .btn,.sheet-card .btn-ghost,.login .btn{width:100%}
+    /* フォームは読みやすい幅で（フル幅にしない） */
+    #projForm,#orderForm{max-width:560px}
+    /* ===== 経費: 中央寄せの入力カード ===== */
+    #s-expense .screen{max-width:620px}
+    /* ===== 経理: 全幅ダッシュボード ===== */
+    #s-finance .head,#s-finance .screen{max-width:none;margin:0;padding-left:28px;padding-right:28px}
+    #s-finance .fin-sum .kpi{padding:16px 18px;text-align:left;border:1px solid var(--line)}
+    #s-finance .fin-sum .kpi .n{font-size:22px}
+    .fin-table{font-size:13px;min-width:0}
+    .fin-table th,.fin-table td{padding:10px 14px}
+    .fin-table tbody tr:hover{background:var(--accent-soft)}
+    /* ===== タスク/ガント: 全幅 ===== */
+    #s-schedule .head,#s-schedule .screen{max-width:none;margin:0;padding-left:28px;padding-right:28px}
+    .board{padding-bottom:14px}
+    /* ===== 発注: 2カラム ===== */
+    #s-orders .screen{max-width:1000px}
+    /* ===== 案件テーブル（PC） ===== */
+    .pj-table{width:100%;border-collapse:collapse;font-size:13px}
+    .pj-table thead th{position:sticky;top:0;background:var(--card);z-index:1;
+      text-align:right;font-size:11px;font-weight:700;color:var(--sub);padding:9px 10px;
+      border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap}
+    .pj-table thead th.l{text-align:left}
+    .pj-table thead th:hover{color:var(--ink)}
+    .pj-table tbody td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+    .pj-table tbody td.l{text-align:left;white-space:normal}
+    .pj-table tbody tr{cursor:pointer;transition:background .1s}
+    .pj-table tbody tr:hover{background:var(--accent-soft)}
+    .pj-table tbody tr.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+    .pj-table td.neg{color:#B00020}
+    .pj-nm{font-weight:700;font-size:13.5px;line-height:1.3}
+    .pj-cd{font-size:11px;color:var(--sub);font-weight:700;background:var(--accent-soft);padding:1px 6px;border-radius:6px}
+    .pj-cl{font-size:11px;color:var(--sub);margin-top:2px}
+    .pj-st{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600}
+    .pj-st .dot{width:8px;height:8px}
+    /* 詳細ペインはスクロール独立 */
+    #s-detail .screen{padding-top:14px}
   }
 </style>
 </head>
@@ -767,18 +819,51 @@ function renderProjects(){
     return true;
   });
   if(!rows.length){list.innerHTML=`<div class="empty">該当する案件がありません</div>`;return;}
-  list.innerHTML=rows.map(p=>`
-    <div class="card"><div class="pad proj" data-pid="${p.id}" onclick="openDetail('${p.id}')">
-      <div class="proj-top"><span class="dot s-${p.status}" style="width:9px;height:9px;border-radius:50%"></span>
-        <span class="proj-name">${p.code?p.code+' ':''}${p.name}</span>
-        <div class="profit"><div class="v">粗利 ${man(p.profit)}</div><div class="r">${p.profit_rate}%</div></div></div>
-      <div class="proj-meta">${p.client?p.client+'・':''}受注 ${man(p.revenue)}・原価 ${man(p.cost)}・<b>${p.status||''}</b></div>
-    </div></div>`).join('');
+  if(isDesktop()){ renderProjTable(rows); }
+  else {
+    list.innerHTML=rows.map(p=>`
+      <div class="card"><div class="pad proj" data-pid="${p.id}" onclick="openDetail('${p.id}')">
+        <div class="proj-top"><span class="dot s-${p.status}" style="width:9px;height:9px;border-radius:50%"></span>
+          <span class="proj-name">${p.code?p.code+' ':''}${p.name}</span>
+          <div class="profit"><div class="v">粗利 ${man(p.profit)}</div><div class="r">${p.profit_rate}%</div></div></div>
+        <div class="proj-meta">${p.client?p.client+'・':''}受注 ${man(p.revenue)}・原価 ${man(p.cost)}・<b>${p.status||''}</b></div>
+      </div></div>`).join('');
+  }
   if(isDesktop()&&curDetail)markSelectedProject(curDetail);
 }
 const isDesktop = ()=> window.matchMedia('(min-width:860px)').matches;
+let projSort={key:'profit',dir:-1};
+function setProjSort(key){
+  if(projSort.key===key)projSort.dir*=-1; else projSort={key,dir:(key==='name'||key==='status')?1:-1};
+  renderProjects();
+}
+function renderProjTable(rows){
+  const k=projSort.key, dir=projSort.dir;
+  const sorted=[...rows].sort((a,b)=>{
+    let x=a[k], y=b[k];
+    if(k==='name'){x=(a.code||'')+(a.name||'');y=(b.code||'')+(b.name||'');}
+    if(typeof x==='string'||typeof y==='string'){return String(x||'').localeCompare(String(y||''),'ja')*dir;}
+    return ((x||0)-(y||0))*dir;
+  });
+  const ar=key=>projSort.key===key?(projSort.dir<0?' ▾':' ▴'):'';
+  const head=`<table class="pj-table"><thead><tr>
+    <th class="l" onclick="setProjSort('name')">案件${ar('name')}</th>
+    <th onclick="setProjSort('revenue')">受注${ar('revenue')}</th>
+    <th onclick="setProjSort('profit')">粗利${ar('profit')}</th>
+    <th onclick="setProjSort('profit_rate')">率${ar('profit_rate')}</th>
+    <th class="l" onclick="setProjSort('status')">状態${ar('status')}</th>
+  </tr></thead><tbody>`;
+  const body=sorted.map(p=>`<tr data-pid="${p.id}" onclick="openDetail('${p.id}')">
+    <td class="l"><div class="pj-nm">${p.code?'<span class="pj-cd">'+p.code+'</span> ':''}${p.name||''}</div>${p.client?'<div class="pj-cl">'+p.client+'</div>':''}</td>
+    <td>${man(p.revenue)}</td>
+    <td class="${(p.profit||0)<0?'neg':''}">${man(p.profit)}</td>
+    <td>${p.profit_rate}%</td>
+    <td class="l"><span class="pj-st s-${p.status}"><i class="dot s-${p.status}"></i>${p.status||''}</span></td>
+  </tr>`).join('');
+  document.getElementById('projList').innerHTML=head+body+'</tbody></table>';
+}
 function markSelectedProject(id){
-  document.querySelectorAll('#projList .proj').forEach(el=>el.classList.toggle('sel',el.dataset.pid===id));
+  document.querySelectorAll('#projList [data-pid]').forEach(el=>el.classList.toggle('sel',el.dataset.pid===id));
 }
 function showDetailPlaceholder(){
   const b=document.getElementById('detailBody');
