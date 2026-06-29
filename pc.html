@@ -540,23 +540,30 @@ function paintExpenses(){
     </tr></thead><tbody>${expRowsHTML(g.items)}</tbody></table></div></div>`).join('');
 }
 function openTaskAddModal(pid){
+  const projField=pid?'':`<div class="field"><label class="fl">案件</label><select id="ntProj" class="input">${OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')||'<option value="">案件なし</option>'}</select></div>`;
   modal(`<div class="modal"><div class="modal-h">タスクを追加</div><div class="modal-b">
+    ${projField}
     <div class="field"><label class="fl">タイトル</label><input id="ntTitle" class="input" placeholder="図面作成 など"></div>
     <div class="tm-grid">
       <div class="field"><label class="fl">状態</label><select id="ntStatus" class="input">${TSTATUS.map(s=>`<option ${s==='未着手'?'selected':''}>${s}</option>`).join('')}</select></div>
-      <div class="field"><label class="fl">進捗（%）</label><input id="ntProg" class="input" type="number" min="0" max="100" value="0"></div>
+      <div class="field"><label class="fl">担当（複数可・Ctrl/⌘で選択）</label><select id="ntAsg" class="input" multiple size="4">${OC.people.map(p=>`<option value="${p.id}">${esc(p.name||p.email)}（${esc(p.role||'—')}）</option>`).join('')}</select></div>
       <div class="field"><label class="fl">開始日</label><input id="ntStart" class="input" type="date"></div>
       <div class="field"><label class="fl">終了日</label><input id="ntEnd" class="input" type="date"></div>
     </div></div>
-    <div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" onclick="saveNewTask('${pid}')">追加</button></div></div>`);
+    <div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" onclick="saveNewTask('${pid||''}')">追加</button></div></div>`);
   setTimeout(()=>{const e=document.getElementById('ntTitle');if(e)e.focus();},30);
 }
 async function saveNewTask(pid){
   const v=x=>document.getElementById(x).value;
+  const project_id=pid||v('ntProj')||null;
   const title=v('ntTitle').trim();if(!title){toast('タイトルを入れてください');return;}
-  const {error}=await OC.addTask({project_id:pid,title,status:v('ntStatus'),progress:parseInt(v('ntProg'),10)||0,start_date:v('ntStart')||null,end_date:v('ntEnd')||null});
+  if(!project_id){toast('案件を選んでください');return;}
+  const {data,error}=await OC.addTask({project_id,title,status:v('ntStatus'),start_date:v('ntStart')||null,end_date:v('ntEnd')||null});
   if(error){toast('追加エラー: '+error.message);return;}
-  closeModal();toast('タスクを追加');
+  const asgSel=document.getElementById('ntAsg');
+  const asg=asgSel?[...asgSel.selectedOptions].map(o=>o.value):[];
+  for(const uid of asg){ const r=await OC.assignTask(data.id,uid); if(r.error){toast('担当割当エラー: '+r.error.message);} }
+  closeModal();toast('タスクを追加'+(asg.length?'（担当'+asg.length+'名）':''));
   try{tasksCache=await OC.loadAllTasks();}catch(e){}
   if(curView==='tasks')paintTasks();
   if(curView==='projects'&&curProject)selectProject(curProject);
@@ -673,10 +680,12 @@ async function renderTasks(c){
   c.innerHTML='<div class="empty">読み込み中…</div>';
   try{ tasksCache=await OC.loadAllTasks(); }
   catch(e){ c.innerHTML='<div class="card"><div class="card-b empty">タスクの読み込みに失敗しました：'+esc(e.message||e)+'</div></div>'; return; }
-  document.getElementById('topActions').innerHTML=`<div class="viewbar">
+  document.getElementById('topActions').innerHTML=`<div style="display:flex;gap:12px;align-items:center">
+    <div class="viewbar">
     <button id="tvTimeline" onclick="setTaskView('timeline')">タイムライン</button>
     <button id="tvBoard" onclick="setTaskView('board')">ボード</button>
-    <button id="tvList" onclick="setTaskView('list')">リスト</button></div>`;
+    <button id="tvList" onclick="setTaskView('list')">リスト</button></div>
+    <button class="btn" onclick="openTaskAddModal()">＋ タスク</button></div>`;
   const projOpts=OC.projects.map(p=>`<option value="${p.id}" ${p.id===taskFilter.proj?'selected':''}>${esc(p.name)}</option>`).join('');
   const asgOpts=OC.people.map(p=>`<option value="${p.id}" ${p.id===taskFilter.asg?'selected':''}>${esc(p.name||p.email)}</option>`).join('');
   c.innerHTML=`<div class="toolbar">
@@ -731,7 +740,6 @@ async function openTaskModal(id,silent){
       <div class="field"><label class="fl">タイトル</label><input id="tmTitle" class="input" value="${esc(t.title||'')}"></div>
       <div class="tm-grid">
         <div class="field"><label class="fl">状態</label><select id="tmStatus" class="input">${TSTATUS.map(s=>`<option ${s===(t.status||'未着手')?'selected':''}>${s}</option>`).join('')}</select></div>
-        <div class="field"><label class="fl">進捗（%）</label><input id="tmProg" class="input" type="number" min="0" max="100" value="${t.progress!=null?t.progress:0}"></div>
         <div class="field"><label class="fl">開始日</label><input id="tmStart" class="input" type="date" value="${t.start_date||''}"></div>
         <div class="field"><label class="fl">終了日</label><input id="tmEnd" class="input" type="date" value="${t.end_date||''}"></div>
       </div>
@@ -749,7 +757,7 @@ async function openTaskModal(id,silent){
 }
 async function saveTaskModal(id){
   const v=x=>document.getElementById(x).value;
-  const patch={title:v('tmTitle').trim()||'(無題)',status:v('tmStatus'),progress:parseInt(v('tmProg'),10)||0,
+  const patch={title:v('tmTitle').trim()||'(無題)',status:v('tmStatus'),
     start_date:v('tmStart')||null,end_date:v('tmEnd')||null,note:v('tmNote')};
   const {error}=await OC.updateTask(id,patch);
   if(error){toast('保存エラー: '+error.message);return;}
@@ -830,10 +838,8 @@ function paintTaskTimeline(body){
   const head=`<div class="grow ghead"><div class="gname">案件 / タスク</div><div class="gcells" style="width:${totalW}px;display:flex">${days.map(d=>{
     const wd=d.getDay();const ds=ymd(d);return `<div class="gday ${wd===0||wd===6?'we':''} ${ds===today?'td':''}">${d.getMonth()+1}/${d.getDate()}<br>${'日月火水木金土'[wd]}</div>`;}).join('')}</div></div>`;
   const bar=t=>{if(!t.start_date||!t.end_date)return '';const left=dDiff(minD,t.start_date)*W;const w=(dDiff(t.start_date,t.end_date)+1)*W;
-    const prog=t.status==='完了'?100:(t.progress||0);
-    const fill=prog>0?`<div class="gfill" style="width:${prog}%"></div>`:'';
     const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
-    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openTaskModal('${t.id}')" title="${esc(t.title)}（${esc(t.status||'未着手')}・${prog}%${who?'・'+who:''}）">${fill}<span style="position:relative;z-index:1">${esc(t.title)}</span></div>`;};
+    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openTaskModal('${t.id}')" title="${esc(t.title)}（${esc(t.status||'未着手')}${who?'・'+who:''}）"><span style="position:relative;z-index:1">${esc(t.title)}</span></div>`;};
   const rows=taskGroups().map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
@@ -845,7 +851,7 @@ function paintTaskTimeline(body){
   body.innerHTML=`<div class="vlegend">
       <span><i style="background:#9AA0A6"></i>未着手</span><span><i style="background:var(--accent)"></i>進行</span>
       <span><i style="background:var(--good)"></i>完了</span><span><i style="background:var(--warn)"></i>保留</span>
-      <span style="color:var(--bad)">┃今日</span><span>バー内の白＝進捗、右の名前＝担当。クリックで詳細。</span></div>
+      <span style="color:var(--bad)">┃今日</span><span>左の名前列に担当を表示。バーをクリックで詳細。</span></div>
     <div class="gwrap"><div class="grid-g">${head}${rows}</div></div>`;
 }
 
