@@ -6,7 +6,7 @@
 <title>オフィスキャンプ（PC）</title>
 <style>
   :root{
-    --bg:#F6F7F9;--panel:#FFFFFF;--side:#0E1116;--side-ink:#C7CCD4;--side-active:#1B2hush;
+    --bg:#F6F7F9;--panel:#FFFFFF;--side:#0E1116;--side-ink:#C7CCD4;
     --ink:#1A1D21;--sub:#7B828C;--line:#E7E9ED;--accent:#2D6CDF;--accent-soft:#EAF1FD;
     --good:#2E7D52;--bad:#C0392B;--warn:#B8860B;--radius:12px;--side-active:#1C2230;
     --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
@@ -85,6 +85,14 @@
   .s-見込,.s-未着手{background:#9AA0A6}.s-進行{background:var(--accent)}.s-完了{background:var(--good)}.s-失注,.s-保留{background:var(--warn)}
   .stbadge{font-size:11.5px;font-weight:700;padding:2px 10px;border-radius:20px}
   .code{font-size:11px;font-weight:700;color:var(--sub);background:var(--accent-soft);padding:1px 7px;border-radius:6px}
+  /* その場編集コントロール */
+  .einput{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:5px 8px;font-size:13px;font-family:inherit;max-width:210px;outline:none}
+  .einput:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .drow .einput{text-align:right}
+  select.einput{appearance:none;cursor:pointer}
+  td .einput{width:100%;max-width:none;padding:4px 6px;text-align:inherit}
+  td.ed{padding:6px 8px}
+  .link{color:var(--accent);cursor:pointer}
   /* master-detail */
   .md{display:grid;grid-template-columns:minmax(420px,1.1fr) minmax(360px,1fr);gap:16px;align-items:start}
   .md .list-card{max-height:calc(100dvh - 150px);overflow:auto}
@@ -174,7 +182,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js"></script>
+<script src="shared.js?v=3"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -248,15 +256,15 @@ async function renderHome(c){
   c.innerHTML=`
     <div class="kpis">
       <div class="kpi"><div class="l">案件数</div><div class="n">${ps.length}</div><div class="s">進行中 ${active.length}</div></div>
-      <div class="kpi"><div class="l">受注合計</div><div class="n">${OC.man(rev)}</div></div>
-      <div class="kpi"><div class="l">粗利合計</div><div class="n">${OC.man(prof)}</div><div class="s">率 ${rev?Math.round(prof/rev*100):0}%</div></div>
+      <div class="kpi"><div class="l">受注合計</div><div class="n">${OC.yen(rev)}</div></div>
+      <div class="kpi"><div class="l">粗利合計</div><div class="n">${OC.yen(prof)}</div><div class="s">率 ${rev?Math.round(prof/rev*100):0}%</div></div>
       <div class="kpi"><div class="l">登録メンバー</div><div class="n">${OC.people.length}</div></div>
     </div>
     <div class="grid2">
       <div class="card"><div class="card-h">粗利トップ案件</div><div class="card-b" style="padding:0">
         <table class="tbl"><tbody>${top.map(p=>`<tr onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),50)">
           <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b></td>
-          <td>${OC.man(p.revenue)}</td><td class="${(p.profit||0)<0?'neg':'pos'}">${OC.man(p.profit)}</td>
+          <td>${OC.yen(p.revenue)}</td><td class="${(p.profit||0)<0?'neg':'pos'}">${OC.yen(p.profit)}</td>
           <td><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td></tr>`).join('')||'<tr><td class="empty">案件がありません</td></tr>'}</tbody></table>
       </div></div>
       <div class="card"><div class="card-h">最近の経費</div><div class="card-b" style="padding:0">
@@ -314,8 +322,8 @@ function paintProjTable(){
       <th class="l" onclick="sortProj('status')">状態${ar('status')}</th>
     </tr></thead><tbody>${rows.map(p=>`<tr data-pid="${p.id}" onclick="selectProject('${p.id}')">
       <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
-      <td>${OC.man(p.revenue)}</td>
-      <td class="${(p.profit||0)<0?'neg':''}">${OC.man(p.profit)}</td>
+      <td>${OC.yen(p.revenue)}</td>
+      <td class="${(p.profit||0)<0?'neg':''}">${OC.yen(p.profit)}</td>
       <td>${p.profit_rate}%</td>
       <td class="l"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td>
     </tr>`).join('')||'<tr><td class="empty">該当する案件がありません</td></tr>'}</tbody></table>`;
@@ -334,14 +342,18 @@ async function selectProject(id){
       <div class="muted" style="margin-top:4px"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></div></div>
       <button class="btn sm" style="margin-left:auto" onclick="openExpModal('${id}')">＋ 経費</button></div>
     <div class="kpis" style="grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0 4px">
-      <div class="kpi"><div class="l">受注</div><div class="n" style="font-size:20px">${OC.man(p.revenue)}</div></div>
-      <div class="kpi"><div class="l">原価</div><div class="n" style="font-size:20px">${OC.man(p.cost)}</div></div>
-      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${OC.man(p.profit)}</div></div>
+      <div class="kpi"><div class="l">受注</div><div class="n" style="font-size:20px">${OC.yen(p.revenue)}</div></div>
+      <div class="kpi"><div class="l">原価</div><div class="n" style="font-size:20px">${OC.yen(p.cost)}</div></div>
+      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${OC.yen(p.profit)}</div></div>
       <div class="kpi"><div class="l">粗利率</div><div class="n" style="font-size:20px">${p.profit_rate}%</div></div>
     </div>
-    <div class="drow"><span class="k">受注元</span><span>${esc(p.client||'—')}</span></div>
-    <div class="drow"><span class="k">担当（リーダー）</span><span>${esc(leader)}</span></div>
-    <div class="drow"><span class="k">開始 / 納品</span><span>${OC.fmtDate(p.start_date)} → ${OC.fmtDate(p.delivery_date)}</span></div>
+    <div class="seclabel">案件情報（その場で編集）</div>
+    <div class="drow"><span class="k">状態</span><select class="einput" onchange="saveProjField('${id}','status',this.value)">${pstatusOptions(p.status)}</select></div>
+    <div class="drow"><span class="k">受注金額</span><input class="einput" type="number" value="${p.revenue||0}" onchange="saveProjField('${id}','amount',this.value)"></div>
+    <div class="drow"><span class="k">受注元</span><input class="einput" value="${esc(p.client||'')}" placeholder="—" onchange="saveProjField('${id}','client',this.value)"></div>
+    <div class="drow"><span class="k">担当（リーダー）</span><select class="einput" onchange="saveProjField('${id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></div>
+    <div class="drow"><span class="k">開始日</span><input class="einput" type="date" value="${p.start_date||''}" onchange="saveProjField('${id}','start_date',this.value)"></div>
+    <div class="drow"><span class="k">納品日</span><input class="einput" type="date" value="${p.delivery_date||''}" onchange="saveProjField('${id}','delivery_date',this.value)"></div>
     <div class="drow"><span class="k">メンバー</span><span>${members.length?members.map(m=>esc(OC.personName(m.user_id))).join('、'):'—'}</span></div>
     <div class="seclabel">経費（${expenses.length}）</div>
     ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>
@@ -352,6 +364,21 @@ async function selectProject(id){
       <div class="muted" style="font-size:12px">宛先 ${o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))}・${esc(o.status||'')}</div></div>
       <div class="a">${OC.yen(o.amount)}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">発注はまだありません</div>'}
   `;
+}
+const PSTATUS=['見込','進行','完了','失注'];
+function pstatusOptions(cur){return PSTATUS.map(s=>`<option ${s===cur?'selected':''}>${s}</option>`).join('');}
+function leaderOptions(cur){return '<option value="">—</option>'+OC.people.map(p=>`<option value="${p.id}" ${p.id===cur?'selected':''}>${esc(p.name||p.email)}</option>`).join('');}
+async function saveProjField(id,field,value){
+  let v=value;
+  if(field==='amount')v=parseInt(String(value).replace(/[,，]/g,''),10)||0;
+  if((field==='client'||field==='start_date'||field==='delivery_date'||field==='leader_id')&&v==='')v=null;
+  const patch={};patch[field]=v;
+  const {error}=await OC.updateProject(id,patch);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('保存しました');
+  await OC.loadProjects();
+  if(curView==='finance')paintFinance();
+  if(curView==='projects'){paintProjTable();selectProject(id);}
 }
 function openProjModal(){
   const opts=OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
@@ -500,9 +527,9 @@ function paintFinance(){
   const rev=rows.reduce((s,p)=>s+(p.revenue||0),0),cost=rows.reduce((s,p)=>s+(p.cost||0),0),prof=rows.reduce((s,p)=>s+(p.profit||0),0);
   document.getElementById('finKpis').innerHTML=`<div class="kpis">
     <div class="kpi"><div class="l">案件数</div><div class="n">${rows.length}</div></div>
-    <div class="kpi"><div class="l">受注計</div><div class="n">${OC.man(rev)}</div></div>
-    <div class="kpi"><div class="l">原価計</div><div class="n">${OC.man(cost)}</div></div>
-    <div class="kpi"><div class="l">粗利計</div><div class="n ${prof<0?'neg':'pos'}">${OC.man(prof)}</div><div class="s">率 ${rev?Math.round(prof/rev*100):0}%</div></div>
+    <div class="kpi"><div class="l">受注計</div><div class="n">${OC.yen(rev)}</div></div>
+    <div class="kpi"><div class="l">原価計</div><div class="n">${OC.yen(cost)}</div></div>
+    <div class="kpi"><div class="l">粗利計</div><div class="n ${prof<0?'neg':'pos'}">${OC.yen(prof)}</div><div class="s">率 ${rev?Math.round(prof/rev*100):0}%</div></div>
   </div>`;
   const ar=k=>finSort.key===k?(finSort.dir<0?' ▾':' ▴'):'';
   document.getElementById('finTable').innerHTML=`<table class="tbl"><thead><tr>
@@ -515,21 +542,24 @@ function paintFinance(){
     <th onclick="sortFin('profit')">粗利${ar('profit')}</th>
     <th onclick="sortFin('profit_rate')">率${ar('profit_rate')}</th>
     <th class="l">納品</th>
-  </tr></thead><tbody>${rows.map(p=>`<tr onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">
-    <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
-    <td class="l"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td>
-    <td class="l">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
-    <td>${OC.man(p.revenue)}</td><td>${OC.man(p.cost)}</td><td>${OC.man(p.outsource)}</td>
-    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.man(p.profit)}</b></td><td>${p.profit_rate}%</td>
-    <td class="l">${OC.fmtDate(p.delivery_date)}</td>
+  </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:default">
+    <td class="l"><b><span class="link" onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b></td>
+    <td class="l ed"><select class="einput" onchange="saveProjField('${p.id}','status',this.value)">${pstatusOptions(p.status)}</select></td>
+    <td class="l ed"><select class="einput" onchange="saveProjField('${p.id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></td>
+    <td class="ed"><input class="einput" type="number" value="${p.revenue||0}" style="text-align:right" onchange="saveProjField('${p.id}','amount',this.value)"></td>
+    <td>${OC.yen(p.cost)}</td><td>${OC.yen(p.outsource)}</td>
+    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.yen(p.profit)}</b></td><td>${p.profit_rate}%</td>
+    <td class="l ed"><input class="einput" type="date" value="${p.delivery_date||''}" onchange="saveProjField('${p.id}','delivery_date',this.value)"></td>
   </tr>`).join('')||'<tr><td class="empty" colspan="9">該当する案件がありません</td></tr>'}</tbody></table>`;
 }
 
 // ---- タスク（案件ごと） ----
 async function renderTasks(c){
   c.innerHTML='<div class="empty">読み込み中…</div>';
-  const tasks=await OC.loadAllTasks();
-  if(!tasks.length){c.innerHTML='<div class="card"><div class="card-b empty">タスクはまだありません</div></div>';return;}
+  let tasks;
+  try{ tasks=await OC.loadAllTasks(); }
+  catch(e){ c.innerHTML='<div class="card"><div class="card-b empty">タスクの読み込みに失敗しました：'+esc(e.message||e)+'</div></div>'; return; }
+  if(!tasks||!tasks.length){c.innerHTML='<div class="card"><div class="card-b empty">タスクはまだありません</div></div>';return;}
   const groups={};
   tasks.forEach(t=>{const k=t.project_id||'_';(groups[k]=groups[k]||{proj:t.proj,items:[]}).items.push(t);});
   const stPill=s=>`<span class="pill" style="background:transparent"><i class="dot s-${s||'未着手'}"></i>${esc(s||'未着手')}</span>`;
