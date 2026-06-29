@@ -330,6 +330,17 @@
     .sheet{align-items:center}
     .sheet-card{max-width:600px;border-radius:20px}
     .acct-btn{right:22px;top:16px}
+    /* ===== 案件タブ: 一覧＋右詳細ペイン（master-detail） ===== */
+    #s-projects{flex:none;width:440px;border-right:1px solid var(--line)}
+    #s-projects .head,#s-projects .screen{max-width:none;margin:0;padding-left:24px;padding-right:18px}
+    #s-projects #projList{display:flex;flex-direction:column;gap:8px}
+    #s-detail{flex:1;min-width:0}
+    #s-detail .head,#s-detail .screen{max-width:860px;margin:0 auto}
+    #s-detail .back{display:none}          /* 一覧が常に見えるので戻るリンク不要 */
+    .proj{transition:background .12s}
+    .proj:hover{background:var(--accent-soft)}
+    .proj.sel{background:var(--accent-soft);outline:2px solid var(--accent);outline-offset:-2px;border-radius:14px}
+    .detail-empty{display:flex;align-items:center;justify-content:center;height:60vh;color:var(--sub);font-size:15px}
   }
 </style>
 </head>
@@ -549,7 +560,14 @@ function nav(name){
   const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail',finance:'s-finance',orders:'s-orders'};
   showOnly(map[name]);
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.s===name));
-  if(name==='projects')loadProjects();
+  if(name==='projects'){
+    loadProjects();
+    if(isDesktop()){
+      // PCは案件一覧＋右詳細ペインの二段構え
+      document.getElementById('s-detail').classList.remove('hidden');
+      if(curDetail){ openDetail(curDetail); } else { showDetailPlaceholder(); }
+    }
+  }
   if(name==='schedule')loadGantt();
   if(name==='finance')loadFinance();
   if(name==='orders')loadOrders();
@@ -750,12 +768,22 @@ function renderProjects(){
   });
   if(!rows.length){list.innerHTML=`<div class="empty">該当する案件がありません</div>`;return;}
   list.innerHTML=rows.map(p=>`
-    <div class="card"><div class="pad proj" onclick="openDetail('${p.id}')">
+    <div class="card"><div class="pad proj" data-pid="${p.id}" onclick="openDetail('${p.id}')">
       <div class="proj-top"><span class="dot s-${p.status}" style="width:9px;height:9px;border-radius:50%"></span>
         <span class="proj-name">${p.code?p.code+' ':''}${p.name}</span>
         <div class="profit"><div class="v">粗利 ${man(p.profit)}</div><div class="r">${p.profit_rate}%</div></div></div>
       <div class="proj-meta">${p.client?p.client+'・':''}受注 ${man(p.revenue)}・原価 ${man(p.cost)}・<b>${p.status||''}</b></div>
     </div></div>`).join('');
+  if(isDesktop()&&curDetail)markSelectedProject(curDetail);
+}
+const isDesktop = ()=> window.matchMedia('(min-width:860px)').matches;
+function markSelectedProject(id){
+  document.querySelectorAll('#projList .proj').forEach(el=>el.classList.toggle('sel',el.dataset.pid===id));
+}
+function showDetailPlaceholder(){
+  const b=document.getElementById('detailBody');
+  if(b)b.innerHTML='<div class="detail-empty">← 左の一覧から案件を選んでください</div>';
+  document.getElementById('dName').textContent='案件詳細';
 }
 function toggleProjForm(show){
   const f=document.getElementById('projForm');
@@ -796,7 +824,16 @@ async function addProject(){
 }
 async function openDetail(id){
   curDetail=id;
-  showOnly('s-detail');
+  if(isDesktop()){
+    // 二段ペイン: 一覧を残したまま右に詳細を出す
+    ['s-expense','s-schedule','s-orders','s-finance','needConfig','loginView'].forEach(v=>document.getElementById(v).classList.add('hidden'));
+    document.getElementById('s-projects').classList.remove('hidden');
+    document.getElementById('s-detail').classList.remove('hidden');
+    if(!projRows||!projRows.length){await loadProjects();}
+    markSelectedProject(id);
+  }else{
+    showOnly('s-detail');
+  }
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelector('.tab[data-s="projects"]').classList.add('on');
   const body=document.getElementById('detailBody');
