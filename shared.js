@@ -101,7 +101,16 @@
   };
   OC.addExpense = (project_id, amount, note) => OC.sb.from('expenses').insert({ project_id, amount, note });
 
+  // ---- タスク ----
+  OC.loadAllTasks = async function () {
+    const { data } = await OC.sb.from('tasks')
+      .select('id,project_id,title,start_date,end_date,status,progress,leader_id,parent_task_id,proj:project_id(name,code),task_assignees(user_id)')
+      .order('start_date', { ascending: true });
+    return data || [];
+  };
+
   // ---- 発注 ----
+  OC.addOrder = (payload) => OC.sb.from('orders').insert(payload);
   OC.loadOrders = async function () {
     const sel = 'id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,vendor:vendor_id(name),proj:project_id(name)';
     const deptList = (OC.myDepts && OC.myDepts.length) ? OC.myDepts : (OC.myDept ? [OC.myDept] : []);
