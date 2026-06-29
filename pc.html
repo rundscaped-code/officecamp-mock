@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1024">
+<title>オフィスキャンプ（PC）</title>
+<style>
+  :root{
+    --bg:#F6F7F9;--panel:#FFFFFF;--side:#0E1116;--side-ink:#C7CCD4;--side-active:#1B2hush;
+    --ink:#1A1D21;--sub:#7B828C;--line:#E7E9ED;--accent:#2D6CDF;--accent-soft:#EAF1FD;
+    --good:#2E7D52;--bad:#C0392B;--warn:#B8860B;--radius:12px;--side-active:#1C2230;
+    --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+  }
+  [data-theme="dark"]{
+    --bg:#0F1115;--panel:#171A1F;--side:#0A0C10;--side-ink:#AEB6C2;--side-active:#1E2530;
+    --ink:#E8EAED;--sub:#8A929E;--line:#262A31;--accent:#5B8DEF;--accent-soft:#1A2433;
+    --good:#4FAF7C;--bad:#E5705F;--warn:#D4A24B;--shadow:0 1px 3px rgba(0,0,0,.5);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",Segoe UI,sans-serif;font-size:14px}
+  .hidden{display:none!important}
+  button{font-family:inherit}
+  /* ===== シェル ===== */
+  .app{display:flex;height:100dvh}
+  .side{width:236px;flex:none;background:var(--side);color:var(--side-ink);display:flex;flex-direction:column;padding:18px 12px}
+  .brand{display:flex;align-items:center;gap:9px;padding:6px 10px 18px;font-weight:800;letter-spacing:.5px;color:#fff;font-size:15px}
+  .brand .logo{width:26px;height:26px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px}
+  .nav{display:flex;flex-direction:column;gap:2px;flex:1}
+  .nav a{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;color:var(--side-ink);cursor:pointer;font-weight:600;font-size:13.5px;user-select:none}
+  .nav a:hover{background:rgba(255,255,255,.06);color:#fff}
+  .nav a.on{background:var(--side-active);color:#fff}
+  .nav a .ic{width:18px;height:18px;flex:none;opacity:.9}
+  .nav .navsec{font-size:10px;letter-spacing:1.5px;color:#5b626d;font-weight:700;padding:14px 12px 6px}
+  .side-foot{border-top:1px solid rgba(255,255,255,.08);padding-top:10px;margin-top:8px;display:flex;flex-direction:column;gap:2px}
+  .side-foot .me{padding:6px 12px;font-size:12px;color:#8b929d}
+  .side-foot .me b{color:#fff;display:block;font-size:13px}
+  /* ===== メイン ===== */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .top{height:62px;flex:none;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:16px;padding:0 26px}
+  .top h1{margin:0;font-size:18px;font-weight:800}
+  .top .spacer{flex:1}
+  .content{flex:1;overflow:auto;padding:24px 26px}
+  .maxw{max-width:1280px;margin:0 auto}
+  /* ===== 部品 ===== */
+  .btn{border:none;border-radius:9px;padding:9px 16px;font-size:13.5px;font-weight:700;cursor:pointer;background:var(--accent);color:#fff;transition:filter .12s}
+  .btn:hover{filter:brightness(1.08)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  .btn.ghost:hover{background:var(--accent-soft);filter:none}
+  .btn.sm{padding:6px 11px;font-size:12.5px}
+  .input,select.input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 11px;font-size:14px;color:var(--ink);outline:none;font-family:inherit}
+  .input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  select.input{appearance:none}
+  label.fl{display:block;font-size:12px;font-weight:700;color:var(--sub);margin:0 2px 5px}
+  .field{margin-bottom:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .card-h{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:800;font-size:14px;display:flex;align-items:center;gap:8px}
+  .card-b{padding:16px}
+  .muted{color:var(--sub)}
+  .empty{color:var(--sub);text-align:center;padding:34px 10px;font-size:13.5px}
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px}
+  .kpi .l{font-size:12px;color:var(--sub);font-weight:700}
+  .kpi .n{font-size:26px;font-weight:800;margin-top:6px;letter-spacing:-.5px}
+  .kpi .s{font-size:12px;color:var(--sub);margin-top:3px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  /* テーブル */
+  table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+  table.tbl thead th{position:sticky;top:0;background:var(--panel);text-align:right;font-size:11.5px;font-weight:700;color:var(--sub);
+    padding:11px 12px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none;z-index:1}
+  table.tbl thead th.l{text-align:left}
+  table.tbl thead th:hover{color:var(--ink)}
+  table.tbl tbody td{text-align:right;padding:11px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  table.tbl tbody td.l{text-align:left;white-space:normal}
+  table.tbl tbody tr{cursor:pointer}
+  table.tbl tbody tr:hover{background:var(--accent-soft)}
+  table.tbl tbody tr.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+  table.tbl tbody tr:last-child td{border-bottom:none}
+  .neg{color:var(--bad)}
+  .pos{color:var(--good)}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--accent-soft);color:var(--accent)}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+  .s-見込,.s-未着手{background:#9AA0A6}.s-進行{background:var(--accent)}.s-完了{background:var(--good)}.s-失注,.s-保留{background:var(--warn)}
+  .stbadge{font-size:11.5px;font-weight:700;padding:2px 10px;border-radius:20px}
+  .code{font-size:11px;font-weight:700;color:var(--sub);background:var(--accent-soft);padding:1px 7px;border-radius:6px}
+  /* master-detail */
+  .md{display:grid;grid-template-columns:minmax(420px,1.1fr) minmax(360px,1fr);gap:16px;align-items:start}
+  .md .list-card{max-height:calc(100dvh - 150px);overflow:auto}
+  .md .detail-card{max-height:calc(100dvh - 150px);overflow:auto}
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+  .toolbar .input{width:auto;min-width:200px}
+  .search{flex:1;min-width:220px}
+  /* detail内 */
+  .dh{display:flex;align-items:flex-start;gap:10px;margin-bottom:6px}
+  .dh .nm{font-size:18px;font-weight:800}
+  .drow{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .drow .k{color:var(--sub)}
+  .seclabel{font-size:11px;letter-spacing:1px;color:var(--sub);font-weight:700;text-transform:uppercase;margin:18px 0 8px}
+  .ln{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .ln:last-child{border-bottom:none}
+  .ln .a{margin-left:auto;font-weight:700}
+  /* modal */
+  .ov{position:fixed;inset:0;background:rgba(10,14,20,.45);display:flex;align-items:center;justify-content:center;z-index:50}
+  .modal{background:var(--panel);border-radius:14px;width:440px;max-width:92vw;box-shadow:0 24px 60px rgba(0,0,0,.3);overflow:hidden}
+  .modal-h{padding:16px 18px;border-bottom:1px solid var(--line);font-weight:800;font-size:15px}
+  .modal-b{padding:18px}
+  .modal-f{padding:14px 18px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+  /* login */
+  .login-screen{height:100dvh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+  .login-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 40px rgba(16,24,40,.1);padding:30px;width:380px;max-width:92vw}
+  .login-card h1{margin:0 0 4px;font-size:22px}
+  .login-card p{margin:0 0 18px;color:var(--sub);font-size:13.5px}
+  .login-card .field{margin-bottom:11px}
+  .login-msg{color:var(--bad);font-size:13px;min-height:18px;margin-top:8px}
+  .link{color:var(--accent);cursor:pointer;font-size:12.5px}
+  /* toast */
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(16px);background:#111418;color:#fff;
+    padding:11px 18px;border-radius:10px;font-size:13.5px;font-weight:600;opacity:0;transition:.25s;z-index:80;box-shadow:0 10px 26px rgba(0,0,0,.3)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .switch{font-size:12px;color:var(--sub)}
+  .switch a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- ログイン -->
+<div id="login" class="login-screen hidden">
+  <div class="login-card">
+    <h1>オフィスキャンプ</h1>
+    <p>案件・経費・予定の管理（PC版）</p>
+    <div class="field"><label class="fl">メール</label><input id="lEmail" class="input" type="email" autocomplete="username" placeholder="you@officecamp.jp"></div>
+    <div class="field"><label class="fl">パスワード</label><input id="lPass" class="input" type="password" autocomplete="current-password" placeholder="パスワード" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <button class="btn" style="width:100%" onclick="doLogin()">ログイン</button>
+    <div class="login-msg" id="lMsg"></div>
+    <div style="text-align:center;margin-top:6px"><span class="link" onclick="magic()">初回ログイン・パスワードを忘れた方</span></div>
+    <div style="text-align:center;margin-top:14px" class="switch">スマホで使う場合は <a href="app.html">スマホ版</a></div>
+  </div>
+</div>
+
+<!-- アプリ -->
+<div id="app" class="app hidden">
+  <aside class="side">
+    <div class="brand"><span class="logo">⛺</span> OFFICE CAMP</div>
+    <nav class="nav" id="nav">
+      <a data-v="home"     onclick="go('home')"><span class="ic">▦</span> ホーム</a>
+      <a data-v="projects" onclick="go('projects')"><span class="ic">▤</span> 案件</a>
+      <a data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費</a>
+      <div class="navsec">管理</div>
+      <a data-v="finance"  onclick="go('finance')"><span class="ic">▣</span> 経理</a>
+      <a data-v="tasks"    onclick="go('tasks')"><span class="ic">☷</span> タスク</a>
+      <a data-v="orders"   onclick="go('orders')"><span class="ic">⇄</span> 発注</a>
+    </nav>
+    <div class="side-foot">
+      <div class="me"><b id="meName">—</b><span id="meRole">—</span></div>
+      <a class="nav" style="display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;color:var(--side-ink);cursor:pointer;font-size:13px" onclick="toggleTheme()"><span class="ic">◐</span> テーマ切替</a>
+      <a class="nav" style="display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;color:var(--side-ink);cursor:pointer;font-size:13px" onclick="openPwModal()"><span class="ic">🔑</span> パスワード</a>
+      <a class="nav" style="display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;color:var(--side-ink);cursor:pointer;font-size:13px" onclick="doLogout()"><span class="ic">⏻</span> ログアウト</a>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="top">
+      <h1 id="pageTitle">ホーム</h1>
+      <div class="spacer"></div>
+      <div id="topActions"></div>
+    </header>
+    <div class="content"><div class="maxw" id="content"></div></div>
+  </main>
+</div>
+
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="shared.js"></script>
+<script>
+let curView='home', curProject=null, projSort={key:'profit',dir:-1};
+
+// ---- 共通UI ----
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),2200);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function applyTheme(){let t=null;try{t=localStorage.getItem('oc_theme');}catch(e){}if(!t)t=(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.dataset.theme=t;}
+function toggleTheme(){const c=document.documentElement.dataset.theme==='dark'?'dark':'light';const n=c==='dark'?'light':'dark';document.documentElement.dataset.theme=n;try{localStorage.setItem('oc_theme',n);}catch(e){}}
+function modal(html){document.getElementById('modalRoot').innerHTML='<div class="ov" onclick="if(event.target===this)closeModal()">'+html+'</div>';}
+function closeModal(){document.getElementById('modalRoot').innerHTML='';}
+
+// ---- 認証 ----
+async function doLogin(){
+  const email=document.getElementById('lEmail').value.trim();
+  const password=document.getElementById('lPass').value;
+  const msg=document.getElementById('lMsg');
+  if(!email||!password){msg.textContent='メールとパスワードを入力してください。';return;}
+  msg.textContent='ログイン中…';
+  const {error}=await OC.signIn(email,password);
+  if(error)msg.textContent=(error.message==='Invalid login credentials')?'メールかパスワードが違います':('ログインできません: '+error.message);
+}
+async function magic(){
+  const email=document.getElementById('lEmail').value.trim();
+  const msg=document.getElementById('lMsg');
+  if(!email){msg.textContent='メールを入力してください。';return;}
+  const {error}=await OC.sendMagic(email);
+  msg.style.color='var(--sub)';
+  msg.textContent=error?('エラー: '+error.message):'メールのリンクから入って、左下「パスワード」で設定してください。';
+}
+async function doLogout(){await OC.signOut();location.reload();}
+function openPwModal(){
+  modal('<div class="modal"><div class="modal-h">パスワードを設定 / 変更</div>'+
+    '<div class="modal-b"><div class="field"><label class="fl">新しいパスワード（6文字以上）</label>'+
+    '<input id="pwNew" class="input" type="password" autocomplete="new-password"></div></div>'+
+    '<div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button>'+
+    '<button class="btn" onclick="savePw()">設定</button></div></div>');
+}
+async function savePw(){
+  const p=document.getElementById('pwNew').value;
+  if(!p||p.length<6){toast('6文字以上で入力してください');return;}
+  const {error}=await OC.setPassword(p);
+  if(error){toast('エラー: '+error.message);return;}
+  closeModal();toast('パスワードを設定しました');
+}
+
+// ---- ルーティング ----
+const TITLES={home:'ホーム',projects:'案件',expenses:'経費',finance:'経理',tasks:'タスク',orders:'発注'};
+function go(v){
+  curView=v;
+  document.querySelectorAll('#nav a[data-v]').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
+  document.getElementById('pageTitle').textContent=TITLES[v]||'';
+  document.getElementById('topActions').innerHTML='';
+  const c=document.getElementById('content');
+  if(v==='home')return renderHome(c);
+  if(v==='projects')return renderProjects(c);
+  if(v==='expenses')return renderExpenses(c);
+  // 次フェーズ
+  c.innerHTML='<div class="card"><div class="card-b empty">この画面はPC向けに次のフェーズで作り込みます。<br>今すぐ使う場合は <a class="link" href="app.html">スマホ版</a> でも操作できます（同じデータ）。</div></div>';
+}
+
+// ---- ホーム（ダッシュボード） ----
+async function renderHome(c){
+  c.innerHTML='<div class="empty">読み込み中…</div>';
+  const ps=OC.projects.length?OC.projects:await OC.loadProjects();
+  const active=ps.filter(p=>p.status==='進行');
+  const rev=ps.reduce((s,p)=>s+(p.revenue||0),0);
+  const prof=ps.reduce((s,p)=>s+(p.profit||0),0);
+  const exps=await OC.loadExpenses(8);
+  const top=[...ps].sort((a,b)=>(b.profit||0)-(a.profit||0)).slice(0,6);
+  c.innerHTML=`
+    <div class="kpis">
+      <div class="kpi"><div class="l">案件数</div><div class="n">${ps.length}</div><div class="s">進行中 ${active.length}</div></div>
+      <div class="kpi"><div class="l">受注合計</div><div class="n">${OC.man(rev)}</div></div>
+      <div class="kpi"><div class="l">粗利合計</div><div class="n">${OC.man(prof)}</div><div class="s">率 ${rev?Math.round(prof/rev*100):0}%</div></div>
+      <div class="kpi"><div class="l">登録メンバー</div><div class="n">${OC.people.length}</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="card-h">粗利トップ案件</div><div class="card-b" style="padding:0">
+        <table class="tbl"><tbody>${top.map(p=>`<tr onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),50)">
+          <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b></td>
+          <td>${OC.man(p.revenue)}</td><td class="${(p.profit||0)<0?'neg':'pos'}">${OC.man(p.profit)}</td>
+          <td><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td></tr>`).join('')||'<tr><td class="empty">案件がありません</td></tr>'}</tbody></table>
+      </div></div>
+      <div class="card"><div class="card-h">最近の経費</div><div class="card-b" style="padding:0">
+        ${exps.length?exps.map(e=>`<div class="ln" style="padding:11px 16px;border-bottom:1px solid var(--line)">
+          <div><div><b>${esc(e.note||'（メモなし）')}</b></div>
+          <div class="muted" style="font-size:12px">${esc(e.proj?.name||'—')}・${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}</div></div>
+          <div class="a">${OC.yen(e.amount)}</div></div>`).join(''):'<div class="empty">経費はまだありません</div>'}
+      </div></div>
+    </div>`;
+}
+
+// ---- 案件（master-detail） ----
+function projActions(){
+  document.getElementById('topActions').innerHTML='<button class="btn" onclick="openProjModal()">＋ 案件を追加</button>';
+}
+async function renderProjects(c){
+  projActions();
+  c.innerHTML='<div class="empty">読み込み中…</div>';
+  if(!OC.projects.length)await OC.loadProjects();
+  c.innerHTML=`
+    <div class="toolbar">
+      <input id="pSearch" class="input search" placeholder="🔍 案件名・番号・受注元" oninput="paintProjTable()">
+      <select id="pStatus" class="input" onchange="paintProjTable()">
+        <option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option>
+      </select>
+    </div>
+    <div class="md">
+      <div class="card list-card"><div id="projTable"></div></div>
+      <div class="card detail-card"><div class="card-b" id="projDetail"><div class="empty">← 左の一覧から案件を選んでください</div></div></div>
+    </div>`;
+  paintProjTable();
+  if(curProject)selectProject(curProject);
+}
+function projFiltered(){
+  const q=(document.getElementById('pSearch')?.value||'').trim().toLowerCase();
+  const st=document.getElementById('pStatus')?.value||'';
+  return OC.projects.filter(p=>{
+    if(st&&p.status!==st)return false;
+    if(q&&!`${p.code||''} ${p.name||''} ${p.client||''}`.toLowerCase().includes(q))return false;
+    return true;
+  });
+}
+function sortProj(key){if(projSort.key===key)projSort.dir*=-1;else projSort={key,dir:(key==='name'||key==='status')?1:-1};paintProjTable();}
+function paintProjTable(){
+  const rows=projFiltered();const {key,dir}=projSort;
+  rows.sort((a,b)=>{let x=a[key],y=b[key];if(key==='name'){x=(a.code||'')+(a.name||'');y=(b.code||'')+(b.name||'');}
+    if(typeof x==='string'||typeof y==='string')return String(x||'').localeCompare(String(y||''),'ja')*dir;return((x||0)-(y||0))*dir;});
+  const ar=k=>projSort.key===k?(projSort.dir<0?' ▾':' ▴'):'';
+  document.getElementById('projTable').innerHTML=
+    `<table class="tbl"><thead><tr>
+      <th class="l" onclick="sortProj('name')">案件${ar('name')}</th>
+      <th onclick="sortProj('revenue')">受注${ar('revenue')}</th>
+      <th onclick="sortProj('profit')">粗利${ar('profit')}</th>
+      <th onclick="sortProj('profit_rate')">率${ar('profit_rate')}</th>
+      <th class="l" onclick="sortProj('status')">状態${ar('status')}</th>
+    </tr></thead><tbody>${rows.map(p=>`<tr data-pid="${p.id}" onclick="selectProject('${p.id}')">
+      <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
+      <td>${OC.man(p.revenue)}</td>
+      <td class="${(p.profit||0)<0?'neg':''}">${OC.man(p.profit)}</td>
+      <td>${p.profit_rate}%</td>
+      <td class="l"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td>
+    </tr>`).join('')||'<tr><td class="empty">該当する案件がありません</td></tr>'}</tbody></table>`;
+  if(curProject)document.querySelectorAll('#projTable tr[data-pid]').forEach(tr=>tr.classList.toggle('sel',tr.dataset.pid===curProject));
+}
+async function selectProject(id){
+  curProject=id;
+  document.querySelectorAll('#projTable tr[data-pid]').forEach(tr=>tr.classList.toggle('sel',tr.dataset.pid===id));
+  const box=document.getElementById('projDetail');
+  if(!box)return;
+  box.innerHTML='<div class="empty">読み込み中…</div>';
+  const {p,expenses,orders,members}=await OC.loadProjectDetail(id);
+  const leader=p.leader_id?OC.personName(p.leader_id):'—';
+  box.innerHTML=`
+    <div class="dh"><div><div class="nm">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name||'—')}</div>
+      <div class="muted" style="margin-top:4px"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></div></div>
+      <button class="btn sm" style="margin-left:auto" onclick="openExpModal('${id}')">＋ 経費</button></div>
+    <div class="kpis" style="grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0 4px">
+      <div class="kpi"><div class="l">受注</div><div class="n" style="font-size:20px">${OC.man(p.revenue)}</div></div>
+      <div class="kpi"><div class="l">原価</div><div class="n" style="font-size:20px">${OC.man(p.cost)}</div></div>
+      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${OC.man(p.profit)}</div></div>
+      <div class="kpi"><div class="l">粗利率</div><div class="n" style="font-size:20px">${p.profit_rate}%</div></div>
+    </div>
+    <div class="drow"><span class="k">受注元</span><span>${esc(p.client||'—')}</span></div>
+    <div class="drow"><span class="k">担当（リーダー）</span><span>${esc(leader)}</span></div>
+    <div class="drow"><span class="k">開始 / 納品</span><span>${OC.fmtDate(p.start_date)} → ${OC.fmtDate(p.delivery_date)}</span></div>
+    <div class="drow"><span class="k">メンバー</span><span>${members.length?members.map(m=>esc(OC.personName(m.user_id))).join('、'):'—'}</span></div>
+    <div class="seclabel">経費（${expenses.length}）</div>
+    ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>
+      <div class="muted" style="font-size:12px">${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}${e.kind==='外注'&&e.vendor?'・外注 '+esc(e.vendor.name):''}</div></div>
+      <div class="a">${OC.yen(e.amount)} <span class="muted" style="font-size:11px">${esc(e.status||'')}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
+    <div class="seclabel">発注（${orders.length}）</div>
+    ${orders.length?orders.map(o=>`<div class="ln"><div><b>${esc(o.title)}</b> <span class="pill">${esc(o.kind)}</span>
+      <div class="muted" style="font-size:12px">宛先 ${o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))}・${esc(o.status||'')}</div></div>
+      <div class="a">${OC.yen(o.amount)}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">発注はまだありません</div>'}
+  `;
+}
+function openProjModal(){
+  const opts=OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const leaderField=OC.isManager()?`<div class="field"><label class="fl">案件リーダー</label><select id="mLeader" class="input">${OC.people.map(p=>`<option value="${p.id}" ${p.id===OC.me.id?'selected':''}>${esc(p.name||p.email)}</option>`).join('')}</select></div>`:'';
+  modal(`<div class="modal"><div class="modal-h">案件を追加</div><div class="modal-b">
+    <div class="field"><label class="fl">案件名</label><input id="mName" class="input" placeholder="○○ビル改修"></div>
+    <div class="field"><label class="fl">受注元（任意）</label><input id="mClient" class="input" placeholder="◇◇建設"></div>
+    <div class="field"><label class="fl">受注金額（円・任意）</label><input id="mAmt" class="input" inputmode="numeric" placeholder="0"></div>
+    <div style="display:flex;gap:10px"><div class="field" style="flex:1"><label class="fl">開始日</label><input id="mStart" class="input" type="date"></div>
+      <div class="field" style="flex:1"><label class="fl">納品日</label><input id="mDeliv" class="input" type="date"></div></div>
+    <div class="field"><label class="fl">派生元の案件（任意）</label><select id="mParent" class="input"><option value="">新規（派生元なし）</option>${opts}</select></div>
+    ${leaderField}
+    </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="mSave" onclick="saveProj()">追加</button></div></div>`);
+}
+async function saveProj(){
+  const name=document.getElementById('mName').value.trim();
+  if(!name){toast('案件名を入れてください');return;}
+  const amount=parseInt((document.getElementById('mAmt').value||'0').replace(/[,，]/g,''),10)||0;
+  const payload={name,client:document.getElementById('mClient').value.trim()||null,amount,
+    start_date:document.getElementById('mStart').value||null,delivery_date:document.getElementById('mDeliv').value||null,
+    parent_id:document.getElementById('mParent').value||null,owner_id:OC.me.id,
+    leader_id:OC.isManager()?(document.getElementById('mLeader').value||OC.me.id):OC.me.id,status:'進行'};
+  document.getElementById('mSave').disabled=true;
+  const {error}=await OC.addProject(payload);
+  if(error){toast('追加エラー: '+error.message);document.getElementById('mSave').disabled=false;return;}
+  closeModal();toast('案件「'+name+'」を追加');
+  await OC.loadProjects();await OC.projectOptions();
+  if(curView==='projects')paintProjTable();
+}
+
+// ---- 経費 ----
+let expCache=[];
+function expActions(){document.getElementById('topActions').innerHTML='<button class="btn" onclick="openExpModal()">＋ 新規経費</button>';}
+async function renderExpenses(c){
+  expActions();
+  c.innerHTML='<div class="empty">読み込み中…</div>';
+  expCache=await OC.loadExpenses(200);
+  c.innerHTML=`<div class="card"><div class="card-b" style="padding:0">
+    <table class="tbl"><thead><tr>
+      <th class="l">日付</th><th class="l">案件</th><th class="l">メモ</th><th class="l">入力者</th><th>金額</th><th class="l">状態</th>
+    </tr></thead><tbody>${expCache.length?expCache.map(e=>`<tr style="cursor:default">
+      <td class="l">${OC.fmtDate(e.spent_at)}</td>
+      <td class="l">${e.proj?.code?'<span class="code">'+esc(e.proj.code)+'</span> ':''}${esc(e.proj?.name||'—')}</td>
+      <td class="l">${esc(e.note||'（メモなし）')}${e.kind==='外注'&&e.vendor?' <span class="pill">外注'+esc(e.vendor.name)+'</span>':''}</td>
+      <td class="l">${esc(e.author?.name||e.author?.email||'—')}</td>
+      <td><b>${OC.yen(e.amount)}</b></td>
+      <td class="l"><span class="stbadge" style="background:var(--accent-soft);color:var(--accent)">${esc(e.status||'')}</span></td>
+    </tr>`).join(''):'<tr><td class="empty" colspan="6">経費はまだありません</td></tr>'}</tbody></table>
+  </div></div>`;
+}
+function openExpModal(projectId){
+  const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${esc(p.name)}</option>`).join('');
+  modal(`<div class="modal"><div class="modal-h">経費を記録</div><div class="modal-b">
+    <div class="field"><label class="fl">金額（円）</label><input id="eAmt" class="input" inputmode="numeric" placeholder="0" autofocus></div>
+    <div class="field"><label class="fl">紐づく案件</label><select id="eProj" class="input">${opts}</select></div>
+    <div class="field"><label class="fl">メモ（何を買ったか）</label><input id="eMemo" class="input" placeholder="木材・ビス など"></div>
+    </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="eSave" onclick="saveExp()">記録する</button></div></div>`);
+}
+async function saveExp(){
+  const amount=parseInt((document.getElementById('eAmt').value||'0').replace(/[,，]/g,''),10)||0;
+  const project_id=document.getElementById('eProj').value;
+  const note=document.getElementById('eMemo').value.trim();
+  if(!amount||!project_id){toast('金額と案件を入れてください');return;}
+  document.getElementById('eSave').disabled=true;
+  const {error}=await OC.addExpense(project_id,amount,note);
+  if(error){toast('記録エラー: '+error.message);document.getElementById('eSave').disabled=false;return;}
+  closeModal();toast(OC.yen(amount)+' を記録しました');
+  if(curView==='expenses')renderExpenses(document.getElementById('content'));
+  if(curView==='projects'&&curProject)selectProject(curProject);
+  if(curView==='home')renderHome(document.getElementById('content'));
+}
+
+// ---- 起動 ----
+async function boot(){
+  await OC.loadMe();
+  document.getElementById('meName').textContent=OC.meName||'—';
+  document.getElementById('meRole').textContent=OC.myRole||'—';
+  await Promise.all([OC.loadPeople(),OC.loadDepartments(),OC.loadVendors(),OC.projectOptions()]);
+  await OC.loadProjects();
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  go('home');
+}
+(async function init(){
+  applyTheme();
+  if(!OC.init()){document.getElementById('login').classList.remove('hidden');
+    document.getElementById('lMsg').textContent='Supabase未設定（config.js）';return;}
+  const session=await OC.session();
+  if(!session){
+    document.getElementById('login').classList.remove('hidden');
+    let booted=false; OC.onAuth(s=>{if(s&&!booted){booted=true;boot();}});
+  } else boot();
+})();
+</script>
+</body>
+</html>
