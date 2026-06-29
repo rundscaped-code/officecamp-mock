@@ -103,6 +103,10 @@
   OC.addExpense = (project_id, amount, note) => OC.sb.from('expenses').insert({ project_id, amount, note });
 
   // ---- タスク ----
+  OC.updateTask = (id, patch) => OC.sb.from('tasks').update(patch).eq('id', id);
+  OC.addTask = (payload) => OC.sb.from('tasks').insert(payload).select().single();
+  OC.assignTask = (task_id, user_id) => OC.sb.from('task_assignees').insert({ task_id, user_id });
+  OC.unassignTask = (task_id, user_id) => OC.sb.from('task_assignees').delete().match({ task_id, user_id });
   OC.loadAllTasks = async function () {
     const { data } = await OC.sb.from('tasks')
       .select('id,project_id,title,start_date,end_date,status,progress,leader_id,parent_task_id,proj:project_id(name,code),task_assignees(user_id)')
