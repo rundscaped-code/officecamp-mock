@@ -88,7 +88,9 @@
   /* その場編集コントロール */
   .einput{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:5px 8px;font-size:13px;font-family:inherit;max-width:210px;outline:none}
   .einput:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-  .drow .einput{text-align:right}
+  .drow{align-items:center}
+  .drow .einput{width:220px;max-width:220px;text-align:left}
+  .drow>span:first-child{flex:none}
   select.einput{appearance:none;cursor:pointer}
   td .einput{width:100%;max-width:none;padding:4px 6px;text-align:inherit}
   td.ed{padding:6px 8px}
@@ -410,7 +412,7 @@ async function selectProject(id){
       <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn ghost sm" onclick="openTaskAddModal('${id}')">＋ タスク</button>
         <button class="btn ghost sm" onclick="openOrderModal('${id}')">＋ 発注</button>
-        <button class="btn sm" onclick="openExpModal('${id}')">＋ 経費</button></div></div>
+        <button class="btn ghost sm" onclick="openExpModal('${id}')">＋ 経費</button></div></div>
     <div class="kpis" style="grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0 4px">
       <div class="kpi"><div class="l">受注</div><div class="n" style="font-size:20px">${OC.yen(p.revenue)}</div></div>
       <div class="kpi"><div class="l">原価</div><div class="n" style="font-size:20px">${OC.yen(p.cost)}</div></div>
@@ -430,10 +432,12 @@ async function selectProject(id){
       <div class="muted" style="font-size:12px">${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}${e.kind==='外注'&&e.vendor?'・外注 '+esc(e.vendor.name):''}</div></div>
       <div class="a">${OC.yen(e.amount)} <span class="muted" style="font-size:11px">${esc(e.status||'')}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
     <div class="seclabel" style="display:flex;align-items:center">タスク（${(tasks||[]).filter(t=>!t.parent_task_id).length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openTaskAddModal('${id}')">＋ タスク</button></div>
-    ${(tasks||[]).filter(t=>!t.parent_task_id).map(t=>{const sc=(tasks||[]).filter(s=>s.parent_task_id===t.id).length;
-      return `<div class="ln"><div><span class="tasklink" onclick="openTaskModal('${t.id}')">${esc(t.title)}</span>${sc?' <span class="muted" style="font-size:11px">＋'+sc+'</span>':''}
-      <div class="muted" style="font-size:12px"><span class="pill" style="background:transparent;padding:0"><i class="dot s-${t.status||'未着手'}"></i>${esc(t.status||'未着手')}</span>　${t.start_date?OC.fmtDate(t.start_date):'—'} → ${t.end_date?OC.fmtDate(t.end_date):'—'}</div></div>
-      <div class="a" style="font-weight:400">${(t.task_assignees||[]).map(a=>'<span class="achip">'+esc(OC.personName(a.user_id))+'</span>').join(' ')}</div></div>`;}).join('')||'<div class="muted" style="font-size:13px;padding:6px 0">タスクはありません</div>'}
+    ${(()=>{const tops=(tasks||[]).filter(t=>!t.parent_task_id);
+      const line=(t,sub)=>`<div class="ln" style="${sub?'padding-left:22px;border-top:1px dashed var(--line)':''}"><div>
+        <span class="tasklink" onclick="openTaskModal('${t.id}')">${sub?'<span class="muted">↳ </span>':''}${esc(t.title)}</span>
+        <div class="muted" style="font-size:12px"><span class="pill" style="background:transparent;padding:0"><i class="dot s-${t.status||'未着手'}"></i>${esc(t.status||'未着手')}</span>　${t.start_date?OC.fmtDate(t.start_date):'—'} → ${t.end_date?OC.fmtDate(t.end_date):'—'}</div></div>
+        <div class="a" style="font-weight:400">${(t.task_assignees||[]).map(a=>'<span class="achip">'+esc(OC.personName(a.user_id))+'</span>').join(' ')}</div></div>`;
+      return tops.map(t=>line(t,false)+(tasks||[]).filter(s=>s.parent_task_id===t.id).map(s=>line(s,true)).join('')).join('')||'<div class="muted" style="font-size:13px;padding:6px 0">タスクはありません</div>';})()}
     <div class="seclabel" style="display:flex;align-items:center">発注（${orders.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openOrderModal('${id}')">＋ 発注</button></div>
     ${orders.length?orders.map(o=>`<div class="ln"><div><b>${esc(o.title)}</b> <span class="pill">${esc(o.kind)}</span>
       <div class="muted" style="font-size:12px">宛先 ${o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))}・${esc(o.status||'')}</div></div>
@@ -606,6 +610,7 @@ async function renderFinance(c){
       <select id="fStatus" class="input" onchange="paintFinance()"><option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option></select>
       <select id="fLeader" class="input" onchange="paintFinance()"><option value="">担当：すべて</option>${leaders.map(id=>`<option value="${id}">${esc(OC.personName(id))}</option>`).join('')}</select>
       <select id="fMonth" class="input" onchange="paintFinance()"><option value="">納品月：すべて</option>${months.map(m=>`<option value="${m}">${m}</option>`).join('')}</select>
+      <button class="btn ghost" style="margin-left:auto" onclick="exportFinanceCSV()">⤓ CSV出力</button>
     </div>
     <div class="card"><div class="card-b" style="padding:0;overflow:auto" id="finTable"></div></div>`;
   paintFinance();
@@ -624,8 +629,23 @@ function finFiltered(){
   });
 }
 function sortFin(k){if(finSort.key===k)finSort.dir*=-1;else finSort={key:k,dir:(k==='name'||k==='status')?1:-1};paintFinance();}
+function costRate(p){return p.revenue?Math.round((p.cost||0)/p.revenue*100):0;}
+function exportFinanceCSV(){
+  const rows=finFiltered();
+  const head=['番号','案件名','受注元','状態','担当','受注','原価','外注','粗利','原価率(%)','納品日'];
+  const q=s=>{s=String(s==null?'':s);return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const lines=[head.join(',')].concat(rows.map(p=>[p.code||'',p.name||'',p.client||'',p.status||'',
+    p.leader_id?OC.personName(p.leader_id):'',p.revenue||0,p.cost||0,p.outsource||0,p.profit||0,costRate(p),p.delivery_date||''].map(q).join(',')));
+  const csv='﻿'+lines.join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='officecamp-keiri-'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},100);
+  toast('CSVを書き出しました（'+rows.length+'件）');
+}
 function paintFinance(){
   const rows=finFiltered();const {key,dir}=finSort;
+  rows.forEach(p=>p._cr=costRate(p));
   rows.sort((a,b)=>{let x=a[key],y=b[key];if(key==='name'){x=(a.code||'')+(a.name||'');y=(b.code||'')+(b.name||'');}
     if(typeof x==='string'||typeof y==='string')return String(x||'').localeCompare(String(y||''),'ja')*dir;return((x||0)-(y||0))*dir;});
   const rev=rows.reduce((s,p)=>s+(p.revenue||0),0),cost=rows.reduce((s,p)=>s+(p.cost||0),0),prof=rows.reduce((s,p)=>s+(p.profit||0),0);
@@ -633,7 +653,7 @@ function paintFinance(){
     <div class="kpi"><div class="l">案件数</div><div class="n">${rows.length}</div></div>
     <div class="kpi"><div class="l">受注計</div><div class="n">${OC.yen(rev)}</div></div>
     <div class="kpi"><div class="l">原価計</div><div class="n">${OC.yen(cost)}</div></div>
-    <div class="kpi"><div class="l">粗利計</div><div class="n ${prof<0?'neg':'pos'}">${OC.yen(prof)}</div><div class="s">率 ${rev?Math.round(prof/rev*100):0}%</div></div>
+    <div class="kpi"><div class="l">粗利計</div><div class="n ${prof<0?'neg':'pos'}">${OC.yen(prof)}</div><div class="s">粗利率 ${rev?Math.round(prof/rev*100):0}%</div></div>
   </div>`;
   const ar=k=>finSort.key===k?(finSort.dir<0?' ▾':' ▴'):'';
   document.getElementById('finTable').innerHTML=`<table class="tbl"><thead><tr>
@@ -644,7 +664,7 @@ function paintFinance(){
     <th onclick="sortFin('cost')">原価${ar('cost')}</th>
     <th onclick="sortFin('outsource')">外注${ar('outsource')}</th>
     <th onclick="sortFin('profit')">粗利${ar('profit')}</th>
-    <th onclick="sortFin('profit_rate')">率${ar('profit_rate')}</th>
+    <th onclick="sortFin('_cr')" title="原価率 ＝ 原価 ÷ 受注">原価率${ar('_cr')}</th>
     <th class="l">納品</th>
   </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:default">
     <td class="l"><b><span class="link" onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
@@ -652,7 +672,7 @@ function paintFinance(){
     <td class="l fcell" onclick="finEdit(this,'${p.id}','leader_id')">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
     <td class="fcell" onclick="finEdit(this,'${p.id}','amount')">${OC.yen(p.revenue)}</td>
     <td>${OC.yen(p.cost)}</td><td>${OC.yen(p.outsource)}</td>
-    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.yen(p.profit)}</b></td><td>${p.profit_rate}%</td>
+    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.yen(p.profit)}</b></td><td>${p._cr}%</td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','delivery_date')">${OC.fmtDate(p.delivery_date)}</td>
   </tr>`).join('')||'<tr><td class="empty" colspan="9">該当する案件がありません</td></tr>'}</tbody></table>`;
 }
