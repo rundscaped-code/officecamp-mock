@@ -228,7 +228,7 @@
       <a data-v="projects" onclick="go('projects')"><span class="ic">▤</span> 案件</a>
       <a data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費</a>
       <div class="navsec">管理</div>
-      <a data-v="finance"  onclick="go('finance')"><span class="ic">▣</span> 経理</a>
+      <a data-v="finance" id="financeNav" class="hidden" onclick="go('finance')"><span class="ic">▣</span> 経理</a>
       <a data-v="tasks"    onclick="go('tasks')"><span class="ic">☷</span> タスク</a>
       <a data-v="orders"   onclick="go('orders')"><span class="ic">⇄</span> 発注</a>
       <a data-v="members" id="membersNav" class="hidden" onclick="go('members')"><span class="ic">👥</span> メンバー</a>
@@ -255,7 +255,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=6"></script>
+<script src="shared.js?v=7"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -304,6 +304,14 @@ async function savePw(){
 // ---- ルーティング ----
 const TITLES={home:'ホーム',projects:'案件',expenses:'経費',finance:'経理',tasks:'タスク',orders:'発注',members:'メンバー'};
 function go(v){
+  if(v==='finance' && !OC.isAccounting()){
+    toast('経理ユーザーのみ閲覧できます');
+    v='projects';
+  }
+  if(v==='members' && OC.myRole!=='管理者'){
+    toast('管理者のみ利用できます');
+    v='home';
+  }
   curView=v;
   document.querySelectorAll('#nav a[data-v]').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
   document.getElementById('pageTitle').textContent=TITLES[v]||'';
@@ -968,14 +976,29 @@ async function renderMembers(c){
     <div class="card-h">メンバー管理 <span class="muted" style="font-weight:600">管理者だけがID/PWを発行できます</span></div>
     <div class="card-b" style="padding:0">
       <table class="tbl">
-        <thead><tr><th class="l">名前</th><th class="l">メール</th><th class="l">ロール</th><th class="l">所属部署</th></tr></thead>
+        <thead><tr><th class="l">名前</th><th class="l">メール</th><th class="l">ロール</th><th class="l">所属部署</th><th class="l">操作</th></tr></thead>
         <tbody>${rows.map(p=>{
           const depts=(OC.peopleDepts[p.id]||[]).map(OC.deptName).join('、') || '—';
-          return `<tr style="cursor:default"><td class="l"><b>${esc(p.name||'未設定')}</b></td><td class="l">${esc(p.email||'')}</td><td class="l"><span class="role-tag">${esc(p.role||'—')}</span></td><td class="l">${esc(depts)}</td></tr>`;
-        }).join('') || '<tr><td class="empty" colspan="4">メンバーがいません</td></tr>'}</tbody>
+          const loginBtn=p.id===OC.me.id
+            ? '<span class="muted">自分</span>'
+            : `<button class="btn ghost sm" onclick="adminLoginAs('${p.id}')">このIDでログイン</button>`;
+          return `<tr style="cursor:default"><td class="l"><b>${esc(p.name||'未設定')}</b></td><td class="l">${esc(p.email||'')}</td><td class="l"><span class="role-tag">${esc(p.role||'—')}</span></td><td class="l">${esc(depts)}</td><td class="l">${loginBtn}</td></tr>`;
+        }).join('') || '<tr><td class="empty" colspan="5">メンバーがいません</td></tr>'}</tbody>
       </table>
     </div>
   </div>`;
+}
+async function adminLoginAs(userId){
+  const p=OC.peopleById[userId]||{};
+  const label=p.name||p.email||'このID';
+  if(!confirm(label+' としてログインします。現在の管理者セッションから切り替わります。続けますか？'))return;
+  try{
+    const res=await OC.adminLoginLink(userId);
+    if(!res.action_link)throw new Error('ログインリンクが返りませんでした');
+    location.href=res.action_link;
+  }catch(e){
+    toast('ログイン切替エラー: '+e.message);
+  }
 }
 function openMemberModal(){
   const pw=genPassword();
@@ -1020,6 +1043,7 @@ async function boot(){
   document.getElementById('meRole').textContent=OC.myRole||'—';
   await Promise.all([OC.loadPeople(),OC.loadDepartments(),OC.loadVendors(),OC.projectOptions()]);
   await OC.loadProjects();
+  document.getElementById('financeNav').classList.toggle('hidden',!OC.isAccounting());
   document.getElementById('membersNav').classList.toggle('hidden',OC.myRole!=='管理者');
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
