@@ -326,7 +326,7 @@ async function renderHome(c){
     <div class="kpis">
       <div class="kpi"><div class="l">案件数</div><div class="n">${ps.length}</div><div class="s">進行中 ${active.length}</div></div>
       <div class="kpi"><div class="l">受注合計</div><div class="n">${OC.yen(rev)}</div></div>
-      <div class="kpi"><div class="l">粗利合計</div><div class="n">${OC.yen(prof)}</div><div class="s">率 ${rev?Math.round(prof/rev*100):0}%</div></div>
+      <div class="kpi"><div class="l">粗利合計</div><div class="n">${OC.yen(prof)}</div><div class="s">粗利率 ${rev?Math.round(prof/rev*100):0}%</div></div>
       ${OC.isManager()?`<div class="kpi"><div class="l">登録メンバー</div><div class="n">${OC.people.length}</div></div>`:`<div class="kpi"><div class="l">進行中の案件</div><div class="n">${active.length}</div></div>`}
     </div>
     <div class="grid2">
@@ -387,7 +387,7 @@ function paintProjTable(){
       <th class="l" onclick="sortProj('name')">案件${ar('name')}</th>
       <th onclick="sortProj('revenue')">受注${ar('revenue')}</th>
       <th onclick="sortProj('profit')">粗利${ar('profit')}</th>
-      <th onclick="sortProj('profit_rate')">率${ar('profit_rate')}</th>
+      <th onclick="sortProj('profit_rate')">粗利率${ar('profit_rate')}</th>
       <th class="l" onclick="sortProj('status')">状態${ar('status')}</th>
     </tr></thead><tbody>${rows.map(p=>`<tr data-pid="${p.id}" onclick="selectProject('${p.id}')">
       <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
@@ -629,13 +629,12 @@ function finFiltered(){
   });
 }
 function sortFin(k){if(finSort.key===k)finSort.dir*=-1;else finSort={key:k,dir:(k==='name'||k==='status')?1:-1};paintFinance();}
-function costRate(p){return p.revenue?Math.round((p.cost||0)/p.revenue*100):0;}
 function exportFinanceCSV(){
   const rows=finFiltered();
-  const head=['番号','案件名','受注元','状態','担当','受注','原価','外注','粗利','原価率(%)','納品日'];
+  const head=['番号','案件名','受注元','状態','担当','受注','原価','外注','粗利','粗利率(%)','納品日'];
   const q=s=>{s=String(s==null?'':s);return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
   const lines=[head.join(',')].concat(rows.map(p=>[p.code||'',p.name||'',p.client||'',p.status||'',
-    p.leader_id?OC.personName(p.leader_id):'',p.revenue||0,p.cost||0,p.outsource||0,p.profit||0,costRate(p),p.delivery_date||''].map(q).join(',')));
+    p.leader_id?OC.personName(p.leader_id):'',p.revenue||0,p.cost||0,p.outsource||0,p.profit||0,p.profit_rate||0,p.delivery_date||''].map(q).join(',')));
   const csv='﻿'+lines.join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -645,7 +644,6 @@ function exportFinanceCSV(){
 }
 function paintFinance(){
   const rows=finFiltered();const {key,dir}=finSort;
-  rows.forEach(p=>p._cr=costRate(p));
   rows.sort((a,b)=>{let x=a[key],y=b[key];if(key==='name'){x=(a.code||'')+(a.name||'');y=(b.code||'')+(b.name||'');}
     if(typeof x==='string'||typeof y==='string')return String(x||'').localeCompare(String(y||''),'ja')*dir;return((x||0)-(y||0))*dir;});
   const rev=rows.reduce((s,p)=>s+(p.revenue||0),0),cost=rows.reduce((s,p)=>s+(p.cost||0),0),prof=rows.reduce((s,p)=>s+(p.profit||0),0);
@@ -664,7 +662,7 @@ function paintFinance(){
     <th onclick="sortFin('cost')">原価${ar('cost')}</th>
     <th onclick="sortFin('outsource')">外注${ar('outsource')}</th>
     <th onclick="sortFin('profit')">粗利${ar('profit')}</th>
-    <th onclick="sortFin('_cr')" title="原価率 ＝ 原価 ÷ 受注">原価率${ar('_cr')}</th>
+    <th onclick="sortFin('profit_rate')" title="粗利率 ＝ 粗利 ÷ 受注">粗利率${ar('profit_rate')}</th>
     <th class="l">納品</th>
   </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:default">
     <td class="l"><b><span class="link" onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
@@ -672,7 +670,7 @@ function paintFinance(){
     <td class="l fcell" onclick="finEdit(this,'${p.id}','leader_id')">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
     <td class="fcell" onclick="finEdit(this,'${p.id}','amount')">${OC.yen(p.revenue)}</td>
     <td>${OC.yen(p.cost)}</td><td>${OC.yen(p.outsource)}</td>
-    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.yen(p.profit)}</b></td><td>${p._cr}%</td>
+    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.yen(p.profit)}</b></td><td>${p.profit_rate}%</td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','delivery_date')">${OC.fmtDate(p.delivery_date)}</td>
   </tr>`).join('')||'<tr><td class="empty" colspan="9">該当する案件がありません</td></tr>'}</tbody></table>`;
 }
