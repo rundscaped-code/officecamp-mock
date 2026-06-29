@@ -303,6 +303,34 @@
   .login p{color:var(--sub);font-size:14px;margin:0 0 12px}
   .banner{background:#FFF4E5;border:1px solid #F0D9A8;color:#8A6D2F;border-radius:12px;padding:12px;font-size:13px;line-height:1.6}
   a{color:var(--accent)}
+
+  /* ===== レスポンシブ ===== */
+  /* タブレット〜大型スマホ: 横幅を広げ、リストは複数カラムに（下タブバーは維持） */
+  @media(min-width:600px){
+    .wrap{max-width:760px}
+    #projList,#ordersOut,#ordersIn{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+    .login{align-items:center}
+    .login h1,.login p,.login .control,.login .btn,.login>p{width:100%;max-width:420px}
+  }
+  /* デスクトップ: 下タブバー→左サイドバー、コンテンツは広く中央寄せ */
+  @media(min-width:860px){
+    .wrap{max-width:1180px;flex-direction:row;align-items:stretch;height:100dvh;overflow:hidden}
+    .tabbar{position:sticky;top:0;left:auto;right:auto;bottom:auto;order:-1;
+      width:216px;height:100dvh;flex-direction:column;justify-content:flex-start;gap:4px;
+      padding:20px 12px;border-top:none;border-right:1px solid var(--line)}
+    .tab{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;
+      padding:12px 14px;border-radius:12px;font-size:15px;font-weight:600}
+    .tab.on{background:var(--accent-soft)}
+    .tab svg{width:22px;height:22px}
+    section{flex:1;min-width:0}
+    .login{flex:1;min-width:0}
+    .head{max-width:920px;margin:0 auto;width:100%;padding:24px 28px 10px}
+    .screen{max-width:920px;margin:0 auto;width:100%;padding:8px 28px 32px}
+    /* シート類はモーダルダイアログとして中央に */
+    .sheet{align-items:center}
+    .sheet-card{max-width:600px;border-radius:20px}
+    .acct-btn{right:22px;top:16px}
+  }
 </style>
 </head>
 <body>
