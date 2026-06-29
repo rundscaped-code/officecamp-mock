@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const roles = new Set(['建築', 'デザイン', 'SE', '経理', '管理者']);
+const roles = new Set(['メンバー', '経理', '管理者']);
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
   const name = (body?.name || '').trim();
   const email = (body?.email || '').trim().toLowerCase();
   const password = body?.password || '';
-  const role = body?.role || 'SE';
+  const role = body?.role || 'メンバー';
   const departmentIds = Array.from(new Set(body?.department_ids || [])).filter(Boolean).slice(0, 3);
 
   if (!name) return json({ error: '名前を入力してください' }, 400);
