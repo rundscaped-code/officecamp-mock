@@ -231,8 +231,9 @@ function go(v){
   if(v==='home')return renderHome(c);
   if(v==='projects')return renderProjects(c);
   if(v==='expenses')return renderExpenses(c);
-  // 次フェーズ
-  c.innerHTML='<div class="card"><div class="card-b empty">この画面はPC向けに次のフェーズで作り込みます。<br>今すぐ使う場合は <a class="link" href="app.html">スマホ版</a> でも操作できます（同じデータ）。</div></div>';
+  if(v==='finance')return renderFinance(c);
+  if(v==='tasks')return renderTasks(c);
+  if(v==='orders')return renderOrders(c);
 }
 
 // ---- ホーム（ダッシュボード） ----
@@ -384,22 +385,59 @@ async function saveProj(){
 // ---- 経費 ----
 let expCache=[];
 function expActions(){document.getElementById('topActions').innerHTML='<button class="btn" onclick="openExpModal()">＋ 新規経費</button>';}
+let expGroupMode='proj'; // 'proj' | 'flat'
 async function renderExpenses(c){
   expActions();
   c.innerHTML='<div class="empty">読み込み中…</div>';
-  expCache=await OC.loadExpenses(200);
-  c.innerHTML=`<div class="card"><div class="card-b" style="padding:0">
-    <table class="tbl"><thead><tr>
-      <th class="l">日付</th><th class="l">案件</th><th class="l">メモ</th><th class="l">入力者</th><th>金額</th><th class="l">状態</th>
-    </tr></thead><tbody>${expCache.length?expCache.map(e=>`<tr style="cursor:default">
+  expCache=await OC.loadExpenses(500);
+  const total=expCache.reduce((s,e)=>s+(e.amount||0),0);
+  const bar=`<div class="toolbar">
+    <div class="muted">合計 <b style="color:var(--ink);font-size:15px">${OC.yen(total)}</b>・${expCache.length}件</div>
+    <div class="spacer" style="flex:1"></div>
+    <button class="btn ghost sm" id="egProj" onclick="setExpMode('proj')">案件ごと</button>
+    <button class="btn ghost sm" id="egFlat" onclick="setExpMode('flat')">一覧</button>
+  </div>`;
+  c.innerHTML=bar+'<div id="expBody"></div>';
+  paintExpenses();
+}
+function setExpMode(m){expGroupMode=m;paintExpenses();}
+function expRowsHTML(list){
+  return list.map(e=>`<tr style="cursor:default">
+    <td class="l">${OC.fmtDate(e.spent_at)}</td>
+    <td class="l">${esc(e.note||'（メモなし）')}${e.kind==='外注'&&e.vendor?' <span class="pill">外注'+esc(e.vendor.name)+'</span>':''}</td>
+    <td class="l">${esc(e.author?.name||e.author?.email||'—')}</td>
+    <td><b>${OC.yen(e.amount)}</b></td>
+    <td class="l"><span class="stbadge" style="background:var(--accent-soft);color:var(--accent)">${esc(e.status||'')}</span></td>
+  </tr>`).join('');
+}
+function paintExpenses(){
+  document.getElementById('egProj').classList.toggle('on',expGroupMode==='proj');
+  document.getElementById('egFlat').classList.toggle('on',expGroupMode==='flat');
+  const body=document.getElementById('expBody');
+  if(!expCache.length){body.innerHTML='<div class="card"><div class="card-b empty">経費はまだありません</div></div>';return;}
+  if(expGroupMode==='flat'){
+    body.innerHTML=`<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
+      <th class="l">日付</th><th class="l">案件 / メモ</th><th class="l">入力者</th><th>金額</th><th class="l">状態</th>
+    </tr></thead><tbody>${expCache.map(e=>`<tr style="cursor:default">
       <td class="l">${OC.fmtDate(e.spent_at)}</td>
-      <td class="l">${e.proj?.code?'<span class="code">'+esc(e.proj.code)+'</span> ':''}${esc(e.proj?.name||'—')}</td>
-      <td class="l">${esc(e.note||'（メモなし）')}${e.kind==='外注'&&e.vendor?' <span class="pill">外注'+esc(e.vendor.name)+'</span>':''}</td>
+      <td class="l">${e.proj?.code?'<span class="code">'+esc(e.proj.code)+'</span> ':''}${esc(e.proj?.name||'—')}<div class="muted" style="font-size:12px">${esc(e.note||'（メモなし）')}</div></td>
       <td class="l">${esc(e.author?.name||e.author?.email||'—')}</td>
       <td><b>${OC.yen(e.amount)}</b></td>
       <td class="l"><span class="stbadge" style="background:var(--accent-soft);color:var(--accent)">${esc(e.status||'')}</span></td>
-    </tr>`).join(''):'<tr><td class="empty" colspan="6">経費はまだありません</td></tr>'}</tbody></table>
-  </div></div>`;
+    </tr>`).join('')}</tbody></table></div></div>`;
+    return;
+  }
+  // 案件ごと
+  const groups={};
+  expCache.forEach(e=>{const k=e.project_id||'_none';(groups[k]=groups[k]||{proj:e.proj,items:[]}).items.push(e);});
+  const arr=Object.values(groups).map(g=>({...g,total:g.items.reduce((s,e)=>s+(e.amount||0),0)}))
+    .sort((a,b)=>b.total-a.total);
+  body.innerHTML=arr.map(g=>`<div class="card" style="margin-bottom:16px">
+    <div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'案件なし')}
+      <span class="muted" style="margin-left:auto;font-weight:700">${g.items.length}件・<span style="color:var(--ink)">${OC.yen(g.total)}</span></span></div>
+    <div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
+      <th class="l">日付</th><th class="l">メモ</th><th class="l">入力者</th><th>金額</th><th class="l">状態</th>
+    </tr></thead><tbody>${expRowsHTML(g.items)}</tbody></table></div></div>`).join('');
 }
 function openExpModal(projectId){
   const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${esc(p.name)}</option>`).join('');
@@ -421,6 +459,153 @@ async function saveExp(){
   if(curView==='expenses')renderExpenses(document.getElementById('content'));
   if(curView==='projects'&&curProject)selectProject(curProject);
   if(curView==='home')renderHome(document.getElementById('content'));
+}
+
+// ---- 経理（ダッシュボード） ----
+let finSort={key:'profit',dir:-1};
+function ym(d){return d?String(d).slice(0,7):'';}
+async function renderFinance(c){
+  if(!OC.isManager()){c.innerHTML='<div class="card"><div class="card-b empty">経理ユーザー（経理／管理者）のみ閲覧できます。</div></div>';return;}
+  if(!OC.projects.length)await OC.loadProjects();
+  const months=[...new Set(OC.projects.map(p=>ym(p.delivery_date)).filter(Boolean))].sort().reverse();
+  const leaders=[...new Set(OC.projects.map(p=>p.leader_id).filter(Boolean))];
+  c.innerHTML=`<div id="finKpis"></div>
+    <div class="toolbar">
+      <input id="fSearch" class="input search" placeholder="🔍 案件名・受注元" oninput="paintFinance()">
+      <select id="fStatus" class="input" onchange="paintFinance()"><option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option></select>
+      <select id="fLeader" class="input" onchange="paintFinance()"><option value="">担当：すべて</option>${leaders.map(id=>`<option value="${id}">${esc(OC.personName(id))}</option>`).join('')}</select>
+      <select id="fMonth" class="input" onchange="paintFinance()"><option value="">納品月：すべて</option>${months.map(m=>`<option value="${m}">${m}</option>`).join('')}</select>
+    </div>
+    <div class="card"><div class="card-b" style="padding:0;overflow:auto" id="finTable"></div></div>`;
+  paintFinance();
+}
+function finFiltered(){
+  const q=(document.getElementById('fSearch')?.value||'').trim().toLowerCase();
+  const st=document.getElementById('fStatus')?.value||'';
+  const ld=document.getElementById('fLeader')?.value||'';
+  const mo=document.getElementById('fMonth')?.value||'';
+  return OC.projects.filter(p=>{
+    if(st&&p.status!==st)return false;
+    if(ld&&p.leader_id!==ld)return false;
+    if(mo&&ym(p.delivery_date)!==mo)return false;
+    if(q&&!`${p.code||''} ${p.name||''} ${p.client||''}`.toLowerCase().includes(q))return false;
+    return true;
+  });
+}
+function sortFin(k){if(finSort.key===k)finSort.dir*=-1;else finSort={key:k,dir:(k==='name'||k==='status')?1:-1};paintFinance();}
+function paintFinance(){
+  const rows=finFiltered();const {key,dir}=finSort;
+  rows.sort((a,b)=>{let x=a[key],y=b[key];if(key==='name'){x=(a.code||'')+(a.name||'');y=(b.code||'')+(b.name||'');}
+    if(typeof x==='string'||typeof y==='string')return String(x||'').localeCompare(String(y||''),'ja')*dir;return((x||0)-(y||0))*dir;});
+  const rev=rows.reduce((s,p)=>s+(p.revenue||0),0),cost=rows.reduce((s,p)=>s+(p.cost||0),0),prof=rows.reduce((s,p)=>s+(p.profit||0),0);
+  document.getElementById('finKpis').innerHTML=`<div class="kpis">
+    <div class="kpi"><div class="l">案件数</div><div class="n">${rows.length}</div></div>
+    <div class="kpi"><div class="l">受注計</div><div class="n">${OC.man(rev)}</div></div>
+    <div class="kpi"><div class="l">原価計</div><div class="n">${OC.man(cost)}</div></div>
+    <div class="kpi"><div class="l">粗利計</div><div class="n ${prof<0?'neg':'pos'}">${OC.man(prof)}</div><div class="s">率 ${rev?Math.round(prof/rev*100):0}%</div></div>
+  </div>`;
+  const ar=k=>finSort.key===k?(finSort.dir<0?' ▾':' ▴'):'';
+  document.getElementById('finTable').innerHTML=`<table class="tbl"><thead><tr>
+    <th class="l" onclick="sortFin('name')">案件${ar('name')}</th>
+    <th class="l" onclick="sortFin('status')">状態${ar('status')}</th>
+    <th class="l">担当</th>
+    <th onclick="sortFin('revenue')">受注${ar('revenue')}</th>
+    <th onclick="sortFin('cost')">原価${ar('cost')}</th>
+    <th onclick="sortFin('outsource')">外注${ar('outsource')}</th>
+    <th onclick="sortFin('profit')">粗利${ar('profit')}</th>
+    <th onclick="sortFin('profit_rate')">率${ar('profit_rate')}</th>
+    <th class="l">納品</th>
+  </tr></thead><tbody>${rows.map(p=>`<tr onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">
+    <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
+    <td class="l"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td>
+    <td class="l">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
+    <td>${OC.man(p.revenue)}</td><td>${OC.man(p.cost)}</td><td>${OC.man(p.outsource)}</td>
+    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.man(p.profit)}</b></td><td>${p.profit_rate}%</td>
+    <td class="l">${OC.fmtDate(p.delivery_date)}</td>
+  </tr>`).join('')||'<tr><td class="empty" colspan="9">該当する案件がありません</td></tr>'}</tbody></table>`;
+}
+
+// ---- タスク（案件ごと） ----
+async function renderTasks(c){
+  c.innerHTML='<div class="empty">読み込み中…</div>';
+  const tasks=await OC.loadAllTasks();
+  if(!tasks.length){c.innerHTML='<div class="card"><div class="card-b empty">タスクはまだありません</div></div>';return;}
+  const groups={};
+  tasks.forEach(t=>{const k=t.project_id||'_';(groups[k]=groups[k]||{proj:t.proj,items:[]}).items.push(t);});
+  const stPill=s=>`<span class="pill" style="background:transparent"><i class="dot s-${s||'未着手'}"></i>${esc(s||'未着手')}</span>`;
+  c.innerHTML=Object.values(groups).map(g=>{
+    const tops=g.items.filter(t=>!t.parent_task_id);
+    const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
+    const taskRow=(t,sub)=>`<tr style="cursor:default">
+      <td class="l" style="${sub?'padding-left:30px':''}">${sub?'<span class="muted">↳ </span>':''}${esc(t.title)}</td>
+      <td class="l">${stPill(t.status)}</td>
+      <td class="l">${OC.fmtDate(t.start_date)} → ${OC.fmtDate(t.end_date)}</td>
+      <td class="l">${(t.task_assignees||[]).map(a=>'<span class="pill">'+esc(OC.personName(a.user_id))+'</span>').join(' ')||'<span class="muted">—</span>'}</td>
+      <td>${t.progress!=null?t.progress+'%':'—'}</td></tr>`;
+    return `<div class="card" style="margin-bottom:16px"><div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'案件なし')}
+      <span class="muted" style="margin-left:auto;font-weight:700">${g.items.length}件</span></div>
+      <div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
+        <th class="l">タスク</th><th class="l">状態</th><th class="l">期間</th><th class="l">担当</th><th>進捗</th>
+      </tr></thead><tbody>${tops.map(t=>taskRow(t,false)+subs(t).map(s=>taskRow(s,true)).join('')).join('')}</tbody></table></div></div>`;
+  }).join('');
+}
+
+// ---- 発注 ----
+async function renderOrders(c){
+  document.getElementById('topActions').innerHTML='<button class="btn" onclick="openOrderModal()">＋ 発注する</button>';
+  c.innerHTML='<div class="empty">読み込み中…</div>';
+  const {out,inbound}=await OC.loadOrders();
+  const oCard=(o,recv)=>`<tr style="cursor:default">
+    <td class="l"><b>${esc(o.title)}</b> <span class="pill">${esc(o.kind)}</span></td>
+    <td class="l">${esc(o.proj?.name||'—')}</td>
+    <td class="l">${recv?('依頼 '+esc(OC.personName(o.from_user))):('宛先 '+(o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))))}</td>
+    <td><b>${OC.yen(o.amount)}</b></td><td class="l">${esc(o.status||'')}</td></tr>`;
+  const tbl=(rows,recv,empty)=>rows.length?`<table class="tbl"><thead><tr><th class="l">依頼</th><th class="l">案件</th><th class="l">${recv?'相手':'宛先'}</th><th>金額</th><th class="l">状態</th></tr></thead><tbody>${rows.map(o=>oCard(o,recv)).join('')}</tbody></table>`:`<div class="empty">${empty}</div>`;
+  c.innerHTML=`<div class="grid2" style="align-items:start">
+    <div class="card"><div class="card-h">自分が出した発注</div><div class="card-b" style="padding:0">${tbl(out,false,'まだ発注はありません')}</div></div>
+    <div class="card"><div class="card-h">自分が受けた内注</div><div class="card-b" style="padding:0">${tbl(inbound,true,'受けた内注はありません')}</div></div>
+  </div>`;
+}
+function openOrderModal(){
+  const projOpts=OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const vendorOpts=OC.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}（${esc(v.kind)}）</option>`).join('');
+  const deptOpts=OC.departments.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  modal(`<div class="modal"><div class="modal-h">発注する</div><div class="modal-b">
+    <div class="field"><label class="fl">案件（発注元）</label><select id="oProj" class="input">${projOpts}</select></div>
+    <div class="field"><label class="fl">種別</label><select id="oKind" class="input" onchange="orderKind()">
+      <option value="外注">外注（外部の業者へ）</option><option value="内注">内注（社内の人・別部門へ）</option></select></div>
+    <div class="field" id="oVendorF"><label class="fl">外注先</label><select id="oVendor" class="input">${vendorOpts}</select></div>
+    <div class="field hidden" id="oDeptF"><label class="fl">内注先（部門）</label><select id="oDept" class="input" onchange="orderUsers()">${deptOpts}</select>
+      <label class="fl" style="margin-top:10px">担当者（その部門の人・任意）</label><select id="oUser" class="input"></select></div>
+    <div class="field"><label class="fl">依頼内容</label><input id="oTitle" class="input" placeholder="例）図面作成・運搬 など"></div>
+    <div class="field"><label class="fl">金額（円）</label><input id="oAmt" class="input" inputmode="numeric" placeholder="0"></div>
+    </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="oSave" onclick="saveOrder()">発注する</button></div></div>`);
+  orderKind();
+}
+function orderKind(){const k=document.getElementById('oKind').value;
+  document.getElementById('oVendorF').classList.toggle('hidden',k!=='外注');
+  document.getElementById('oDeptF').classList.toggle('hidden',k!=='内注');
+  if(k==='内注')orderUsers();}
+function orderUsers(){const dept=document.getElementById('oDept').value;
+  const list=OC.people.filter(p=>(OC.peopleDepts[p.id]||[]).includes(dept));
+  document.getElementById('oUser').innerHTML='<option value="">部門全体へ（担当者未指定）</option>'+list.map(p=>`<option value="${p.id}">${esc(p.name||p.email)}</option>`).join('');}
+async function saveOrder(){
+  const project_id=document.getElementById('oProj').value;
+  const kind=document.getElementById('oKind').value;
+  const title=document.getElementById('oTitle').value.trim();
+  const amount=parseInt((document.getElementById('oAmt').value||'0').replace(/[,，]/g,''),10)||0;
+  const vendor_id=kind==='外注'?(document.getElementById('oVendor').value||null):null;
+  const to_dept_id=kind==='内注'?(document.getElementById('oDept').value||null):null;
+  const to_user_id=kind==='内注'?(document.getElementById('oUser').value||null):null;
+  if(!project_id){toast('案件を選んでください');return;}
+  if(!title){toast('依頼内容を入れてください');return;}
+  if(kind==='外注'&&!vendor_id){toast('外注先を選んでください');return;}
+  if(kind==='内注'&&!to_dept_id){toast('内注先（部門）を選んでください');return;}
+  document.getElementById('oSave').disabled=true;
+  const {error}=await OC.addOrder({project_id,kind,vendor_id,to_dept_id,to_user_id,from_user:OC.me.id,title,amount});
+  if(error){toast('発注エラー: '+error.message);document.getElementById('oSave').disabled=false;return;}
+  closeModal();toast(kind+'「'+title+'」を発注');
+  if(curView==='orders')renderOrders(document.getElementById('content'));
 }
 
 // ---- 起動 ----
