@@ -324,8 +324,17 @@
         <button class="btn btn-ghost mini" onclick="savePassword()">設定</button>
       </div>
       <button class="btn btn-ghost" id="themeBtn" onclick="toggleTheme()">🌗 ライト / ダーク切替</button>
+      <button class="btn btn-ghost hidden" id="deptAdminBtn" onclick="openDeptAdmin()">👥 メンバーの所属部署（最大3）</button>
       <button class="btn" onclick="logout()">⏻ ログアウト</button>
       <button class="btn btn-ghost" onclick="toggleSettings(false)">閉じる</button>
+    </div>
+  </div>
+
+  <div id="deptAdmin" class="sheet hidden" onclick="if(event.target===this)toggleDeptAdmin(false)">
+    <div class="sheet-card" style="max-height:82vh;overflow:auto">
+      <div class="sheet-h">メンバーの所属部署（最大3）</div>
+      <div id="deptAdminList"></div>
+      <button class="btn btn-ghost" onclick="toggleDeptAdmin(false)">閉じる</button>
     </div>
   </div>
 
@@ -451,7 +460,10 @@
           </div>
         </div>
         <div class="field hidden" id="odUserField"><label>内注先（部門）</label>
-          <select class="control" id="odDept"></select></div>
+          <select class="control" id="odDept" onchange="fillOrderUsers()"></select>
+          <label style="margin-top:10px">担当者（その部門の人・任意）</label>
+          <select class="control" id="odUser"></select>
+          <div class="task-meta" style="margin-top:4px">部門だけでも発注できます。担当者を選ぶとその人に届きます。</div></div>
         <div class="field"><label>依頼内容</label><input class="control" id="odTitle" placeholder="例）図面作成・運搬 など"></div>
         <div class="field"><label>金額（円）</label><input class="control" id="odAmount" inputmode="numeric" placeholder="0"></div>
         <div style="display:flex;gap:8px">
@@ -490,7 +502,7 @@
 <script>
 const cfg = window.OC_CONFIG || {};
 const configured = cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR-PROJECT");
-let sb=null, projects=[], vendors=[], people=[], peopleById={}, departments=[], myDept=null, me=null, myRole=null, receiptPath=null, curDetail=null;
+let sb=null, projects=[], vendors=[], people=[], peopleById={}, peopleDepts={}, departments=[], myDept=null, myDepts=[], me=null, myRole=null, receiptPath=null, curDetail=null;
 const TASK_STATUS=['未着手','進行','完了','保留'];
 const isAccounting = ()=> myRole==='経理' || myRole==='管理者';
 const isManager = ()=> myRole==='経理' || myRole==='管理者';
@@ -576,6 +588,42 @@ function toggleTheme(){
   document.documentElement.dataset.theme=next;
   try{localStorage.setItem('oc_theme',next);}catch(e){}
 }
+// ---- メンバーの所属部署（最大3） ----
+function toggleDeptAdmin(show){
+  const s=document.getElementById('deptAdmin');
+  const open=(show===undefined)?s.classList.contains('hidden'):show;
+  s.classList.toggle('hidden',!open);
+}
+function openDeptAdmin(){ toggleSettings(false); renderDeptAdmin(); toggleDeptAdmin(true); }
+function deptOptionTags(sel){
+  return `<option value="">—</option>`+departments.map(d=>`<option value="${d.id}" ${d.id===sel?'selected':''}>${d.name}</option>`).join('');
+}
+function renderDeptAdmin(){
+  document.getElementById('deptAdminList').innerHTML = people.map(p=>{
+    const ds=peopleDepts[p.id]||[];
+    return `<div class="card pad" style="margin-bottom:8px">
+      <div style="font-weight:700;margin-bottom:6px">${p.name||p.email}（${p.role||'—'}）</div>
+      <div class="row-inline">
+        <select class="control" id="da_${p.id}_0">${deptOptionTags(ds[0]||'')}</select>
+        <select class="control" id="da_${p.id}_1">${deptOptionTags(ds[1]||'')}</select>
+        <select class="control" id="da_${p.id}_2">${deptOptionTags(ds[2]||'')}</select>
+      </div>
+      <button class="btn btn-ghost mini" style="margin-top:8px" onclick="saveDepts('${p.id}')">保存</button>
+    </div>`;
+  }).join('') || '<div class="empty">メンバーがいません</div>';
+}
+async function saveDepts(pid){
+  const picks=[0,1,2].map(i=>document.getElementById('da_'+pid+'_'+i).value).filter(Boolean);
+  const uniq=[...new Set(picks)];
+  await sb.from('profile_departments').delete().eq('profile_id',pid);
+  if(uniq.length){
+    const {error}=await sb.from('profile_departments').insert(uniq.map(d=>({profile_id:pid,department_id:d})));
+    if(error){toast('保存エラー: '+error.message);return;}
+  }
+  if(pid===me.id){ await sb.from('profiles').update({department_id:uniq[0]||null}).eq('id',pid); myDept=uniq[0]||null; }
+  await loadPeople(); renderDeptAdmin();
+  toast('所属部署を更新しました');
+}
 
 // ---- データ ----
 async function loadMe(){
@@ -613,6 +661,8 @@ async function saveName(){
 function applyRole(){
   const tab=document.querySelector('.tab[data-s="finance"]');
   if(tab)tab.classList.toggle('hidden',!isAccounting());
+  const da=document.getElementById('deptAdminBtn');
+  if(da)da.classList.toggle('hidden',!isManager());
 }
 async function loadProjectOptions(){
   const {data}=await sb.from('projects').select('id,name').neq('status','失注').order('created_at',{ascending:false});
@@ -625,6 +675,12 @@ async function loadPeople(){
   const {data}=await sb.from('profiles').select('id,name,email,role,department_id').order('name');
   people=data||[];
   peopleById={}; people.forEach(p=>peopleById[p.id]=p);
+  // 複数所属（最大3）を読み込み: profile_id -> [department_id...]
+  const {data:pd}=await sb.from('profile_departments').select('profile_id,department_id');
+  peopleDepts={}; (pd||[]).forEach(r=>{(peopleDepts[r.profile_id]=peopleDepts[r.profile_id]||[]).push(r.department_id);});
+  // 移行漏れ対策: primary(department_id) も含める
+  people.forEach(p=>{ if(p.department_id){ const a=peopleDepts[p.id]=peopleDepts[p.id]||[]; if(!a.includes(p.department_id))a.push(p.department_id);} });
+  if(me)myDepts = peopleDepts[me.id] || (myDept?[myDept]:[]);
 }
 async function loadDepartments(){
   const {data}=await sb.from('departments').select('id,name').order('name');
@@ -748,7 +804,7 @@ async function openDetail(id){
 
   // 発注
   const ordRows=(ords||[]).map(o=>{
-    const dest=o.kind==='外注'?(o.vendor?.name||'外注先'):deptName(o.to_dept_id);
+    const dest=o.kind==='外注'?(o.vendor?.name||'外注先'):(deptName(o.to_dept_id)+(o.to_user_id?'・'+personName(o.to_user_id):''));
     return `<div class="exp-row"><div><div class="n">${o.title}
       <span class="badge ${o.kind==='内注'?'b-may':'b-go'}">${o.kind}</span></div>
       <div class="d">宛先 ${dest}・${o.status}・依頼 ${personName(o.from_user)}</div></div>
@@ -927,6 +983,14 @@ function fillOrderSelects(){
     vendors.map(v=>`<option value="${v.id}">${v.name}（${v.kind}）</option>`).join('')||`<option value="">外注先なし</option>`;
   document.getElementById('odDept').innerHTML =
     departments.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')||`<option value="">部門なし</option>`;
+  fillOrderUsers();
+}
+function fillOrderUsers(){
+  const sel=document.getElementById('odUser'); if(!sel)return;
+  const dept=document.getElementById('odDept').value;
+  const list=people.filter(p=>(peopleDepts[p.id]||[]).includes(dept));
+  sel.innerHTML = `<option value="">部門全体へ（担当者未指定）</option>`+
+    list.map(p=>`<option value="${p.id}">${p.name||p.email}（${p.role}）</option>`).join('');
 }
 function onOrderKind(){
   const g=document.getElementById('odKind').value==='外注';
@@ -951,11 +1015,12 @@ async function addOrder(){
   const amount=parseInt((document.getElementById('odAmount').value||'0').replace(/[,，]/g,''),10)||0;
   const vendor_id = kind==='外注' ? (document.getElementById('odVendor').value||null) : null;
   const to_dept_id = kind==='内注' ? (document.getElementById('odDept').value||null) : null;
+  const to_user_id = kind==='内注' ? (document.getElementById('odUser').value||null) : null;
   if(!project_id){toast('案件を選んでください');return;}
   if(!title){toast('依頼内容を入れてください');return;}
   if(kind==='外注'&&!vendor_id){toast('外注先を選んでください');return;}
   if(kind==='内注'&&!to_dept_id){toast('内注先（部門）を選んでください');return;}
-  const {error}=await sb.from('orders').insert({project_id,kind,vendor_id,to_dept_id,from_user:me.id,title,amount});
+  const {error}=await sb.from('orders').insert({project_id,kind,vendor_id,to_dept_id,to_user_id,from_user:me.id,title,amount});
   if(error){toast('発注エラー: '+error.message);return;}
   toast(kind+'「'+title+'」を発注');
   document.getElementById('odTitle').value='';document.getElementById('odAmount').value='';
@@ -965,7 +1030,7 @@ async function addOrder(){
 const ORDER_SELECT='id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,'+
   'vendor:vendor_id(name),proj:project_id(name)';
 function orderCard(o,received){
-  const dest = o.kind==='外注' ? (o.vendor?.name||'外注先') : deptName(o.to_dept_id);
+  const dest = o.kind==='外注' ? (o.vendor?.name||'外注先') : (deptName(o.to_dept_id)+(o.to_user_id?'・'+personName(o.to_user_id):''));
   const who = received ? `${personName(o.from_user)} から` : `宛先: ${dest}`;
   const kc = o.kind==='内注'?'b-may':'b-go';
   return `<div class="card pad">
@@ -977,7 +1042,8 @@ function orderCard(o,received){
 }
 async function loadOrders(){
   fillOrderSelects();
-  const inFilter = myDept ? `to_user_id.eq.${me.id},to_dept_id.eq.${myDept}` : `to_user_id.eq.${me.id}`;
+  const deptList = (myDepts&&myDepts.length)?myDepts:(myDept?[myDept]:[]);
+  const inFilter = [`to_user_id.eq.${me.id}`,...deptList.map(d=>`to_dept_id.eq.${d}`)].join(',');
   const [{data:out},{data:inb}]=await Promise.all([
     sb.from('orders').select(ORDER_SELECT).eq('from_user',me.id).order('created_at',{ascending:false}),
     sb.from('orders').select(ORDER_SELECT).or(inFilter).order('created_at',{ascending:false}),
