@@ -40,6 +40,24 @@
     if (!res.ok) throw new Error(body.error || 'メンバーを作成できませんでした');
     return body;
   };
+  OC.adminLoginLink = async function (targetUserId) {
+    const { data: { session } } = await OC.sb.auth.getSession();
+    if (!session?.access_token) throw new Error('ログイン状態を確認できません');
+    const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/admin-login-link`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        target_user_id: targetUserId,
+        redirect_to: location.origin + location.pathname,
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'ログインリンクを発行できませんでした');
+    return body;
+  };
 
   // ---- 整形ヘルパ ----
   OC.yen = (n) => '¥' + Number(n || 0).toLocaleString();
