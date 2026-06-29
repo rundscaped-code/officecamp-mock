@@ -423,16 +423,16 @@ async function selectProject(id){
     <div class="drow"><span class="k">開始日</span><input class="einput" type="date" value="${p.start_date||''}" onchange="saveProjField('${id}','start_date',this.value)"></div>
     <div class="drow"><span class="k">納品日</span><input class="einput" type="date" value="${p.delivery_date||''}" onchange="saveProjField('${id}','delivery_date',this.value)"></div>
     <div class="drow"><span class="k">メンバー</span><span>${members.length?members.map(m=>esc(OC.personName(m.user_id))).join('、'):'—'}</span></div>
-    <div class="seclabel">経費（${expenses.length}）</div>
+    <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
     ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>
       <div class="muted" style="font-size:12px">${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}${e.kind==='外注'&&e.vendor?'・外注 '+esc(e.vendor.name):''}</div></div>
       <div class="a">${OC.yen(e.amount)} <span class="muted" style="font-size:11px">${esc(e.status||'')}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
-    <div class="seclabel">タスク（${(tasks||[]).filter(t=>!t.parent_task_id).length}）</div>
+    <div class="seclabel" style="display:flex;align-items:center">タスク（${(tasks||[]).filter(t=>!t.parent_task_id).length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openTaskAddModal('${id}')">＋ タスク</button></div>
     ${(tasks||[]).filter(t=>!t.parent_task_id).map(t=>{const sc=(tasks||[]).filter(s=>s.parent_task_id===t.id).length;
       return `<div class="ln"><div><span class="tasklink" onclick="openTaskModal('${t.id}')">${esc(t.title)}</span>${sc?' <span class="muted" style="font-size:11px">＋'+sc+'</span>':''}
       <div class="muted" style="font-size:12px"><span class="pill" style="background:transparent;padding:0"><i class="dot s-${t.status||'未着手'}"></i>${esc(t.status||'未着手')}</span>　${t.start_date?OC.fmtDate(t.start_date):'—'} → ${t.end_date?OC.fmtDate(t.end_date):'—'}</div></div>
       <div class="a" style="font-weight:400">${(t.task_assignees||[]).map(a=>'<span class="achip">'+esc(OC.personName(a.user_id))+'</span>').join(' ')}</div></div>`;}).join('')||'<div class="muted" style="font-size:13px;padding:6px 0">タスクはありません</div>'}
-    <div class="seclabel">発注（${orders.length}）</div>
+    <div class="seclabel" style="display:flex;align-items:center">発注（${orders.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openOrderModal('${id}')">＋ 発注</button></div>
     ${orders.length?orders.map(o=>`<div class="ln"><div><b>${esc(o.title)}</b> <span class="pill">${esc(o.kind)}</span>
       <div class="muted" style="font-size:12px">宛先 ${o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))}・${esc(o.status||'')}</div></div>
       <div class="a">${OC.yen(o.amount)}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">発注はまだありません</div>'}
