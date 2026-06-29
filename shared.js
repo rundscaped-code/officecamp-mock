@@ -90,6 +90,7 @@
     return { p: { ...(p || {}), ...(pmeta || {}) }, expenses: exps || [], orders: ords || [], members: members || [] };
   };
   OC.addProject = (payload) => OC.sb.from('projects').insert(payload);
+  OC.updateProject = (id, patch) => OC.sb.from('projects').update(patch).eq('id', id);
 
   // ---- 経費 ----
   OC.loadExpenses = async function (limit) {
