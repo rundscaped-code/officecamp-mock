@@ -498,7 +498,14 @@ async function selectProject(id){
     <div class="drow"><span class="k">担当（リーダー）</span><select class="einput" onchange="saveProjField('${id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></div>
     <div class="drow"><span class="k">開始日</span><input class="einput" type="date" value="${p.start_date||''}" onchange="saveProjField('${id}','start_date',this.value)"></div>
     <div class="drow"><span class="k">納品日</span><input class="einput" type="date" value="${p.delivery_date||''}" onchange="saveProjField('${id}','delivery_date',this.value)"></div>
-    <div class="drow"><span class="k">メンバー</span><span>${members.length?members.map(m=>esc(OC.personName(m.user_id))).join('、'):'—'}</span></div>
+    <div class="drow"><span class="k">メンバー<div class="muted" style="font-size:10.5px;font-weight:400">案件の全タスクを見られる</div></span>
+      <span>${(()=>{const ids=members.map(m=>m.user_id);
+        const canEdit=OC.isManager();
+        const chips=ids.length?ids.map(uid=>`<span class="achip">${esc(OC.personName(uid))}${canEdit?`<span style="cursor:pointer;margin-left:2px" onclick="removeMember('${id}','${uid}')">×</span>`:''}</span>`).join(' '):'<span class="muted">—</span>';
+        if(!canEdit)return chips;
+        const opts=OC.people.filter(pp=>!ids.includes(pp.id)).map(pp=>`<option value="${pp.id}">${esc(pp.name||pp.email)}</option>`).join('');
+        return chips+` <select class="einput" style="max-width:150px;margin-left:4px" onchange="addMemberPick('${id}',this)"><option value="">＋メンバー追加</option>${opts}</select>`;
+      })()}</span></div>
     <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
     ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>
       <div class="muted" style="font-size:12px">${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}${e.kind==='外注'&&e.vendor?'・外注 '+esc(e.vendor.name):''}</div></div>
@@ -845,6 +852,8 @@ async function saveTaskField(id,field,value){
 }
 async function assignPick(id,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.assignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast('担当を追加');refreshAfterTaskEdit(id);}
 async function removeAsg(id,uid){const {error}=await OC.unassignTask(id,uid);if(error){toast('エラー: '+error.message);return;}refreshAfterTaskEdit(id);}
+async function addMemberPick(pid,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.addProjectMember(pid,uid);if(error){toast('メンバー追加エラー: '+error.message);return;}toast('メンバーを追加');selectProject(pid);}
+async function removeMember(pid,uid){const {error}=await OC.removeProjectMember(pid,uid);if(error){toast('メンバー削除エラー: '+error.message);return;}toast('メンバーを外しました');selectProject(pid);}
 // --- タスク詳細モーダル ---
 async function refreshAfterTaskEdit(id){ try{tasksCache=await OC.loadAllTasks();}catch(e){} paintTasks(); if(document.getElementById('tmRoot'))openTaskModal(id,true); }
 async function openTaskModal(id,silent){

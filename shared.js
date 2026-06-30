@@ -103,13 +103,17 @@
     OC._visKey = key;
     if (!key) { OC._visIds = null; return null; }
     const uid = OC.effectiveUserId();
-    const [{ data: owned }, { data: mem }] = await Promise.all([
+    const [{ data: owned }, { data: mem }, { data: ta }] = await Promise.all([
       OC.sb.from('projects').select('id').eq('owner_id', uid),
       OC.sb.from('project_members').select('project_id').eq('user_id', uid),
+      OC.sb.from('task_assignees').select('task:task_id(project_id)').eq('user_id', uid),
     ]);
     const s = new Set();
     (owned || []).forEach((r) => s.add(r.id));
     (mem || []).forEach((r) => s.add(r.project_id));
+    // タスク担当だけの案件も可視集合へ（自分のタスク＋案件名は見える。
+    // 経理ビュー project_costs は can_see_project で別途締まるので金額は出ない）
+    (ta || []).forEach((r) => { const pid = r.task && r.task.project_id; if (pid) s.add(pid); });
     OC._visIds = s;
     return s;
   };
@@ -181,6 +185,9 @@
   };
   OC.addProject = (payload) => OC.sb.from('projects').insert(payload);
   OC.updateProject = (id, patch) => OC.sb.from('projects').update(patch).eq('id', id);
+  // 案件メンバーの明示追加/削除（タスク担当の自動昇格は廃止＝v14。メンバーは全タスクを見られる）
+  OC.addProjectMember = (project_id, user_id) => OC.sb.from('project_members').insert({ project_id, user_id });
+  OC.removeProjectMember = (project_id, user_id) => OC.sb.from('project_members').delete().match({ project_id, user_id });
 
   // ---- 経費 ----
   OC.loadExpenses = async function (limit) {
