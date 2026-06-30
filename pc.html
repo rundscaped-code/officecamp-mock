@@ -144,6 +144,10 @@
   .gbar.s-未着手{background:#9AA0A6}.gbar.s-進行{background:var(--accent)}.gbar.s-完了{background:var(--good)}.gbar.s-保留{background:var(--warn)}
   .gtoday{position:absolute;top:0;bottom:0;width:2px;background:var(--bad);opacity:.6;z-index:2}
   .gfill{position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.32);border-right:1px solid rgba(255,255,255,.55)}
+  .gpspan{position:absolute;top:13px;height:7px;border-radius:4px;background:var(--accent);opacity:.18;z-index:0}
+  .gdead{position:absolute;top:2px;transform:translateX(-50%);color:var(--bad);font-size:13px;line-height:1;z-index:2;pointer-events:none}
+  .gnmeta{flex:none;margin-left:auto;padding-left:8px;font-size:10.5px;font-weight:800;color:var(--bad);white-space:nowrap}
+  .gproj .gaddbtn{margin-left:8px}
   .gasg{margin-left:6px;opacity:.85;font-weight:600}
   /* タスク状態の色分け（リスト） */
   .stpill{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:20px;margin-right:6px;color:#fff;vertical-align:middle}
@@ -941,15 +945,25 @@ function boardDrop(e,col){e.preventDefault();col.classList.remove('over');const 
 function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function pD(s){return new Date(s+'T00:00:00');}
 function dDiff(a,b){return Math.round((pD(b)-pD(a))/86400000);}
+function mmdd(s){const d=pD(s);return (d.getMonth()+1)+'/'+d.getDate();}
 function paintTaskTimeline(body){
+  const pmap=Object.fromEntries((OC.projects||[]).map(p=>[p.id,p]));
+  const groups=taskGroups();
   const dated=visibleTasks().filter(t=>t.start_date||t.end_date);
-  if(!dated.length){body.innerHTML='<div class="card"><div class="card-b empty">日付の入ったタスクがありません（リスト/ボードで日付を入れると表示されます）</div></div>';return;}
-  let min=null,max=null;
-  dated.forEach(t=>{[t.start_date,t.end_date].forEach(d=>{if(!d)return;if(!min||d<min)min=d;if(!max||d>max)max=d;});});
-  const minD=ymd((d=>{d.setDate(d.getDate()-2);return d;})(pD(min)));
-  const maxD=ymd((d=>{d.setDate(d.getDate()+2);return d;})(pD(max)));
-  const n=dDiff(minD,maxD)+1, W=30, totalW=n*W;
+  const hasProjDate=groups.some(g=>{const p=pmap[(g.items[0]||{}).project_id];return p&&(p.delivery_date||p.start_date);});
+  if(!dated.length&&!hasProjDate){body.innerHTML='<div class="card"><div class="card-b empty">日付の入ったタスク・案件期限がありません（リスト/ボードで日付を入れると表示されます）</div></div>';return;}
+  // 範囲＝タスク日付＋案件(開始/納品)＋今日。未来側に余白を持たせ「先の日付まで」見えるようにする。
   const today=ymd(new Date());
+  let min=today,max=today;
+  const push=d=>{if(!d)return;if(d<min)min=d;if(d>max)max=d;};
+  dated.forEach(t=>{push(t.start_date);push(t.end_date);});
+  groups.forEach(g=>{const p=pmap[(g.items[0]||{}).project_id];if(p){push(p.start_date);push(p.delivery_date);}});
+  const minD=ymd((d=>{d.setDate(d.getDate()-7);return d;})(pD(min)));
+  const t45=ymd((d=>{d.setDate(d.getDate()+45);return d;})(pD(today)));         // 今日から最低45日先まで
+  let maxBase=max>t45?max:t45;
+  let maxD=ymd((d=>{d.setDate(d.getDate()+3);return d;})(pD(maxBase)));
+  if(dDiff(minD,maxD)>560)maxD=ymd((d=>{d.setDate(d.getDate()+560);return d;})(pD(minD))); // 描画幅の暴走防止
+  const n=dDiff(minD,maxD)+1, W=30, totalW=n*W;
   const days=[];for(let i=0;i<n;i++){const d=pD(minD);d.setDate(d.getDate()+i);days.push(d);}
   const todayLeft=(today>=minD&&today<=maxD)?dDiff(minD,today)*W:-1;
   const todayBar=todayLeft>=0?`<div class="gtoday" style="left:${todayLeft+W/2}px"></div>`:'';
@@ -958,12 +972,22 @@ function paintTaskTimeline(body){
   const bar=t=>{if(!t.start_date||!t.end_date)return '';const left=dDiff(minD,t.start_date)*W;const w=(dDiff(t.start_date,t.end_date)+1)*W;
     const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
     return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openTaskModal('${t.id}')" title="${esc(t.title)}（${esc(t.status||'未着手')}${who?'・'+who:''}）"><span style="position:relative;z-index:1">${esc(t.title)}</span></div>`;};
-  const rows=taskGroups().map(g=>{
+  const rows=groups.map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
     const pid=(g.items[0]||{}).project_id;
+    const proj=pmap[pid]||g.proj||{};
     const projName=`${g.proj?.code?'['+esc(g.proj.code)+'] ':''}${esc(g.proj?.name||'案件なし')}`;
-    const projRow=`<div class="grow gproj"><div class="gname"><span class="gnttl">${pid?`<span class="tasklink" onclick="go('projects');setTimeout(()=>selectProject('${pid}'),40)">${projName}</span>`:projName}</span>${pid?`<button class="gaddbtn" title="タスクを追加" onclick="openTaskAddModal('${pid}')">＋</button>`:''}</div><div class="gcells" style="width:${totalW}px">${todayBar}</div></div>`;
+    let projMarks=todayBar;
+    if(proj.start_date&&proj.delivery_date&&proj.delivery_date>=minD&&proj.start_date<=maxD){
+      const s=proj.start_date<minD?minD:proj.start_date;const e=proj.delivery_date>maxD?maxD:proj.delivery_date;
+      projMarks+=`<div class="gpspan" style="left:${dDiff(minD,s)*W}px;width:${Math.max((dDiff(s,e)+1)*W-2,4)}px" title="案件期間 ${esc(proj.start_date)}〜${esc(proj.delivery_date)}"></div>`;
+    }
+    if(proj.delivery_date&&proj.delivery_date>=minD&&proj.delivery_date<=maxD){
+      projMarks+=`<div class="gdead" style="left:${dDiff(minD,proj.delivery_date)*W+W/2}px" title="納品期限 ${esc(proj.delivery_date)}">◆</div>`;
+    }
+    const deadMeta=proj.delivery_date?`<span class="gnmeta" title="納品期限 ${esc(proj.delivery_date)}">◆納品 ${mmdd(proj.delivery_date)}</span>`:'';
+    const projRow=`<div class="grow gproj"><div class="gname"><span class="gnttl">${pid?`<span class="tasklink" onclick="go('projects');setTimeout(()=>selectProject('${pid}'),40)">${projName}</span>`:projName}</span>${deadMeta}${pid?`<button class="gaddbtn" title="タスクを追加" onclick="openTaskAddModal('${pid}')">＋</button>`:''}</div><div class="gcells" style="width:${totalW}px">${projMarks}</div></div>`;
     const taskRow=(t,sub)=>{const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
       return `<div class="grow"><div class="gname" style="${sub?'padding-left:20px':''}"><i class="dot s-${t.status||'未着手'}" style="margin-right:6px"></i><span class="gnttl"><span class="tasklink" onclick="openTaskModal('${t.id}')">${sub?'↳ ':''}${esc(t.title)}</span></span>${who?'<span class="gnasg">'+who+'</span>':''}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;};
     return projRow+tops.map(t=>taskRow(t,false)+subs(t).map(s=>taskRow(s,true)).join('')).join('');
@@ -971,7 +995,7 @@ function paintTaskTimeline(body){
   body.innerHTML=`<div class="vlegend">
       <span><i style="background:#9AA0A6"></i>未着手</span><span><i style="background:var(--accent)"></i>進行</span>
       <span><i style="background:var(--good)"></i>完了</span><span><i style="background:var(--warn)"></i>保留</span>
-      <span style="color:var(--bad)">┃今日</span><span>左の名前列に担当を表示。バーをクリックで詳細。</span></div>
+      <span style="color:var(--bad)">┃今日</span><span style="color:var(--bad)">◆案件の納品期限</span><span>未来45日先まで表示。バーをクリックで詳細。</span></div>
     <div class="gwrap"><div class="grid-g">${head}${rows}</div></div>`;
 }
 
