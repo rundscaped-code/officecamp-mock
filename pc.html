@@ -168,6 +168,16 @@
   .md .detail-card{max-height:calc(100dvh - 150px);overflow:auto}
   .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
   .toolbar .input{width:auto;min-width:200px}
+  .mfilt{position:relative;display:inline-block}
+  .mfilt>.mbtn{display:flex;align-items:center;gap:8px;min-width:160px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 11px;font-size:14px;color:var(--ink);cursor:pointer;font-family:inherit;text-align:left}
+  .mfilt>.mbtn .car{margin-left:auto;opacity:.55;font-size:11px}
+  .mfilt.open>.mpop{display:block}
+  .mpop{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:45;min-width:210px;max-height:300px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.28);padding:6px}
+  .mpop label{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;font-size:13.5px;cursor:pointer;white-space:nowrap}
+  .mpop label:hover{background:var(--accent-soft)}
+  .mpop label.me{font-weight:800}
+  .mpop .sep{height:1px;background:var(--line);margin:4px 2px}
+  .mpop input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex:none}
   .search{flex:1;min-width:220px}
   /* detail内 */
   .dh{display:flex;align-items:flex-start;gap:10px;margin-bottom:6px}
@@ -747,14 +757,37 @@ function finEdit(td,pid,field){
 // ---- タスク（タイムライン / ボード / リスト） ----
 const TSTATUS=['未着手','進行','完了','保留'];
 function stColor(s){return ({'未着手':'#9AA0A6','進行':'var(--accent)','完了':'var(--good)','保留':'var(--warn)'})[s||'未着手']||'#9AA0A6';}
-let taskView='list', tasksCache=[], taskFilter={proj:'',status:'',asg:''};
+const TF_KEY='oc_task_filter';
+function loadTaskFilter(){let f={proj:'',status:[],asgs:[]};try{const r=JSON.parse(localStorage.getItem(TF_KEY)||'null');if(r){f.proj=r.proj||'';f.status=Array.isArray(r.status)?r.status:(r.status?[r.status]:[]);f.asgs=Array.isArray(r.asgs)?r.asgs:(r.asg?[r.asg]:[]);}}catch(e){}return f;}
+function saveTaskFilter(){try{localStorage.setItem(TF_KEY,JSON.stringify(taskFilter));}catch(e){}}
+let taskView='list', tasksCache=[], taskFilter=loadTaskFilter();
 function gv(id){const e=document.getElementById(id);return e?e.value:'';}
 function visibleTasks(){return tasksCache.filter(t=>{
   if(taskFilter.proj&&t.project_id!==taskFilter.proj)return false;
-  if(taskFilter.status&&(t.status||'未着手')!==taskFilter.status)return false;
-  if(taskFilter.asg&&!(t.task_assignees||[]).some(a=>a.user_id===taskFilter.asg))return false;
+  if(taskFilter.status.length&&!taskFilter.status.includes(t.status||'未着手'))return false;
+  if(taskFilter.asgs.length&&!(t.task_assignees||[]).some(a=>taskFilter.asgs.includes(a.user_id)))return false;
   return true;});}
-function setTaskFilter(){taskFilter={proj:gv('tfProj'),status:gv('tfStatus'),asg:gv('tfAsg')};paintTasks();}
+function setProjFilter(){taskFilter.proj=gv('tfProj');saveTaskFilter();paintTasks();}
+// 複数チェックのフィルタ・ドロップダウン（担当・状態）
+function mcheck(id,base,items,selected){
+  const sel=new Set(selected||[]);const n=sel.size;
+  const summary=!n?base+'：すべて':(n===1?base+'：'+(items.find(i=>sel.has(i.v))||{}).label:base+'：'+n+'件');
+  const rows=items.map(i=>`<label class="${i.me?'me':''}"><input type="checkbox" value="${esc(i.v)}" ${sel.has(i.v)?'checked':''} onchange="onFilterCheck('${id}','${base}')">${esc(i.label)}</label>${i.sep?'<div class="sep"></div>':''}`).join('');
+  return `<div class="mfilt" id="mf_${id}"><button type="button" class="mbtn" onclick="toggleMfilt('${id}')"><span id="mfsum_${id}">${esc(summary)}</span><span class="car">▾</span></button><div class="mpop">${rows}</div></div>`;
+}
+function toggleMfilt(id){const el=document.getElementById('mf_'+id);if(!el)return;const willOpen=!el.classList.contains('open');document.querySelectorAll('.mfilt.open').forEach(x=>x.classList.remove('open'));if(willOpen)el.classList.add('open');}
+function onFilterCheck(id,base){
+  const el=document.getElementById('mf_'+id);if(!el)return;
+  const checked=[...el.querySelectorAll('.mpop input:checked')];
+  const vals=checked.map(c=>c.value);
+  if(id==='asg')taskFilter.asgs=vals;else taskFilter.status=vals;
+  saveTaskFilter();
+  const sum=document.getElementById('mfsum_'+id);
+  if(sum)sum.textContent=!vals.length?base+'：すべて':(vals.length===1?base+'：'+checked[0].parentNode.textContent.trim():base+'：'+vals.length+'件');
+  paintTasks();
+}
+function clearTaskFilter(){taskFilter={proj:'',status:[],asgs:[]};saveTaskFilter();renderTasks(document.getElementById('content'));}
+document.addEventListener('click',e=>{if(!e.target.closest('.mfilt'))document.querySelectorAll('.mfilt.open').forEach(x=>x.classList.remove('open'));});
 async function renderTasks(c){
   c.innerHTML='<div class="empty">読み込み中…</div>';
   try{ tasksCache=await OC.loadAllTasks(); }
@@ -766,11 +799,15 @@ async function renderTasks(c){
     <button id="tvList" onclick="setTaskView('list')">リスト</button></div>
     <button class="btn" onclick="openTaskAddModal()">＋ タスク</button></div>`;
   const projOpts=OC.projects.map(p=>`<option value="${p.id}" ${p.id===taskFilter.proj?'selected':''}>${esc(p.name)}</option>`).join('');
-  const asgOpts=OC.people.map(p=>`<option value="${p.id}" ${p.id===taskFilter.asg?'selected':''}>${esc(p.name||p.email)}</option>`).join('');
+  const meId=OC.effectiveUserId();
+  const ppl=OC.people.slice().sort((a,b)=>(a.id===meId?-1:b.id===meId?1:0));
+  const asgItems=ppl.map(p=>({v:p.id,label:(p.id===meId?'自分（'+(p.name||p.email)+'）':(p.name||p.email)),me:p.id===meId,sep:p.id===meId}));
+  const statusItems=TSTATUS.map(s=>({v:s,label:s}));
   c.innerHTML=`<div class="toolbar">
-    <select id="tfProj" class="input" onchange="setTaskFilter()"><option value="">案件：すべて</option>${projOpts}</select>
-    <select id="tfStatus" class="input" onchange="setTaskFilter()"><option value="">状態：すべて</option>${TSTATUS.map(s=>`<option ${s===taskFilter.status?'selected':''}>${s}</option>`).join('')}</select>
-    <select id="tfAsg" class="input" onchange="setTaskFilter()"><option value="">担当：すべて</option>${asgOpts}</select>
+    <select id="tfProj" class="input" onchange="setProjFilter()"><option value="">案件：すべて</option>${projOpts}</select>
+    ${mcheck('status','状態',statusItems,taskFilter.status)}
+    ${mcheck('asg','担当',asgItems,taskFilter.asgs)}
+    <button class="btn ghost" style="padding:8px 12px;font-size:12.5px" onclick="clearTaskFilter()">クリア</button>
     <span class="muted" id="tfCount" style="margin-left:auto"></span>
   </div><div id="taskBody"></div>`;
   paintTasks();
