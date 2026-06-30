@@ -259,7 +259,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=10"></script>
+<script src="shared.js?v=14"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -357,6 +357,7 @@ function startImpersonation(userId){
   if(!confirm(label+' を代理操作します。管理者セッションのまま、画面と作成主体をこのユーザー基準に切り替えます。'))return;
   try{
     OC.startImpersonation(userId);
+    OC.resetScope();
     toast(label+' を代理操作中');
     refreshShell();
     go('home');
@@ -364,6 +365,7 @@ function startImpersonation(userId){
 }
 function stopImpersonation(){
   OC.stopImpersonation();
+  OC.resetScope();
   toast('代理操作を終了しました');
   refreshShell();
   go('home');

@@ -91,6 +91,32 @@
   OC.isManager = () => OC.effectiveRole() === '経理' || OC.effectiveRole() === '管理者';
   OC.isAccounting = OC.isManager;
 
+  // ---- 代理操作の鏡像スコープ ----
+  // 代理操作は管理者セッションのまま動くため、DBのRLSは管理者基準（全件見える）。
+  // 「対象ユーザーが自分で見たのと同じ範囲」に揃えるため、代理中かつ対象が
+  // 経理/管理者でない時だけ、対象が見える案件ID集合をフロントで算出して絞る。
+  // 集合は can_see_project（= メンバー or 所有者）と一致させる。
+  OC._visKey = undefined; OC._visIds = null;
+  OC._ensureVisible = async function () {
+    const key = (OC.impersonatingId && !OC.isManager()) ? OC.impersonatingId : null;
+    if (key === OC._visKey) return OC._visIds;       // null===null＝絞り込み無しもキャッシュ
+    OC._visKey = key;
+    if (!key) { OC._visIds = null; return null; }
+    const uid = OC.effectiveUserId();
+    const [{ data: owned }, { data: mem }] = await Promise.all([
+      OC.sb.from('projects').select('id').eq('owner_id', uid),
+      OC.sb.from('project_members').select('project_id').eq('user_id', uid),
+    ]);
+    const s = new Set();
+    (owned || []).forEach((r) => s.add(r.id));
+    (mem || []).forEach((r) => s.add(r.project_id));
+    OC._visIds = s;
+    return s;
+  };
+  OC.projectVisible = (pid) => !OC._visIds || OC._visIds.has(pid);
+  // 代理操作の切替時に呼ぶ：案件キャッシュと可視集合を破棄して再取得させる。
+  OC.resetScope = function () { OC._visKey = undefined; OC._visIds = null; OC.projects = []; OC.projOpts = []; };
+
   // ---- ユーザー/マスタ ----
   OC.loadMe = async function () {
     const { data: { user } } = await OC.sb.auth.getUser();
@@ -124,17 +150,23 @@
 
   // ---- 案件 ----
   OC.loadProjects = async function () {
+    await OC._ensureVisible();
     const [{ data: costs }, { data: meta }] = await Promise.all([
       OC.sb.from('project_costs').select('*').order('profit', { ascending: false }),
       OC.sb.from('projects').select('id,status,client,delivery_date,start_date,leader_id'),
     ]);
     const m = Object.fromEntries((meta || []).map((x) => [x.id, x]));
-    OC.projects = (costs || []).map((p) => ({ ...p, ...(m[p.id] || {}) }));
+    let rows = (costs || []).map((p) => ({ ...p, ...(m[p.id] || {}) }));
+    if (OC._visIds) rows = rows.filter((p) => OC._visIds.has(p.id));
+    OC.projects = rows;
     return OC.projects;
   };
   OC.projectOptions = async function () {
+    await OC._ensureVisible();
     const { data } = await OC.sb.from('projects').select('id,name').neq('status', '失注').order('created_at', { ascending: false });
-    OC.projOpts = data || []; return OC.projOpts;
+    let rows = data || [];
+    if (OC._visIds) rows = rows.filter((p) => OC._visIds.has(p.id));
+    OC.projOpts = rows; return OC.projOpts;
   };
   OC.loadProjectDetail = async function (id) {
     const [{ data: p }, { data: pmeta }, { data: exps }, { data: ords }, { data: members }, { data: tasks }] = await Promise.all([
@@ -152,11 +184,15 @@
 
   // ---- 経費 ----
   OC.loadExpenses = async function (limit) {
+    await OC._ensureVisible();
     let q = OC.sb.from('expenses')
       .select('id,amount,note,spent_at,status,kind,project_id,proj:project_id(name,code),author:user_id(name,email),vendor:vendor_id(name)')
       .order('spent_at', { ascending: false });
-    if (limit) q = q.limit(limit);
-    const { data } = await q; return data || [];
+    if (limit && !OC._visIds) q = q.limit(limit);
+    const { data } = await q;
+    let rows = data || [];
+    if (OC._visIds) { rows = rows.filter((e) => OC._visIds.has(e.project_id)); if (limit) rows = rows.slice(0, limit); }
+    return rows;
   };
   OC.addExpense = (project_id, amount, note) => OC.sb.from('expenses').insert({ project_id, amount, note, user_id: OC.effectiveUserId() });
 
@@ -166,10 +202,13 @@
   OC.assignTask = (task_id, user_id) => OC.sb.from('task_assignees').insert({ task_id, user_id });
   OC.unassignTask = (task_id, user_id) => OC.sb.from('task_assignees').delete().match({ task_id, user_id });
   OC.loadAllTasks = async function () {
+    await OC._ensureVisible();
     const { data } = await OC.sb.from('tasks')
       .select('id,project_id,title,start_date,end_date,status,progress,leader_id,parent_task_id,proj:project_id(name,code),task_assignees(user_id)')
       .order('start_date', { ascending: true });
-    return data || [];
+    let rows = data || [];
+    if (OC._visIds) rows = rows.filter((t) => OC._visIds.has(t.project_id));
+    return rows;
   };
 
   // ---- 発注 ----
