@@ -372,6 +372,7 @@ function startImpersonation(userId){
   try{
     OC.startImpersonation(userId);
     OC.resetScope();
+    curProject=null;               // 代理切替で案件詳細ペインの残留を消す（権限外の財務が残る事故防止）
     toast(label+' を代理操作中');
     refreshShell();
     go('home');
@@ -380,6 +381,7 @@ function startImpersonation(userId){
 function stopImpersonation(){
   OC.stopImpersonation();
   OC.resetScope();
+  curProject=null;                 // 代理終了でも選択案件を破棄（対象基準の残留を消す）
   toast('代理操作を終了しました');
   refreshShell();
   go('home');
@@ -469,6 +471,12 @@ function paintProjTable(){
       <td class="l"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td>
     </tr>`).join('')||'<tr><td class="empty">該当する案件がありません</td></tr>'}</tbody></table>`;
   if(curProject)document.querySelectorAll('#projTable tr[data-pid]').forEach(tr=>tr.classList.toggle('sel',tr.dataset.pid===curProject));
+  // 選択中の案件が検索/状態フィルタで一覧から消えたら、右の詳細ペインの残留も消す
+  if(curProject&&!rows.some(p=>p.id===curProject)){
+    curProject=null;
+    const box=document.getElementById('projDetail');
+    if(box)box.innerHTML='<div class="empty">← 左の一覧から案件を選んでください</div>';
+  }
 }
 async function selectProject(id){
   curProject=id;
@@ -529,6 +537,8 @@ function leaderOptions(cur){return '<option value="">—</option>'+OC.people.map
 async function saveProjField(id,field,value){
   let v=value;
   if(field==='amount')v=parseInt(String(value).replace(/[,，]/g,''),10)||0;
+  if(field==='amount'&&v<0){toast('金額は0以上で入力してください');await OC.loadProjects();if(curView==='projects')selectProject(id);return;}
+  if((field==='start_date'||field==='delivery_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');if(curView==='projects')selectProject(id);return;}
   if((field==='client'||field==='start_date'||field==='delivery_date'||field==='leader_id')&&v==='')v=null;
   const patch={};patch[field]=v;
   const {error}=await OC.updateProject(id,patch);
@@ -556,6 +566,10 @@ async function saveProj(){
   const name=document.getElementById('mName').value.trim();
   if(!name){toast('案件名を入れてください');return;}
   const amount=parseInt((document.getElementById('mAmt').value||'0').replace(/[,，]/g,''),10)||0;
+  if(amount<0){toast('受注金額は0以上で入力してください');return;}
+  const _s=document.getElementById('mStart').value,_d=document.getElementById('mDeliv').value;
+  if(!saneDate(_s)||!saneDate(_d)){toast('日付の年を確認してください（2000〜2100）');return;}
+  if(badRange(_s,_d)){toast('納品日は開始日以降にしてください');return;}
   const payload={name,client:document.getElementById('mClient').value.trim()||null,amount,
     start_date:document.getElementById('mStart').value||null,delivery_date:document.getElementById('mDeliv').value||null,
     parent_id:document.getElementById('mParent').value||null,owner_id:OC.effectiveUserId(),
@@ -577,8 +591,9 @@ async function renderExpenses(c){
   c.innerHTML='<div class="empty">読み込み中…</div>';
   expCache=await OC.loadExpenses(500);
   const total=expCache.reduce((s,e)=>s+(e.amount||0),0);
+  const capped=expCache.length>=500;   // 500件上限に達したら合計は過少（全社の正はp/l=経理タブ）
   const bar=`<div class="toolbar">
-    <div class="muted">合計 <b style="color:var(--ink);font-size:15px">${OC.yen(total)}</b>・${expCache.length}件</div>
+    <div class="muted">合計 <b style="color:var(--ink);font-size:15px">${OC.yen(total)}</b>・${expCache.length}件${capped?'<span style="color:#c0392b">（表示は直近500件・全件合計は経理タブ参照）</span>':''}</div>
     <div class="spacer" style="flex:1"></div>
     <button class="btn ghost sm" id="egProj" onclick="setExpMode('proj')">案件ごと</button>
     <button class="btn ghost sm" id="egFlat" onclick="setExpMode('flat')">一覧</button>
@@ -644,6 +659,8 @@ async function saveNewTask(pid){
   const project_id=pid||v('ntProj')||null;
   const title=v('ntTitle').trim();if(!title){toast('タイトルを入れてください');return;}
   if(!project_id){toast('案件を選んでください');return;}
+  if(!saneDate(v('ntStart'))||!saneDate(v('ntEnd'))){toast('日付の年を確認してください（2000〜2100）');return;}
+  if(badRange(v('ntStart'),v('ntEnd'))){toast('終了日は開始日以降にしてください');return;}
   const {data,error}=await OC.addTask({project_id,title,status:v('ntStatus'),start_date:v('ntStart')||null,end_date:v('ntEnd')||null});
   if(error){toast('追加エラー: '+error.message);return;}
   const asgSel=document.getElementById('ntAsg');
@@ -666,7 +683,7 @@ async function saveExp(){
   const amount=parseInt((document.getElementById('eAmt').value||'0').replace(/[,，]/g,''),10)||0;
   const project_id=document.getElementById('eProj').value;
   const note=document.getElementById('eMemo').value.trim();
-  if(!amount||!project_id){toast('金額と案件を入れてください');return;}
+  if(!(amount>0)||!project_id){toast('金額（正の数）と案件を入れてください');return;}
   document.getElementById('eSave').disabled=true;
   const {error}=await OC.addExpense(project_id,amount,note);
   if(error){toast('記録エラー: '+error.message);document.getElementById('eSave').disabled=false;return;}
@@ -845,6 +862,7 @@ function asgHTML(t){
 }
 function titleSpan(t){return `<span class="tasklink" onclick="openTaskModal('${t.id}')">${esc(t.title)}</span>`;}
 async function saveTaskField(id,field,value){
+  if((field==='start_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');reloadTasks();return;}
   let v=value;if((field==='start_date'||field==='end_date')&&v==='')v=null;if(field==='progress')v=parseInt(value,10)||0;
   const {error}=await OC.updateTask(id,{[field]:v});
   if(error){toast('保存エラー: '+error.message);return;}
@@ -886,6 +904,8 @@ async function openTaskModal(id,silent){
 }
 async function saveTaskModal(id){
   const v=x=>document.getElementById(x).value;
+  if(!saneDate(v('tmStart'))||!saneDate(v('tmEnd'))){toast('日付の年を確認してください（2000〜2100）');return;}
+  if(badRange(v('tmStart'),v('tmEnd'))){toast('終了日は開始日以降にしてください');return;}
   const patch={title:v('tmTitle').trim()||'(無題)',status:v('tmStatus'),
     start_date:v('tmStart')||null,end_date:v('tmEnd')||null,note:v('tmNote')};
   const {error}=await OC.updateTask(id,patch);
@@ -894,6 +914,7 @@ async function saveTaskModal(id){
   if(curView==='projects'&&curProject)selectProject(curProject);
 }
 async function saveSubField(sid,parentId,field,value){
+  if((field==='start_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');refreshAfterTaskEdit(parentId);return;}
   let v=value;if((field==='start_date'||field==='end_date')&&v==='')v=null;
   const {error}=await OC.updateTask(sid,{[field]:v});
   if(error){toast('保存エラー: '+error.message);return;}
@@ -953,6 +974,9 @@ function boardDrop(e,col){e.preventDefault();col.classList.remove('over');const 
 // --- タイムライン（ガント） ---
 function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function pD(s){return new Date(s+'T00:00:00');}
+// 日付バリデーション（年のタイポでタイムライン全滅を防ぐ／開始>終了の逆転を防ぐ）
+function saneDate(v){ if(!v)return true; const y=+String(v).slice(0,4); return y>=2000&&y<=2100; }
+function badRange(s,e){ return !!(s&&e&&s>e); }  // ISO文字列比較で 開始>終了 を検出
 function dDiff(a,b){return Math.round((pD(b)-pD(a))/86400000);}
 function mmdd(s){const d=pD(s);return (d.getMonth()+1)+'/'+d.getDate();}
 function paintTaskTimeline(body){
@@ -971,7 +995,7 @@ function paintTaskTimeline(body){
   const t45=ymd((d=>{d.setDate(d.getDate()+45);return d;})(pD(today)));         // 今日から最低45日先まで
   let maxBase=max>t45?max:t45;
   let maxD=ymd((d=>{d.setDate(d.getDate()+3);return d;})(pD(maxBase)));
-  if(dDiff(minD,maxD)>560)maxD=ymd((d=>{d.setDate(d.getDate()+560);return d;})(pD(minD))); // 描画幅の暴走防止
+  if(dDiff(minD,maxD)>560)minD=ymd((d=>{d.setDate(d.getDate()-560);return d;})(pD(maxD))); // 幅の暴走防止：過去の外れ値ではなく今日・未来側を残す（外れ値は左端でクリップ）
   const n=dDiff(minD,maxD)+1, W=30, totalW=n*W;
   const days=[];for(let i=0;i<n;i++){const d=pD(minD);d.setDate(d.getDate()+i);days.push(d);}
   const todayLeft=(today>=minD&&today<=maxD)?dDiff(minD,today)*W:-1;
@@ -1057,6 +1081,7 @@ async function saveOrder(){
   const to_user_id=kind==='内注'?(document.getElementById('oUser').value||null):null;
   if(!project_id){toast('案件を選んでください');return;}
   if(!title){toast('依頼内容を入れてください');return;}
+  if(amount<0){toast('金額は0以上で入力してください');return;}
   if(kind==='外注'&&!vendor_id){toast('外注先を選んでください');return;}
   if(kind==='内注'&&!to_dept_id){toast('内注先（部門）を選んでください');return;}
   document.getElementById('oSave').disabled=true;
@@ -1082,7 +1107,10 @@ function deptMultiOptions(selected){
   return OC.departments.map(d=>`<option value="${d.id}" ${set.has(d.id)?'selected':''}>${esc(d.name)}</option>`).join('');
 }
 function roleOptions(selected){
-  return ['メンバー','経理','管理者'].map(r=>`<option value="${r}" ${r===selected?'selected':''}>${r}</option>`).join('');
+  const base=['メンバー','経理','管理者'];
+  // 旧分類(建築/デザイン/SE等)や手動編集由来の想定外ロールを、暗黙で「メンバー」へ降格させず現値を保持する
+  const list=(!selected||base.includes(selected))?base:[selected,...base];
+  return list.map(r=>`<option value="${esc(r)}" ${r===selected?'selected':''}>${esc(r)}</option>`).join('');
 }
 async function renderMembers(c){
   document.getElementById('topActions').innerHTML=OC.myRole==='管理者'?'<button class="btn" onclick="openMemberModal()">＋ メンバー発行</button>':'';

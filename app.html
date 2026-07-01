@@ -558,7 +558,7 @@
         <div class="field"><label>依頼内容</label><input class="control" id="odTitle" placeholder="例）図面作成・運搬 など"></div>
         <div class="field"><label>金額（円）</label><input class="control" id="odAmount" inputmode="numeric" placeholder="0"></div>
         <div style="display:flex;gap:8px">
-          <button class="btn" style="flex:1" onclick="addOrder()">発注する</button>
+          <button class="btn" style="flex:1" onclick="addOrder(this)">発注する</button>
           <button class="btn btn-ghost" style="flex:1" onclick="toggleOrderForm(false)">キャンセル</button>
         </div>
       </div>
@@ -602,6 +602,9 @@ const yen = n => "¥"+Number(n||0).toLocaleString();
 const man = n => "¥"+Math.round(Number(n||0)/10000)+"万";
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);}
+// 日付バリデーション（年のタイポでスケジュールが全滅するのを防ぐ／開始>終了の逆転を防ぐ）
+function saneDate(v){ if(!v)return true; const y=+String(v).slice(0,4); return y>=2000&&y<=2100; }
+function badRange(s,e){ return !!(s&&e&&s>e); }
 
 const views=['needConfig','loginView','s-expense','s-projects','s-detail','s-finance','s-schedule','s-orders'];
 function showOnly(id){views.forEach(v=>document.getElementById(v).classList.add('hidden'));
@@ -727,7 +730,10 @@ async function saveDepts(pid){
 async function loadMe(){
   const {data:{user}}=await sb.auth.getUser();
   me=user;
-  const {data}=await sb.from('profiles').select('name,role,department_id').eq('id',user.id).single();
+  // セッション失効/未ログイン時は user=null。以降の user.id で初期化を止めない。
+  if(!user){myRole=null;myDept=null;return;}
+  const {data,error}=await sb.from('profiles').select('name,role,department_id').eq('id',user.id).single();
+  if(error)console.error('[app] loadMe: profiles 取得失敗',error);
   myRole=data?.role||null;
   myDept=data?.department_id||null;
   const nm=data?.name||'';
@@ -784,8 +790,9 @@ async function loadDepartments(){
   const {data}=await sb.from('departments').select('id,name').order('name');
   departments=data||[];
 }
-const deptName = id => (departments.find(d=>d.id===id)||{}).name || '部門';
-const personName = id => { const p=peopleById[id]; return p?(p.name||p.email):'—'; };
+// 表示名は保存型XSS対策で常にエスケープして返す（メンバー名・部門名は本人/管理者が自由入力できるため）
+const deptName = id => esc((departments.find(d=>d.id===id)||{}).name || '部門');
+const personName = id => { const p=peopleById[id]; return esc(p?(p.name||p.email):'—'); };
 function peopleOptions(sel){
   return `<option value="">${sel||'—選択—'}</option>`+
     people.map(p=>`<option value="${p.id}">${p.name||p.email}（${p.role}）</option>`).join('');
@@ -824,9 +831,9 @@ function renderProjects(){
     list.innerHTML=rows.map(p=>`
       <div class="card"><div class="pad proj" data-pid="${p.id}" onclick="openDetail('${p.id}')">
         <div class="proj-top"><span class="dot s-${p.status}" style="width:9px;height:9px;border-radius:50%"></span>
-          <span class="proj-name">${p.code?p.code+' ':''}${p.name}</span>
+          <span class="proj-name">${p.code?esc(p.code)+' ':''}${esc(p.name)}</span>
           <div class="profit"><div class="v">粗利 ${man(p.profit)}</div><div class="r">${p.profit_rate}%</div></div></div>
-        <div class="proj-meta">${p.client?p.client+'・':''}受注 ${man(p.revenue)}・原価 ${man(p.cost)}・<b>${p.status||''}</b></div>
+        <div class="proj-meta">${p.client?esc(p.client)+'・':''}受注 ${man(p.revenue)}・原価 ${man(p.cost)}・<b>${esc(p.status)}</b></div>
       </div></div>`).join('');
   }
   if(isDesktop()&&curDetail)markSelectedProject(curDetail);
@@ -854,7 +861,7 @@ function renderProjTable(rows){
     <th class="l" onclick="setProjSort('status')">状態${ar('status')}</th>
   </tr></thead><tbody>`;
   const body=sorted.map(p=>`<tr data-pid="${p.id}" onclick="openDetail('${p.id}')">
-    <td class="l"><div class="pj-nm">${p.code?'<span class="pj-cd">'+p.code+'</span> ':''}${p.name||''}</div>${p.client?'<div class="pj-cl">'+p.client+'</div>':''}</td>
+    <td class="l"><div class="pj-nm">${p.code?'<span class="pj-cd">'+esc(p.code)+'</span> ':''}${esc(p.name)}</div>${p.client?'<div class="pj-cl">'+esc(p.client)+'</div>':''}</td>
     <td>${man(p.revenue)}</td>
     <td class="${(p.profit||0)<0?'neg':''}">${man(p.profit)}</td>
     <td>${p.profit_rate}%</td>
@@ -891,8 +898,11 @@ async function addProject(){
   const name=document.getElementById('npName').value.trim();
   if(!name){toast('案件名を入れてください');return;}
   const amount=parseInt((document.getElementById('npAmt').value||'0').replace(/[,，]/g,''),10)||0;
+  if(amount<0){toast('受注金額は0以上で入力してください');return;}
   const delivery_date=document.getElementById('npDeliv').value||null;
   const start_date=document.getElementById('npStart').value||null;
+  if(!saneDate(start_date)||!saneDate(delivery_date)){toast('日付の年を確認してください（2000〜2100）');return;}
+  if(badRange(start_date,delivery_date)){toast('納品日は開始日以降にしてください');return;}
   const client=document.getElementById('npClient').value.trim()||null;
   const parent_id=document.getElementById('npParent').value||null;
   const leader_id = isManager() ? (document.getElementById('npLeader').value||me.id) : me.id;
@@ -935,13 +945,15 @@ async function openDetail(id){
     sb.from('orders').select('id,kind,amount,title,status,from_user,to_user_id,to_dept_id,vendor:vendor_id(name)')
       .eq('project_id',id).order('created_at',{ascending:false}),
   ]);
+  if(curDetail!==id)return;   // 高速タップ時：後着レスポンスで別案件の詳細を上書きしない（見えている案件と書込先のズレ防止）
+  if(!p){ body.innerHTML=`<div class="empty">この案件は表示できません（削除済み、または閲覧権限がありません）</div>`; return; }
   document.getElementById('dName').textContent=(p?.code?p.code+'　':'')+(p?.name||'—');
 
   // 経費
   const expRows=(exps||[]).map(e=>{
     const who=e.author?.name||e.author?.email||'—';
     const tag=e.kind==='外注'?`<span class="st st-wait">外注${e.vendor?'・'+e.vendor.name:''}</span>`:'';
-    return `<div class="exp-row"><div><div class="n">${e.note||'（メモなし）'}${tag}</div>
+    return `<div class="exp-row"><div><div class="n">${e.note?esc(e.note):'（メモなし）'}${tag}</div>
       <div class="d">${new Date(e.spent_at).toLocaleDateString('ja-JP')}・${who}</div></div>
       <div class="a">${yen(e.amount)}<span class="st ${e.status==='承認'?'st-ok':'st-wait'}">${e.status}</span></div></div>`;
   }).join('') || `<div class="empty">経費はまだありません</div>`;
@@ -954,8 +966,8 @@ async function openDetail(id){
 
   // 発注
   const ordRows=(ords||[]).map(o=>{
-    const dest=o.kind==='外注'?(o.vendor?.name||'外注先'):(deptName(o.to_dept_id)+(o.to_user_id?'・'+personName(o.to_user_id):''));
-    return `<div class="exp-row"><div><div class="n">${o.title}
+    const dest=o.kind==='外注'?esc(o.vendor?.name||'外注先'):(deptName(o.to_dept_id)+(o.to_user_id?'・'+personName(o.to_user_id):''));
+    return `<div class="exp-row"><div><div class="n">${esc(o.title)}
       <span class="badge ${o.kind==='内注'?'b-may':'b-go'}">${o.kind}</span></div>
       <div class="d">宛先 ${dest}・${o.status}・依頼 ${personName(o.from_user)}</div></div>
       <div class="a">${yen(o.amount)}</div></div>`;
@@ -1000,7 +1012,7 @@ async function openDetail(id){
         </div>
         <div class="field"><label>リーダー（進める人）</label><select class="control" id="tkLeader">${peopleOptions('—未設定—')}</select></div>
         <div style="display:flex;gap:8px">
-          <button class="btn" style="flex:1" onclick="addTask()">追加</button>
+          <button class="btn" style="flex:1" onclick="addTask(this)">追加</button>
           <button class="btn btn-ghost" style="flex:1" onclick="toggleTaskForm(false)">キャンセル</button>
         </div>
       </div>
@@ -1033,7 +1045,7 @@ async function openDetail(id){
           <select class="control" id="memSel" style="flex:1">${peopleOptions('＋メンバーを追加')}</select>
           <button class="btn btn-ghost mini" onclick="addMember()">追加</button>
         </div>
-        <div class="task-meta" style="margin-top:6px">タスクに担当者を割り当てると、自動でメンバーになります。</div>
+        <div class="task-meta" style="margin-top:6px">担当者はそのタスクを見られます。案件の全体（全タスク・経理）を見せるにはメンバー欄から追加してください。</div>
       </div>
       <div class="sec">変更履歴</div>
       <div class="card">${logRows}</div>
@@ -1079,10 +1091,10 @@ function diffHTML(l){
 function logLabel(l){
   const t={projects:'案件',expenses:'経費',tasks:'タスク',orders:'発注'}[l.table_name]||l.table_name;
   const n=l.diff?.new||l.diff?.old||{};
-  if(l.table_name==='expenses') return `${t}：${n.note||'（メモなし）'} ${n.amount?yen(n.amount):''}`;
-  if(l.table_name==='tasks')    return `${t}：${n.title||''}`;
-  if(l.table_name==='orders')   return `${t}：${n.title||''} ${n.amount?yen(n.amount):''}`;
-  if(l.table_name==='projects') return `${t}：${n.name||''}`;
+  if(l.table_name==='expenses') return `${t}：${esc(n.note||'（メモなし）')} ${n.amount?yen(n.amount):''}`;
+  if(l.table_name==='tasks')    return `${t}：${esc(n.title)}`;
+  if(l.table_name==='orders')   return `${t}：${esc(n.title)} ${n.amount?yen(n.amount):''}`;
+  if(l.table_name==='projects') return `${t}：${esc(n.name)}`;
   return t;
 }
 function toggleTaskForm(show){
@@ -1091,16 +1103,21 @@ function toggleTaskForm(show){
   f.classList.toggle('hidden',!open);
   if(open)document.getElementById('tkTitle').focus();
 }
-async function addTask(){
+async function addTask(btn){
   const title=document.getElementById('tkTitle').value.trim();
   if(!title){toast('タスク名を入れてください');return;}
   const start_date=document.getElementById('tkStart').value||null;
   const end_date=document.getElementById('tkEnd').value||null;
+  if(!saneDate(start_date)||!saneDate(end_date)){toast('日付の年を確認してください（2000〜2100）');return;}
+  if(badRange(start_date,end_date)){toast('終了日は開始日以降にしてください');return;}
   const leader_id=document.getElementById('tkLeader').value||null;
-  const {error}=await sb.from('tasks').insert({project_id:curDetail,title,start_date,end_date,leader_id});
-  if(error){toast('追加エラー: '+error.message);return;}
-  toast('タスク「'+title+'」を追加');
-  openDetail(curDetail);
+  if(btn)btn.disabled=true;   // 連打によるタスクの重複登録を防ぐ
+  try{
+    const {error}=await sb.from('tasks').insert({project_id:curDetail,title,start_date,end_date,leader_id});
+    if(error){toast('追加エラー: '+error.message);return;}
+    toast('タスク「'+title+'」を追加');
+    openDetail(curDetail);
+  }finally{ if(btn)btn.disabled=false; }
 }
 async function assignUser(taskId){
   const uid=document.getElementById('asg-'+taskId).value;
@@ -1158,7 +1175,7 @@ async function addVendorO(){
   document.getElementById('odVendor').value=data.id;
   toast('外注先「'+name+'」を追加');
 }
-async function addOrder(){
+async function addOrder(btn){
   const project_id=document.getElementById('odProj').value;
   const kind=document.getElementById('odKind').value;
   const title=document.getElementById('odTitle').value.trim();
@@ -1168,14 +1185,18 @@ async function addOrder(){
   const to_user_id = kind==='内注' ? (document.getElementById('odUser').value||null) : null;
   if(!project_id){toast('案件を選んでください');return;}
   if(!title){toast('依頼内容を入れてください');return;}
+  if(amount<0){toast('金額は0以上で入力してください');return;}
   if(kind==='外注'&&!vendor_id){toast('外注先を選んでください');return;}
   if(kind==='内注'&&!to_dept_id){toast('内注先（部門）を選んでください');return;}
-  const {error}=await sb.from('orders').insert({project_id,kind,vendor_id,to_dept_id,to_user_id,from_user:me.id,title,amount});
-  if(error){toast('発注エラー: '+error.message);return;}
-  toast(kind+'「'+title+'」を発注');
-  document.getElementById('odTitle').value='';document.getElementById('odAmount').value='';
-  toggleOrderForm(false);
-  loadOrders();
+  if(btn)btn.disabled=true;   // 連打による発注の重複登録を防ぐ
+  try{
+    const {error}=await sb.from('orders').insert({project_id,kind,vendor_id,to_dept_id,to_user_id,from_user:me.id,title,amount});
+    if(error){toast('発注エラー: '+error.message);return;}
+    toast(kind+'「'+title+'」を発注');
+    document.getElementById('odTitle').value='';document.getElementById('odAmount').value='';
+    toggleOrderForm(false);
+    loadOrders();
+  }finally{ if(btn)btn.disabled=false; }
 }
 const ORDER_SELECT='id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,'+
   'vendor:vendor_id(name),proj:project_id(name)';
@@ -1184,7 +1205,7 @@ function orderCard(o,received){
   const who = received ? `${personName(o.from_user)} から` : `宛先: ${dest}`;
   const kc = o.kind==='内注'?'b-may':'b-go';
   return `<div class="card pad">
-    <div class="task-h"><span class="tt">${o.title}</span>
+    <div class="task-h"><span class="tt">${esc(o.title)}</span>
       <span class="badge ${kc}" style="margin-left:auto">${o.kind}</span></div>
     <div class="task-meta">${o.proj?.name||'案件'}・${who}・${yen(o.amount)}・${o.status}</div>
     <div class="task-meta">${new Date(o.created_at).toLocaleDateString('ja-JP')}</div>
@@ -1213,8 +1234,10 @@ async function fetchTasks(projectId){
   return data||[];
 }
 // ---- ガントチャート描画（タスク配列→HTML） ----
-const dnum = d => d? Math.floor(new Date(d+'T00:00:00').getTime()/86400000) : null;
-const todayNum = () => Math.floor(Date.now()/86400000) + Math.floor(new Date().getTimezoneOffset()*-1/1440);
+// カレンダー日付を「UTC正午基準の通日番号」に統一（JST日中で丸1日ズレていた不具合の是正）。
+// dnum は日付文字列をUTCとして解釈し、todayNum はローカル暦日(=JSTの今日)を同じ基準で番号化する。
+const dnum = d => d? Math.floor(new Date(d+'T00:00:00Z').getTime()/86400000) : null;
+const todayNum = () => { const n=new Date(); return Math.floor(Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())/86400000); };
 function ganttRows(tasks){
   const dated=tasks.filter(t=>t.start_date&&t.end_date);
   const undated=tasks.filter(t=>!(t.start_date&&t.end_date));
@@ -1243,7 +1266,7 @@ function ganttRows(tasks){
   dated.forEach(t=>{
     const s=dnum(t.start_date),e=dnum(t.end_date);
     const left=pos(s).toFixed(2), width=Math.max(1,(e-s+1)/span*100).toFixed(2);
-    html+=`<div class="gc-line"><div class="gc-nm" title="${t.title}">${t.title}</div>
+    html+=`<div class="gc-line"><div class="gc-nm" title="${esc(t.title)}">${esc(t.title)}</div>
       <div class="gc-tk">${gl}${today}
         <div class="gc-bar s-${t.status}" style="left:${left}%;width:${width}%">${t.status}</div></div></div>`;
   });
@@ -1283,7 +1306,7 @@ function dateText(t){
 function taskItemHTML(t){
   const who=(t.task_assignees||[]).map(a=>personName(a.user_id)).join('、');
   return `<div class="tk-lean" onclick="openTask('${t.id}')">${statusSelect(t)}
-    <div class="tk-lean-main"><div class="tk-title">${t.title}</div>
+    <div class="tk-lean-main"><div class="tk-title">${esc(t.title)}</div>
       <div class="tk-sub">${dateText(t)}${who?'　担当：'+who:''}</div></div>
     <span class="tk-chev">›</span></div>`;
 }
@@ -1299,7 +1322,7 @@ async function openTask(id){
     return `<div class="sub-item">
       <div class="sub-row">
         <select class="st-sel st-mini s-${s.status}" onchange="updSub('${s.id}','status',this.value,'${id}');this.className='st-sel st-mini s-'+this.value">${TASK_STATUS.map(x=>`<option value="${x}" ${x===s.status?'selected':''}>${x.charAt(0)}</option>`).join('')}</select>
-        <span class="sub-t" onclick="openTask('${s.id}')">${s.title}</span></div>
+        <span class="sub-t" onclick="openTask('${s.id}')">${esc(s.title)}</span></div>
       <div class="sub-edit">
         <input type="date" value="${s.start_date||''}" onchange="updSub('${s.id}','start_date',this.value,'${id}')">
         <span class="tk-arrow">→</span>
@@ -1350,14 +1373,19 @@ async function unassign(taskId,uid){
   if(error){toast('エラー: '+error.message);return;}
   toast('外しました'); openTask(taskId);
 }
+let _busySub=false;
 async function addSubtask(parentId,projectId){
   const inp=document.getElementById('subInput'); const title=inp.value.trim();
   if(!title){toast('サブタスク名を入れてください');return;}
-  const {error}=await sb.from('tasks').insert({project_id:projectId,parent_task_id:parentId,title});
-  if(error){toast('追加エラー: '+error.message);return;}
-  toast('サブタスク「'+title+'」を追加'); openTask(parentId);
+  if(_busySub)return; _busySub=true;   // 連打による重複登録を防ぐ
+  try{
+    const {error}=await sb.from('tasks').insert({project_id:projectId,parent_task_id:parentId,title});
+    if(error){toast('追加エラー: '+error.message);return;}
+    toast('サブタスク「'+title+'」を追加'); openTask(parentId);
+  }finally{ _busySub=false; }
 }
 async function updSub(subId,field,value,parentId){
+  if((field==='start_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');openTask(parentId);return;}
   let v=value; if((field==='start_date'||field==='end_date')&&!value)v=null;
   const {error}=await sb.from('tasks').update({[field]:v}).eq('id',subId);
   if(error){toast('保存エラー: '+error.message);return;}
@@ -1375,6 +1403,7 @@ async function unassignSub(subId,uid,parentId){
   openTask(parentId);
 }
 async function updTask(id,field,value){
+  if((field==='start_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');refreshTasks();return;}
   let v=value; if((field==='start_date'||field==='end_date')&&!value)v=null;
   const {error}=await sb.from('tasks').update({[field]:v}).eq('id',id);
   if(error){toast('保存エラー: '+error.message);return;}
@@ -1399,7 +1428,7 @@ function bcard(t,pmeta){
   const who=(t.task_assignees||[]).map(a=>personName(a.user_id)).join('、');
   return `<div class="bcard" data-tid="${t.id}" onpointerdown="boardPointerDown(event,'${t.id}')" onclick="boardCardClick(event,'${t.id}')">
     <div class="bpc">${m.code||''}${m.name?' '+m.name:''}</div>
-    <div class="bt">${t.title}</div>
+    <div class="bt">${esc(t.title)}</div>
     <div class="tk-sub">${dateText(t)}${who?'<br>担当：'+who:''}</div></div>`;
 }
 function boardHTML(tasks,pmeta){
@@ -1482,13 +1511,13 @@ function timelineHTML(tasks,pmeta){
       span=`<div class="tl-pspan" style="left:${l}px;width:${w}px"></div>
         <div class="tl-pcap" style="left:${l}px"></div><div class="tl-pcap" style="left:${l+w-3}px"></div>`;}
     const deliv=m.delivery_date?`<div class="tl-deliv" title="納品 ${fmtDate(m.delivery_date)}" style="left:${(dnum(m.delivery_date)-lo)*DAYPX}px"></div>`:'';
-    rows+=`<div class="tl-row tl-proj"><div class="tl-name" onclick="openDetail('${pid}')">${m.code||''} ${m.name||'案件'}</div><div class="tl-cells" style="${grid}">${todayLine}${span}${deliv}</div></div>`;
+    rows+=`<div class="tl-row tl-proj"><div class="tl-name" onclick="openDetail('${pid}')">${esc(m.code)} ${esc(m.name||'案件')}</div><div class="tl-cells" style="${grid}">${todayLine}${span}${deliv}</div></div>`;
     byProj[pid].forEach(t=>{
       const s=dnum(t.start_date),e=dnum(t.end_date);
       const left=(s-lo)*DAYPX, w=(e-s+1)*DAYPX;
-      rows+=`<div class="tl-row"><div class="tl-name tl-task">${statusSelectMini(t)}<span class="tl-tt" title="${t.title}">${t.title}</span></div>
+      rows+=`<div class="tl-row"><div class="tl-name tl-task">${statusSelectMini(t)}<span class="tl-tt" title="${esc(t.title)}">${esc(t.title)}</span></div>
         <div class="tl-cells" style="${grid}">${todayLine}
-          <div class="tl-bar s-${t.status}" style="left:${left}px;width:${w}px" onclick="openTask('${t.id}')">${t.title}</div></div></div>`;
+          <div class="tl-bar s-${t.status}" style="left:${left}px;width:${w}px" onclick="openTask('${t.id}')">${esc(t.title)}</div></div></div>`;
     });
   }
   const note=undated.length?`<div class="task-meta" style="margin-top:8px">日付未設定：${undated.map(t=>t.title).join('、')}</div>`:'';
@@ -1500,7 +1529,7 @@ function listHTML(tasks,pmeta){
     const m=pmeta[pid]||{};
     return `<details open class="card pad pj-card">
       <summary class="pj-head"><span class="pj-marker">▶</span>
-        ${m.code?`<span class="pj-code">${m.code}</span>`:''}<span class="pj-name">${m.name||'案件'}</span>
+        ${m.code?`<span class="pj-code">${esc(m.code)}</span>`:''}<span class="pj-name">${esc(m.name||'案件')}</span>
         <span class="pj-detail-link" onclick="event.stopPropagation();event.preventDefault();openDetail('${pid}')">詳細 ›</span>
       </summary>
       <div class="pj-tasks" style="margin-top:8px">${byProj[pid].map(taskItemHTML).join('')}</div>
@@ -1551,6 +1580,7 @@ const FIN_COLS=[
 async function updProj(id,field,value){
   let v=(value==null?'':value).toString().trim();
   if(field==='name'&&!v){toast('案件名は空にできません');loadFinance();return;}
+  if((field==='delivery_date'||field==='start_date')&&v&&!saneDate(v)){toast('日付の年を確認してください（2000〜2100）');loadFinance();return;}
   if((field==='delivery_date'||field==='start_date')&&!v) v=null;   // 空欄は未設定
   const {error}=await sb.from('projects').update({[field]:v}).eq('id',id);
   if(error){toast('保存エラー: '+error.message);return;}
@@ -1562,6 +1592,7 @@ async function updProj(id,field,value){
 }
 async function updProjNum(id,field,value){
   const n=parseInt((value||'0').toString().replace(/[,，]/g,''),10)||0;
+  if(n<0){toast('金額は0以上で入力してください');loadFinance();return;}
   const {error}=await sb.from('projects').update({[field]:n}).eq('id',id);
   if(error){toast('保存エラー: '+error.message);return;}
   toast('保存しました');
@@ -1688,14 +1719,15 @@ async function record(){
   const amount=parseInt((document.getElementById('amt').value||'0').replace(/,/g,''),10);
   const project_id=document.getElementById('proj').value;
   const note=document.getElementById('memo').value.trim();
-  if(!amount||!project_id){toast('金額と案件を入れてください');return;}
+  if(!(amount>0)||!project_id){toast('金額（正の数）と案件を入れてください');return;}
   const btn=document.getElementById('recBtn');btn.disabled=true;
-  const {error}=await sb.from('expenses').insert({project_id,amount,note,receipt_url:receiptPath});
-  btn.disabled=false;
-  if(error){toast('保存エラー: '+error.message);return;}
-  toast(yen(amount)+' を記録しました');
-  document.getElementById('amt').value='';document.getElementById('memo').value='';
-  document.getElementById('receipt').value='';document.getElementById('ocrMsg').textContent='';receiptPath=null;
+  try{
+    const {error}=await sb.from('expenses').insert({project_id,amount,note,receipt_url:receiptPath});
+    if(error){toast('保存エラー: '+error.message);return;}
+    toast(yen(amount)+' を記録しました');
+    document.getElementById('amt').value='';document.getElementById('memo').value='';
+    document.getElementById('receipt').value='';document.getElementById('ocrMsg').textContent='';receiptPath=null;
+  }finally{ btn.disabled=false; }   // 通信例外でもボタンが永久disabledにならないよう必ず戻す
 }
 
 // ---- 起動 ----

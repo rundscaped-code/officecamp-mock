@@ -67,11 +67,13 @@
   OC.loadImpersonation = function () {
     let id = null;
     try { id = localStorage.getItem('oc_impersonating_user_id'); } catch (e) {}
-    OC.impersonatingId = id && OC.peopleById[id] ? id : null;
+    // 代理操作は実管理者のみ。非管理者の localStorage 残骸は無視する（多層防御）。
+    OC.impersonatingId = (id && OC.peopleById[id] && OC.isActualAdmin()) ? id : null;
     OC.impersonatingUser = OC.impersonatingId ? OC.peopleById[OC.impersonatingId] : null;
     return OC.impersonatingUser;
   };
   OC.startImpersonation = function (id) {
+    if (!OC.isActualAdmin()) throw new Error('代理操作は管理者のみ可能です');
     if (!OC.peopleById[id]) throw new Error('対象ユーザーが見つかりません');
     try { localStorage.setItem('oc_impersonating_user_id', id); } catch (e) {}
     OC.loadImpersonation();
@@ -125,14 +127,18 @@
   OC.loadMe = async function () {
     const { data: { user } } = await OC.sb.auth.getUser();
     OC.me = user;
-    const { data } = await OC.sb.from('profiles').select('name,role,department_id').eq('id', user.id).single();
+    // セッション失効/未ログイン時は user=null。以降の user.id で落とさない。
+    if (!user) { OC.myRole = null; OC.myDept = null; OC.meName = ''; OC.myDepts = []; return null; }
+    const { data, error } = await OC.sb.from('profiles').select('name,role,department_id').eq('id', user.id).single();
+    if (error) console.error('[OC] loadMe: profiles 取得失敗', error);
     OC.myRole = data?.role || null;
     OC.myDept = data?.department_id || null;
     OC.meName = data?.name || user.email;
     return OC.me;
   };
   OC.loadPeople = async function () {
-    const { data } = await OC.sb.from('profiles').select('id,name,email,role,department_id').order('name');
+    const { data, error } = await OC.sb.from('profiles').select('id,name,email,role,department_id').order('name');
+    if (error) console.error('[OC] loadPeople 失敗', error);
     OC.people = data || [];
     OC.peopleById = {}; OC.people.forEach((p) => (OC.peopleById[p.id] = p));
     const { data: pd } = await OC.sb.from('profile_departments').select('profile_id,department_id');
@@ -144,11 +150,13 @@
     return OC.people;
   };
   OC.loadDepartments = async function () {
-    const { data } = await OC.sb.from('departments').select('id,name').order('name');
+    const { data, error } = await OC.sb.from('departments').select('id,name').order('name');
+    if (error) console.error('[OC] loadDepartments 失敗', error);
     OC.departments = data || []; return OC.departments;
   };
   OC.loadVendors = async function () {
-    const { data } = await OC.sb.from('vendors').select('id,name,kind').order('name');
+    const { data, error } = await OC.sb.from('vendors').select('id,name,kind').order('name');
+    if (error) console.error('[OC] loadVendors 失敗', error);
     OC.vendors = data || []; return OC.vendors;
   };
 
@@ -176,7 +184,7 @@
     const [{ data: p }, { data: pmeta }, { data: exps }, { data: ords }, { data: members }, { data: tasks }] = await Promise.all([
       OC.sb.from('project_costs').select('*').eq('id', id).single(),
       OC.sb.from('projects').select('status,delivery_date,start_date,client,leader_id,note').eq('id', id).single(),
-      OC.sb.from('expenses').select('amount,note,spent_at,status,kind,author:user_id(name,email),vendor:vendor_id(name)').eq('project_id', id).order('spent_at', { ascending: false }),
+      OC.sb.from('expenses').select('amount,note,spent_at,status,kind,receipt_url,author:user_id(name,email),vendor:vendor_id(name)').eq('project_id', id).order('spent_at', { ascending: false }),
       OC.sb.from('orders').select('id,kind,amount,title,status,from_user,to_user_id,to_dept_id,vendor:vendor_id(name)').eq('project_id', id).order('created_at', { ascending: false }),
       OC.sb.from('project_members').select('user_id').eq('project_id', id),
       OC.sb.from('tasks').select('id,title,status,start_date,end_date,progress,parent_task_id,task_assignees(user_id)').eq('project_id', id).order('start_date', { nullsFirst: false }),
@@ -193,7 +201,7 @@
   OC.loadExpenses = async function (limit) {
     await OC._ensureVisible();
     let q = OC.sb.from('expenses')
-      .select('id,amount,note,spent_at,status,kind,project_id,proj:project_id(name,code),author:user_id(name,email),vendor:vendor_id(name)')
+      .select('id,amount,note,spent_at,status,kind,project_id,receipt_url,proj:project_id(name,code),author:user_id(name,email),vendor:vendor_id(name)')
       .order('spent_at', { ascending: false });
     if (limit && !OC._visIds) q = q.limit(limit);
     const { data } = await q;
@@ -223,6 +231,8 @@
   OC.loadOrders = async function () {
     const sel = 'id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,vendor:vendor_id(name),proj:project_id(name)';
     const effectiveId = OC.effectiveUserId();
+    // 実効ユーザーIDが未確定（未ログイン等）なら不正な .or(...eq.undefined) を投げず空で返す。
+    if (!effectiveId) return { out: [], inbound: [] };
     const deptList = OC.effectiveDepts();
     const inFilter = ['to_user_id.eq.' + effectiveId].concat(deptList.map((d) => 'to_dept_id.eq.' + d)).join(',');
     const [{ data: out }, { data: inb }] = await Promise.all([
