@@ -1313,10 +1313,15 @@ function taskItemHTML(t){
 // ---- タスク詳細モーダル（概要・メモ・担当） ----
 async function openTask(id){
   const [{data:t},{data:subs}]=await Promise.all([
-    sb.from('tasks').select('*, task_assignees(user_id), proj:project_id(name,code)').eq('id',id).single(),
+    sb.from('tasks').select('*, task_assignees(user_id)').eq('id',id).single(),
     sb.from('tasks').select('id,title,status,start_date,end_date,task_assignees(user_id)').eq('parent_task_id',id).order('created_at'),
   ]);
   if(!t)return;
+  // 案件名はproject_task_labels経由（メンバー外の担当者にも安全に返る。金額/客先は含まない・v17）
+  if(t.project_id){
+    const {data:pl}=await sb.from('project_task_labels').select('name,code').eq('id',t.project_id).single();
+    t.proj=pl||null;
+  }
   const subRows=(subs||[]).map(s=>{
     const chips=(s.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}<b onclick="unassignSub('${s.id}','${a.user_id}','${id}')" style="cursor:pointer;margin-left:3px">×</b></span>`).join('');
     return `<div class="sub-item">
@@ -1544,12 +1549,9 @@ async function loadGantt(){
       `<div class="vbtn ${curTaskView===v?'on':''}" onclick="setTaskView('${v}')">${l}</div>`).join('')}</div>`;
   if(!tasks.length){body.innerHTML=bar+`<div class="empty">タスクがまだありません。<br>案件の詳細画面「タスク」から追加できます。</div>`;return;}
   const pmeta={};
-  const [{data:pc},{data:pp}]=await Promise.all([
-    sb.from('project_costs').select('id,name,code'),
-    sb.from('projects').select('id,start_date,end_date,delivery_date'),
-  ]);
-  (pc||[]).forEach(p=>pmeta[p.id]=p);
-  (pp||[]).forEach(p=>{pmeta[p.id]=Object.assign(pmeta[p.id]||{},p);});
+  // project_task_labels: メンバー外のタスク担当者にも案件名/日付だけを安全に返すビュー（金額/客先は含まない・v17）
+  const {data:pl}=await sb.from('project_task_labels').select('id,name,code,status,start_date,end_date,delivery_date');
+  (pl||[]).forEach(p=>pmeta[p.id]=p);
   const view = curTaskView==='board' ? boardHTML(tasks,pmeta)
              : curTaskView==='timeline' ? timelineHTML(tasks,pmeta)
              : listHTML(tasks,pmeta);
