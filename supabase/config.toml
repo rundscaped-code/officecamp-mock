@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.update-member]
 verify_jwt = false
+
+[functions.delete-member]
+verify_jwt = false
+
+[functions.reset-member-password]
+verify_jwt = false
