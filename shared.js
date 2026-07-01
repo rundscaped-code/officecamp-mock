@@ -218,11 +218,23 @@
   OC.unassignTask = (task_id, user_id) => OC.sb.from('task_assignees').delete().match({ task_id, user_id });
   OC.loadAllTasks = async function () {
     await OC._ensureVisible();
-    const { data } = await OC.sb.from('tasks')
-      .select('id,project_id,title,start_date,end_date,status,progress,leader_id,parent_task_id,proj:project_id(name,code),task_assignees(user_id)')
+    const { data, error } = await OC.sb.from('tasks')
+      .select('id,project_id,title,start_date,end_date,status,progress,leader_id,parent_task_id,task_assignees(user_id)')
       .order('start_date', { ascending: true });
+    if (error) console.error('[OC] loadAllTasks 失敗', error);
     let rows = data || [];
     if (OC._visIds) rows = rows.filter((t) => OC._visIds.has(t.project_id));
+    // 案件名/日付は project_task_labels 経由（メンバー外のタスク担当者にも安全に返る。金額/客先は含まない・v17）。
+    // projects への直埋め込みだと、案件メンバーでない担当者には行ごとRLSでnullになり案件名が消える。
+    const projIds = [...new Set(rows.map((t) => t.project_id).filter(Boolean))];
+    if (projIds.length) {
+      const { data: labels } = await OC.sb.from('project_task_labels')
+        .select('id,name,code,status,start_date,end_date,delivery_date')
+        .in('id', projIds);
+      const byId = {};
+      (labels || []).forEach((p) => (byId[p.id] = p));
+      rows.forEach((t) => (t.proj = byId[t.project_id] || null));
+    }
     return rows;
   };
 
