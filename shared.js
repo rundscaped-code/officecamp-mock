@@ -57,6 +57,36 @@
     if (!res.ok) throw new Error(body.error || 'メンバーを更新できませんでした');
     return body;
   };
+  OC.deleteMember = async function (id) {
+    const { data: { session } } = await OC.sb.auth.getSession();
+    if (!session?.access_token) throw new Error('ログイン状態を確認できません');
+    const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/delete-member`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ id }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'メンバーを削除できませんでした');
+    return body;
+  };
+  OC.resetMemberPassword = async function (id) {
+    const { data: { session } } = await OC.sb.auth.getSession();
+    if (!session?.access_token) throw new Error('ログイン状態を確認できません');
+    const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/reset-member-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ id }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || 'パスワードを初期化できませんでした');
+    return body;
+  };
 
   // ---- 整形ヘルパ ----
   OC.yen = (n) => '¥' + Number(n || 0).toLocaleString();
