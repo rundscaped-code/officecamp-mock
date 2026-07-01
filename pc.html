@@ -1171,13 +1171,63 @@ async function saveMember(){
 function openMemberEdit(userId){
   const p=OC.peopleById[userId];
   if(!p){toast('メンバーが見つかりません');return;}
+  const isSelf=userId===OC.me.id;
   modal(`<div class="modal"><div class="modal-h">メンバーを編集</div><div class="modal-b">
     <div class="field"><label class="fl">名前</label><input id="emName" class="input" value="${esc(p.name||'')}"></div>
     <div class="field"><label class="fl">メール（ログインID）</label><input class="input" value="${esc(p.email||'')}" disabled></div>
     <div class="field"><label class="fl">ロール</label><select id="emRole" class="input">${roleOptions(p.role||'メンバー')}</select></div>
     <div class="field"><label class="fl">所属部署（最大3・Ctrl/⌘で複数選択）</label><select id="emDepts" class="input" multiple size="4">${deptMultiOptions(OC.peopleDepts[userId]||[])}</select></div>
     <div class="muted" style="font-size:12px;line-height:1.6">ロールは権限、所属部署は所属先です。建築/デザイン/SEなどは部署側で管理します。</div>
+    <div style="border-top:1px solid var(--line,#e5e5e5);margin-top:16px;padding-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn ghost sm" onclick="resetMemberPasswordUI('${userId}')">パスワード初期化</button>
+      ${isSelf?'':`<button class="btn sm" style="background:#c0392b;color:#fff;border-color:#c0392b" onclick="closeModal();openMemberDeleteConfirm('${userId}')">このメンバーを削除…</button>`}
+    </div>
     </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="emSave" onclick="saveMemberEdit('${userId}')">保存</button></div></div>`);
+}
+async function resetMemberPasswordUI(userId){
+  const p=OC.peopleById[userId];
+  if(!p){toast('メンバーが見つかりません');return;}
+  if(!confirm(`${p.name||p.email} さんのパスワードを初期化します。\n新しいパスワードが発行され、本人の現在のパスワードは使えなくなります。\nよろしいですか？`))return;
+  try{
+    const r=await OC.resetMemberPassword(userId);
+    modal(`<div class="modal"><div class="modal-h">パスワードを初期化しました</div><div class="modal-b">
+      <div class="muted" style="margin-bottom:8px">${esc(r.name||p.name)}（${esc(r.email||p.email)}）の新しいパスワードです。<b style="color:#c0392b">この画面を閉じると二度と表示されません。</b>今すぐ本人に伝えてください。</div>
+      <div class="pwbox"><input id="rpwOut" class="input" value="${esc(r.password)}" readonly onclick="this.select()"><button class="btn ghost sm" onclick="navigator.clipboard.writeText(document.getElementById('rpwOut').value);toast('コピーしました')">コピー</button></div>
+      </div><div class="modal-f"><button class="btn" onclick="closeModal()">閉じる</button></div></div>`);
+  }catch(e){toast('初期化エラー: '+e.message);}
+}
+function openMemberDeleteConfirm(userId){
+  const p=OC.peopleById[userId];
+  if(!p){toast('メンバーが見つかりません');return;}
+  const name=p.name||p.email||'';
+  modal(`<div class="modal"><div class="modal-h" style="color:#c0392b">⚠ メンバーを削除</div><div class="modal-b">
+    <div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:12px;margin-bottom:12px;line-height:1.7">
+      <b>${esc(name)}</b>（${esc(p.email||'')}）を削除しようとしています。<br>
+      ・ログインは<b>即座に無効化</b>され、二度とログインできなくなります。<br>
+      ・この操作は<b>取り消せません</b>。<br>
+      ・過去のタスク・経費・発注などの履歴がある場合、記録保護のためメンバー一覧には「ログイン不可」の状態で残ることがあります（履歴データは消えません）。<br>
+      ・本当に削除する場合のみ、下に <b>${esc(name)}</b> と正確に入力してください。
+    </div>
+    <input id="delConfirmInput" class="input" placeholder="${esc(name)} と入力" oninput="document.getElementById('delConfirmBtn').disabled=(this.value!==${JSON.stringify(name)})">
+    </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="delConfirmBtn" style="background:#c0392b;color:#fff;border-color:#c0392b" disabled onclick="confirmDeleteMember('${userId}')">削除する</button></div></div>`);
+}
+async function confirmDeleteMember(userId){
+  const btn=document.getElementById('delConfirmBtn');
+  btn.disabled=true;
+  try{
+    const r=await OC.deleteMember(userId);
+    await OC.loadPeople();
+    closeModal();
+    if(r.historyKept){
+      toast(`${r.name||''} さんのログインを無効化しました（履歴があるため一覧には残ります）`);
+    }else{
+      toast(`${r.name||''} さんを削除しました`);
+    }
+    renderMembers(document.getElementById('content'));
+  }catch(e){
+    toast('削除エラー: '+e.message);
+    btn.disabled=false;
+  }
 }
 async function saveMemberEdit(userId){
   const name=document.getElementById('emName').value.trim();
