@@ -90,7 +90,14 @@
 
   // ---- 整形ヘルパ ----
   OC.yen = (n) => '¥' + Number(n || 0).toLocaleString();
-  OC.man = (n) => '¥' + Math.round(Number(n || 0) / 10000) + '万';
+  // 万円表記。1万円未満は円表記へフォールバック（¥4,900が「¥0万」になる誤認防止）。
+  // 端数のある万円は小数1桁まで残す（¥14,900 → ¥1.5万）。
+  OC.man = (n) => {
+    n = Number(n || 0);
+    if (Math.abs(n) < 10000) return OC.yen(n);
+    const v = Math.round(n / 1000) / 10;
+    return '¥' + (Number.isInteger(v) ? v : v.toFixed(1)) + '万';
+  };
   OC.deptName = (id) => (OC.departments.find((d) => d.id === id) || {}).name || '部門';
   OC.personName = (id) => { const p = OC.peopleById[id]; return p ? (p.name || p.email) : '—'; };
   OC.fmtDate = (d) => (d ? new Date(d.length <= 10 ? d + 'T00:00:00' : d).toLocaleDateString('ja-JP') : '—');
@@ -266,6 +273,57 @@
       rows.forEach((t) => (t.proj = byId[t.project_id] || null));
     }
     return rows;
+  };
+
+  // ---- 変更履歴（audit_log、M-9） ----
+  // app.html の diffHTML/logLabel を共有層へ移設した版。pc.html の案件詳細で使用
+  //（app.html は shared.js 未読込のためローカル実装を併存＝M-7の段階移行で統合予定）。
+  OC.esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  OC.loadAuditLog = async function (project_id, limit) {
+    const { data, error } = await OC.sb.from('audit_log')
+      .select('table_name,action,actor_id,summary,diff,created_at')
+      .eq('project_id', project_id).order('created_at', { ascending: false }).limit(limit || 40);
+    if (error) { console.error('[OC] loadAuditLog 失敗', error); return []; }
+    return data || [];
+  };
+  OC.FIELD_JP = { name: '案件名', title: 'タイトル', amount: '金額', status: '状態', note: 'メモ',
+    start_date: '開始日', end_date: '終了日', delivery_date: '納品日', client: '受注元',
+    progress: '進捗', leader_id: 'リーダー', kind: '種別', vendor_id: '外注先',
+    to_dept_id: '内注先', spent_at: '日付', profit: '粗利', parent_task_id: '親タスク' };
+  OC.fieldLabel = (k) => OC.FIELD_JP[k] || k;
+  // 値の表示整形。自由入力値（名前・メモ等）が混ざるため必ずエスケープして返す
+  OC.fmtVal = function (k, v) {
+    if (v === null || v === undefined || v === '') return '空';
+    if (k === 'leader_id' || k === 'to_user_id' || k === 'user_id' || k === 'from_user') return OC.esc(OC.personName(v));
+    if (k === 'to_dept_id') return OC.esc(OC.deptName(v));
+    if (k === 'amount') return OC.yen(v);
+    return OC.esc(String(v));
+  };
+  OC.diffHTML = function (l) {
+    const o = l.diff?.old || {}, n = l.diff?.new || {};
+    const skip = new Set(['id', 'created_at', 'updated_at', 'owner_id', 'receipt_url', 'user_id', 'from_user']);
+    const keys = [...new Set([...Object.keys(o), ...Object.keys(n)])].filter((k) => !skip.has(k));
+    const changed = keys.filter((k) => JSON.stringify(o[k]) !== JSON.stringify(n[k]));
+    if (l.action === 'INSERT') {
+      const list = keys.filter((k) => n[k] !== null && n[k] !== '').map((k) => `<div class="dl"><span class="dk">${OC.fieldLabel(k)}</span><span class="dn">${OC.fmtVal(k, n[k])}</span></div>`).join('');
+      return list || '<div class="muted">—</div>';
+    }
+    if (l.action === 'DELETE') {
+      const list = keys.filter((k) => o[k] !== null && o[k] !== '').map((k) => `<div class="dl"><span class="dk">${OC.fieldLabel(k)}</span><span class="do">${OC.fmtVal(k, o[k])}</span></div>`).join('');
+      return list || '<div class="muted">—</div>';
+    }
+    if (!changed.length) return '<div class="muted">変更なし</div>';
+    return changed.map((k) => `<div class="dl"><span class="dk">${OC.fieldLabel(k)}</span>
+      <span class="do">${OC.fmtVal(k, o[k])}</span> → <span class="dn">${OC.fmtVal(k, n[k])}</span></div>`).join('');
+  };
+  OC.logLabel = function (l) {
+    const t = { projects: '案件', expenses: '経費', tasks: 'タスク', orders: '発注' }[l.table_name] || OC.esc(l.table_name);
+    const n = l.diff?.new || l.diff?.old || {};
+    if (l.table_name === 'expenses') return `${t}：${OC.esc(n.note || '（メモなし）')} ${n.amount ? OC.yen(n.amount) : ''}`;
+    if (l.table_name === 'tasks') return `${t}：${OC.esc(n.title)}`;
+    if (l.table_name === 'orders') return `${t}：${OC.esc(n.title)} ${n.amount ? OC.yen(n.amount) : ''}`;
+    if (l.table_name === 'projects') return `${t}：${OC.esc(n.name)}`;
+    return t;
   };
 
   // ---- 発注 ----
