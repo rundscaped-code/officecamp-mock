@@ -4,23 +4,34 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="officecamp">
 <meta name="theme-color" content="#1A1A1A">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>オフィスキャンプ 案件管理</title>
 <style>
   :root{
-    --bg:#F4F4F5;--card:#FFF;--ink:#1A1A1A;--sub:#8C8C8C;--line:#E6E6E6;
-    --accent:#1A1A1A;--accent-soft:#EDEDED;--amber:#6E6E6E;--gray:#BFBFBF;
+    --bg:#F4F4F5;--card:#FFF;--ink:#1A1A1A;--sub:#6B6B6B;--line:#E6E6E6;
+    --accent:#1A1A1A;--accent-soft:#EDEDED;--amber:#6E6E6E;--gray:#6E6E6E;
     --shadow:0 4px 18px rgba(0,0,0,.06);--radius:16px;
+    /* タイポグラフィトークン（L-3）: 主要コンポーネントの文字サイズはこの4段で指定する */
+    --fs-xs:11px;--fs-sm:12px;--fs-md:14px;--fs-lg:16px;
+    /* ステータス色（PC版と共通のマップ: 見込/未着手=グレー・進行=青・完了=緑・保留=琥珀・失注=赤） */
+    --st-plan:#9AA0A6;--st-go:#2D6CDF;--st-done:#2E7D52;--st-hold:#B8860B;--st-lost:#C0392B;
   }
   [data-theme="dark"]{
     --bg:#15161A;--card:#1E1F24;--ink:#ECECEC;--sub:#9597A0;--line:#2D2E34;
-    --accent:#EDEDED;--accent-soft:#2C2D33;--amber:#9AA0A6;--gray:#55565B;
+    --accent:#EDEDED;--accent-soft:#2C2D33;--amber:#9AA0A6;--gray:#8A8F98;
     --shadow:0 4px 18px rgba(0,0,0,.45);
+    --st-plan:#9AA0A6;--st-go:#5B8DEF;--st-done:#4FAF7C;--st-hold:#D4A24B;--st-lost:#E5705F;
   }
   [data-theme="dark"] .btn{color:#16171A}
   [data-theme="dark"] .btn-ghost{background:var(--card);color:var(--ink)}
   [data-theme="dark"] .toast{background:#000;color:#fff}
   [data-theme="dark"] .st-sel.s-未着手,[data-theme="dark"] .st-wait{background:#2C2D33;color:#9AA0A6}
+  [data-theme="dark"] .tl-day.td{background:#3A1E22;color:#E5705F}
   /* 設定（アカウント）まわり */
   .acct-btn{position:fixed;top:max(env(safe-area-inset-top),10px);right:14px;z-index:40;
     width:40px;height:40px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);
@@ -32,6 +43,8 @@
   .sheet-h{font-size:18px;font-weight:800;margin-bottom:2px}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0}
+  /* キーボード操作の可視化（M-4）: Tab移動時のみアウトラインを出す */
+  :where(a,button,select,input,textarea,summary,[tabindex]):focus-visible{outline:2px solid var(--st-go);outline-offset:2px}
   body{background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
     min-height:100dvh;padding-bottom:env(safe-area-inset-bottom)}
@@ -44,44 +57,37 @@
   .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);
     border:1px solid var(--line);margin-bottom:12px}
   .pad{padding:16px}
-  .sec{font-size:12px;color:var(--sub);font-weight:700;letter-spacing:1px;margin:18px 4px 8px;text-transform:uppercase}
+  .sec{font-size:var(--fs-sm);color:var(--sub);font-weight:700;letter-spacing:1px;margin:18px 4px 8px;text-transform:uppercase}
   /* 経費フォーム */
   .amount-row{display:flex;align-items:center;gap:10px;padding:8px 4px 14px}
   .yen{font-size:34px;color:var(--sub);font-weight:300}
   .amount{font-size:40px;font-weight:700;border:none;background:transparent;width:100%;outline:none;color:var(--ink)}
   .field{margin-bottom:12px}
-  .field label{display:block;font-size:12px;color:var(--sub);font-weight:700;margin:0 2px 6px}
+  .field label{display:block;font-size:var(--fs-sm);color:var(--sub);font-weight:700;margin:0 2px 6px}
   .control{width:100%;background:var(--card);border:1.5px solid var(--line);border-radius:14px;
-    padding:14px;font-size:16px;color:var(--ink);outline:none;font-family:inherit}
+    padding:14px;font-size:var(--fs-lg);color:var(--ink);outline:none;font-family:inherit}
   select.control{appearance:none}
   .btn{display:block;width:100%;border:none;border-radius:16px;padding:16px;font-size:17px;font-weight:700;
     color:#fff;background:var(--accent);cursor:pointer;font-family:inherit;box-shadow:0 6px 16px rgba(0,0,0,.18)}
   .btn:disabled{opacity:.5}
-  .btn-ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line);box-shadow:none}
-  .nl{background:linear-gradient(135deg,#2A2A2A,#111);border-radius:var(--radius);padding:16px;color:#fff;margin-bottom:14px}
-  .nl .lab{font-size:12px;opacity:.85;font-weight:700;margin-bottom:8px}
-  .nl-input{width:100%;background:rgba(255,255,255,.15);border:none;border-radius:12px;padding:13px;color:#fff;font-size:15px;outline:none;font-family:inherit}
-  .nl-input::placeholder{color:rgba(255,255,255,.7)}
-  .nl-hint{font-size:11.5px;opacity:.8;margin-top:10px}
-  .parsed{font-size:12px;margin-top:9px;background:rgba(255,255,255,.12);border-radius:10px;padding:9px 11px;line-height:1.7;display:none}
-  .parsed.show{display:block}
+  .btn-ghost{background:var(--card);color:var(--ink);border:1.5px solid var(--line);box-shadow:none}
   /* 案件 */
   .proj{display:flex;flex-direction:column;gap:6px;cursor:pointer}
   .proj-top{display:flex;align-items:center;gap:8px}
-  .dot{width:9px;height:9px;border-radius:50%;flex:none;background:#1A1A1A}
-  .dot.s-見込{background:#9A9A9A}.dot.s-進行{background:#1A1A1A}.dot.s-完了{background:#5B8C5A}.dot.s-失注{background:#C77}
-  .proj-name{font-size:16px;font-weight:700}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--st-plan)}
+  .dot.s-見込{background:var(--st-plan)}.dot.s-進行{background:var(--st-go)}.dot.s-完了{background:var(--st-done)}.dot.s-保留{background:var(--st-hold)}.dot.s-失注{background:var(--st-lost)}
+  .proj-name{font-size:var(--fs-lg);font-weight:700}
   .proj-meta{color:var(--sub);font-size:13px;padding-left:0}
   .profit{margin-left:auto;text-align:right}
   .profit .v{font-weight:700;font-size:15px}
   .profit .r{font-size:11px;color:var(--sub)}
-  .badge{font-size:11px;padding:2px 9px;border-radius:20px;font-weight:700}
+  .badge{font-size:var(--fs-xs);padding:2px 9px;border-radius:20px;font-weight:700}
   .b-go{background:var(--accent-soft);color:var(--accent)}
   .b-may{background:#EDEDED;color:var(--amber);border:1px solid #DCDCDC}
   .b-lost{background:#eee;color:var(--gray)}
   .kpis{display:flex;gap:8px;margin-top:6px}
   .kpi{flex:1;background:var(--bg);border-radius:14px;padding:12px;text-align:center}
-  .kpi .l{font-size:11px;color:var(--sub);font-weight:700}
+  .kpi .l{font-size:var(--fs-xs);color:var(--sub);font-weight:700}
   .kpi .n{font-size:16px;font-weight:700;margin-top:3px}
   .kpi.pf{background:var(--accent-soft)}
   .exp-row{display:flex;align-items:center;padding:13px 16px;gap:10px;border-top:1px solid var(--line)}
@@ -96,13 +102,27 @@
     padding-bottom:env(safe-area-inset-bottom);background:rgba(255,255,255,.95);backdrop-filter:blur(12px);
     border-top:1px solid var(--line);display:flex;max-width:480px;margin:0 auto;z-index:4}
   .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-    color:var(--gray);font-size:11px;font-weight:600;cursor:pointer}
+    color:var(--gray);font-size:var(--fs-xs);font-weight:600;cursor:pointer;
+    border:none;background:transparent;font-family:inherit;padding:0}   /* button化に伴うリセット（M-4） */
   .tab.on{color:var(--accent)}.tab svg{width:24px;height:24px}
   .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);
     background:var(--ink);color:#fff;padding:12px 20px;border-radius:30px;font-size:14px;font-weight:600;
     opacity:0;transition:.3s;z-index:10;box-shadow:0 8px 20px rgba(0,0,0,.3)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-  .empty{text-align:center;color:var(--sub);font-size:14px;padding:30px 10px}
+  .toast.err{background:#C0392B!important;color:#fff;cursor:pointer}
+  /* PWAインストール促進バナー（beforeinstallprompt 発火時のみ表示） */
+  .pwa-banner{position:fixed;bottom:calc(76px + env(safe-area-inset-bottom));left:16px;right:16px;
+    max-width:448px;margin:0 auto;z-index:9;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 14px;
+    display:flex;align-items:center;gap:10px;
+    opacity:0;transform:translateY(12px);pointer-events:none;transition:.3s}
+  .pwa-banner.show{opacity:1;transform:translateY(0);pointer-events:auto}
+  .pwa-banner .pwa-txt{flex:1;font-size:var(--fs-sm);color:var(--ink);font-weight:600;line-height:1.4}
+  .pwa-banner .pwa-install{border:none;border-radius:10px;background:var(--accent);color:var(--bg);
+    font-size:var(--fs-sm);font-weight:700;padding:8px 14px;cursor:pointer;font-family:inherit;flex:none}
+  .pwa-banner .pwa-close{border:none;background:transparent;color:var(--sub);font-size:18px;
+    cursor:pointer;padding:4px;line-height:1;flex:none}
+  .empty{text-align:center;color:var(--sub);font-size:var(--fs-md);padding:30px 10px}
   /* 経理 */
   .fin-sum{display:flex;gap:8px;margin:4px 0 12px}
   .fin-sum .kpi{flex:1}
@@ -135,14 +155,14 @@
   .gc-tk{position:relative;flex:1;height:24px;background:var(--bg);border-radius:6px;overflow:hidden}
   .gc-axis .gc-tk{background:transparent;height:16px;overflow:visible}
   .gc-gl{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
-  .gc-axis .gc-lab{position:absolute;top:0;font-size:9px;color:var(--sub);transform:translateX(-50%);white-space:nowrap}
+  .gc-axis .gc-lab{position:absolute;top:0;font-size:11px;color:var(--sub);transform:translateX(-50%);white-space:nowrap}
   .gc-today{position:absolute;top:0;bottom:0;width:2px;background:#B00020;opacity:.55;z-index:2}
   .gc-bar{position:absolute;top:3px;height:18px;border-radius:5px;background:var(--accent);
     min-width:4px;display:flex;align-items:center;color:#fff;font-size:10px;font-weight:700;padding:0 6px;
     overflow:hidden;white-space:nowrap;z-index:1}
   .gc-fill{position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.30)}
-  .gc-bar.s-未着手{background:#9A9A9A}.gc-bar.s-進行{background:#1A1A1A}
-  .gc-bar.s-完了{background:#5B8C5A}.gc-bar.s-保留{background:#C8A24B}
+  .gc-bar.s-未着手{background:var(--st-plan)}.gc-bar.s-進行{background:var(--st-go)}
+  .gc-bar.s-完了{background:var(--st-done)}.gc-bar.s-保留{background:var(--st-hold)}
   .gc-legend{font-size:10px;color:var(--sub);margin:8px 0 0 96px;display:flex;gap:10px;flex-wrap:wrap}
   .gc-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:3px;vertical-align:middle}
   .task-card{padding:12px 14px;border-top:1px solid var(--line)}
@@ -152,14 +172,16 @@
   .task-meta{font-size:11.5px;color:var(--sub);margin-top:3px;line-height:1.6}
   .chip{display:inline-block;font-size:10px;padding:1px 7px;border-radius:10px;background:var(--accent-soft);
     color:var(--accent);font-weight:700;margin:2px 4px 0 0}
+  /* チップの削除×: 見た目を変えずに当たり判定だけ約28pxへ拡大（H-6） */
+  .chip .x{cursor:pointer;display:inline-block;padding:9px;margin:-9px -9px -9px -3px;line-height:1}
   .row-inline{display:flex;gap:8px;align-items:center;margin-top:8px}
   .row-inline .control{padding:9px}
   .mini{width:auto;flex:none;padding:9px 12px;font-size:13px}
   /* タスクリスト(Asana/Monday風) */
   .tk-item{display:flex;gap:10px;align-items:flex-start;padding:11px 4px;border-top:1px solid var(--line)}
   .tk-item:first-child{border-top:none}
-  .tk-st{width:4px;flex:none;align-self:stretch;border-radius:3px;background:#9A9A9A}
-  .tk-st.s-進行{background:#1A1A1A}.tk-st.s-完了{background:#5B8C5A}.tk-st.s-保留{background:#C8A24B}
+  .tk-st{width:4px;flex:none;align-self:stretch;border-radius:3px;background:var(--st-plan)}
+  .tk-st.s-進行{background:var(--st-go)}.tk-st.s-完了{background:var(--st-done)}.tk-st.s-保留{background:var(--st-hold)}
   .tk-main{flex:1;min-width:0}
   .tk-title{font-size:14.5px;font-weight:700}
   .tk-sub{font-size:12px;color:var(--sub);margin-top:3px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
@@ -177,50 +199,51 @@
   /* 案件詳細のサブタブ */
   .subtabs{display:flex;gap:6px;margin:14px 2px 12px}
   .subtab{flex:1;text-align:center;padding:9px 4px;font-size:13px;font-weight:700;color:var(--sub);
-    background:var(--card);border:1px solid var(--line);border-radius:12px;cursor:pointer}
+    background:var(--card);border:1px solid var(--line);border-radius:12px;cursor:pointer;font-family:inherit}
   .subtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .dpane{animation:fade .15s}
   @keyframes fade{from{opacity:.4}to{opacity:1}}
   /* タスクタブ：ビュー切替 */
   .viewbar{display:flex;gap:6px;background:var(--accent-soft);padding:4px;border-radius:12px;margin:2px 0 14px}
-  .vbtn{flex:1;text-align:center;padding:8px 4px;font-size:13px;font-weight:700;color:var(--sub);border-radius:9px;cursor:pointer}
-  .vbtn.on{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+  .vbtn{flex:1;text-align:center;padding:8px 4px;font-size:13px;font-weight:700;color:var(--sub);border-radius:9px;cursor:pointer;
+    border:none;background:transparent;font-family:inherit}   /* button化に伴うリセット（M-4） */
+  .vbtn.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.1)}
   /* ボード（ステータス別の列） */
   .board{display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
   .bcol{flex:0 0 220px;background:var(--bg);border-radius:14px;padding:10px}
   .bcol-h{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;margin-bottom:10px}
-  .bcount{margin-left:auto;color:var(--sub);font-size:12px;background:#fff;border-radius:10px;padding:0 8px}
+  .bcount{margin-left:auto;color:var(--sub);font-size:12px;background:var(--card);border-radius:10px;padding:0 8px}
   .st-dot{width:10px;height:10px;border-radius:50%;flex:none}
-  .st-dot.s-未着手{background:#9A9A9A}.st-dot.s-進行{background:#1A1A1A}
-  .st-dot.s-完了{background:#5B8C5A}.st-dot.s-保留{background:#C8A24B}
-  .bcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px;margin-bottom:9px;cursor:pointer;box-shadow:var(--shadow)}
+  .st-dot.s-未着手{background:var(--st-plan)}.st-dot.s-進行{background:var(--st-go)}
+  .st-dot.s-完了{background:var(--st-done)}.st-dot.s-保留{background:var(--st-hold)}
+  .bcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px;margin-bottom:9px;cursor:pointer;box-shadow:var(--shadow)}
   .bcard:active{background:var(--bg)}
-  .bpc{font-size:10px;color:var(--sub);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bpc{font-size:11px;color:var(--sub);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .bcard .bt{font-weight:700;font-size:14px;margin:3px 0 4px}
   .bempty{color:var(--gray);font-size:12px;text-align:center;padding:10px 0}
   .bcard.dragging{opacity:.35}
   .drag-ghost{position:fixed;z-index:50;pointer-events:none;transform:translate(-50%,-50%);
     box-shadow:0 12px 28px rgba(0,0,0,.35);opacity:.95;rotate:-2deg}
-  .bcol.drop-hot{outline:2px dashed var(--accent);outline-offset:-3px;background:#E9E9EA}
+  .bcol.drop-hot{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--accent-soft)}
   /* タイムライン（スプシ風カレンダー・横スクロール） */
-  .tl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .tl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
   .tl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .tl-grid{min-width:max-content}
   .tl-row{display:flex;align-items:stretch;border-top:1px solid var(--line);min-height:34px}
   .tl-row:first-child{border-top:none}
-  .tl-name{position:sticky;left:0;z-index:2;width:160px;flex:none;background:#fff;padding:6px 8px;
+  .tl-name{position:sticky;left:0;z-index:2;width:160px;flex:none;background:var(--card);padding:6px 8px;
     font-size:12px;font-weight:600;display:flex;align-items:center;border-right:1px solid var(--line);
     overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
   .tl-head{background:var(--accent-soft)}
   .tl-head .tl-name{background:var(--accent-soft);z-index:3;font-weight:700}
   .tl-cells{position:relative;flex:none}
   .tl-day{width:40px;flex:none;text-align:center;font-size:10px;color:var(--sub);padding:4px 0;line-height:1.2}
-  .tl-day small{display:block;font-size:8px;opacity:.8}
-  .tl-day.we{background:#F2F2F3}
+  .tl-day small{display:block;font-size:10px;opacity:.9}
+  .tl-day.we{background:var(--bg)}
   .tl-day.td{background:#FDECEC;color:#B00020;font-weight:700}
   .tl-task{gap:6px}
   .tl-task .tl-tt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .st-mini{padding:3px 5px!important;font-size:11px;border-radius:6px;flex:none;width:auto;text-align:center}
+  .st-mini{padding:6px 7px!important;min-height:28px;font-size:12px;border-radius:6px;flex:none;width:auto;text-align:center}
   .tl-proj{min-height:30px}
   .tl-proj .tl-name{font-weight:800;font-size:12.5px;background:var(--bg)}
   .tl-proj .tl-cells{background:var(--bg)}
@@ -230,8 +253,8 @@
     transform:rotate(45deg);border-radius:2px;z-index:2}
   .tl-bar{position:absolute;top:5px;height:22px;border-radius:6px;display:flex;align-items:center;
     color:#fff;font-size:10px;font-weight:700;padding:0 7px;overflow:hidden;white-space:nowrap;cursor:pointer}
-  .tl-bar.s-未着手{background:#9A9A9A}.tl-bar.s-進行{background:#1A1A1A}
-  .tl-bar.s-完了{background:#5B8C5A}.tl-bar.s-保留{background:#C8A24B}
+  .tl-bar.s-未着手{background:var(--st-plan)}.tl-bar.s-進行{background:var(--st-go)}
+  .tl-bar.s-完了{background:var(--st-done)}.tl-bar.s-保留{background:var(--st-hold)}
   .tl-today{position:absolute;top:0;bottom:0;width:2px;background:#B00020;opacity:.55;z-index:1}
   /* タスクタブ：案件カード（折りたたみ） */
   details.pj-card{margin-bottom:12px}
@@ -255,19 +278,20 @@
   .sub-row{display:flex;align-items:center;gap:8px}
   .sub-t{flex:1;font-size:13.5px;font-weight:600;cursor:pointer}
   .sub-edit{display:flex;align-items:center;gap:6px;margin-top:6px}
-  .sub-edit input{border:1px solid var(--line);border-radius:8px;padding:5px 7px;font-size:12px;font-family:inherit}
+  .sub-edit input{border:1px solid var(--line);border-radius:8px;padding:9px 8px;min-height:38px;font-size:16px;font-family:inherit;background:var(--card);color:var(--ink)}
   .sub-asg{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px}
-  .sub-asg select{flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:7px;font-size:12px;font-family:inherit}
-  /* 色つきステータス select（ワンタップ変更） */
-  .st-sel{appearance:none;border:none;border-radius:9px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;flex:none}
-  .st-sel.s-未着手{background:#ECECEC;color:#555}.st-sel.s-進行{background:#1A1A1A;color:#fff}
-  .st-sel.s-完了{background:#DCEFDC;color:#3D6B3C}.st-sel.s-保留{background:#F6E7C2;color:#8A6D2F}
-  .st-sel.ps-見込{background:#ECECEC;color:#555}.st-sel.ps-進行{background:#1A1A1A;color:#fff}
-  .st-sel.ps-完了{background:#DCEFDC;color:#3D6B3C}.st-sel.ps-失注{background:#F3DEDE;color:#A33}
+  .sub-asg select{flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:10px 8px;min-height:38px;font-size:16px;font-family:inherit;background:var(--card);color:var(--ink)}
+  /* 色つきステータス select（ワンタップ変更）
+     タップ領域44px推奨に寄せ、16px未満inputのiOSフォーカスズームを避けるためfont-size:16px（H-6） */
+  .st-sel{appearance:none;border:none;border-radius:10px;padding:10px 14px;min-height:40px;font-size:var(--fs-lg);font-weight:700;cursor:pointer;flex:none}
+  .st-sel.s-未着手{background:#ECECEC;color:#555}.st-sel.s-進行{background:var(--st-go);color:#fff}
+  .st-sel.s-完了{background:#DCEFDC;color:#2E7D52}.st-sel.s-保留{background:#F6E7C2;color:#8A6D2F}
+  .st-sel.ps-見込{background:#ECECEC;color:#555}.st-sel.ps-進行{background:var(--st-go);color:#fff}
+  .st-sel.ps-完了{background:#DCEFDC;color:#2E7D52}.st-sel.ps-失注{background:#F3DEDE;color:#C0392B}
   .dl-soon{color:#C8772B!important;font-weight:700}
   .dl-over{color:#B00020!important;font-weight:700}
   .tk-edit{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:7px}
-  .tk-edit .tk-i{width:auto;flex:none;text-align:left;border:1px solid var(--line);background:#fff;
+  .tk-edit .tk-i{width:auto;flex:none;text-align:left;border:1px solid var(--line);background:var(--card);
     padding:6px 8px;border-radius:8px;font-size:12px}
   .tk-edit select.tk-i{font-weight:700}
   .tk-arrow,.tk-pct{color:var(--sub);font-size:12px}
@@ -276,12 +300,12 @@
   .fbi{padding:9px 10px;font-size:13px;flex:1;min-width:120px}
   select.fbi{appearance:none}
   /* 経理スプレッドシート編集 */
-  .fin-edit{border:none;background:transparent;font:inherit;font-size:13px;color:var(--ink);width:100%;
-    text-align:right;padding:2px 3px;border-radius:4px;outline:none}
-  .fin-edit:focus{background:#fff;box-shadow:0 0 0 2px var(--accent) inset}
+  .fin-edit{border:none;background:transparent;font:inherit;font-size:var(--fs-lg);color:var(--ink);width:100%;
+    text-align:right;padding:8px 6px;min-height:36px;border-radius:4px;outline:none}
+  .fin-edit:focus{background:var(--card);box-shadow:0 0 0 2px var(--accent) inset}
   .fin-edit.l{text-align:left}
   select.fin-edit{appearance:none;font-weight:700}
-  .fin-table td.ed{background:#FbFbFb}
+  .fin-table td.ed{background:var(--bg)}
   /* 変更履歴 */
   .log-row{display:flex;gap:8px;padding:9px 14px;border-top:1px solid var(--line);font-size:12.5px}
   .log-row:first-child{border-top:none}
@@ -301,6 +325,8 @@
   .login{flex:1;display:flex;flex-direction:column;justify-content:center;padding:24px;gap:14px}
   .login h1{font-size:26px;margin:0 0 4px}
   .login p{color:var(--sub);font-size:14px;margin:0 0 12px}
+  .login form{display:flex;flex-direction:column;gap:14px}
+  .login .field{margin:0}
   .banner{background:#FFF4E5;border:1px solid #F0D9A8;color:#8A6D2F;border-radius:12px;padding:12px;font-size:13px;line-height:1.6}
   a{color:var(--accent)}
 
@@ -310,7 +336,7 @@
     .wrap{max-width:760px}
     #projList,#ordersOut,#ordersIn{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
     .login{align-items:center}
-    .login h1,.login p,.login .control,.login .btn,.login>p{width:100%;max-width:420px}
+    .login h1,.login p,.login form,.login>p{width:100%;max-width:420px}
   }
   /* デスクトップ: 下タブバー→左サイドバー、コンテンツは広く中央寄せ */
   @media(min-width:860px){
@@ -440,9 +466,14 @@
   <div id="loginView" class="login hidden">
     <h1>オフィスキャンプ</h1>
     <p>案件・経費・予定の管理。会社のメールでログインします。</p>
-    <input id="loginEmail" class="control" type="email" inputmode="email" autocomplete="username" placeholder="you@officecamp.jp">
-    <input id="loginPass" class="control" type="password" autocomplete="current-password" placeholder="パスワード" onkeydown="if(event.key==='Enter')signIn()">
-    <button class="btn" id="loginBtn" onclick="signIn()">ログイン</button>
+    <!-- form要素で包む: パスワードマネージャの保存/自動入力とEnter送信を成立させる（M-3） -->
+    <form id="loginForm" onsubmit="event.preventDefault();loginMode==='magic'?sendMagicLink():signIn()">
+      <div class="field"><label for="loginEmail">メール</label>
+        <input id="loginEmail" class="control" type="email" inputmode="email" autocomplete="username" placeholder="you@officecamp.jp"></div>
+      <div class="field" id="loginPassField"><label for="loginPass">パスワード</label>
+        <input id="loginPass" class="control" type="password" autocomplete="current-password" placeholder="パスワード"></div>
+      <button class="btn" id="loginBtn" type="submit">ログイン</button>
+    </form>
     <p style="text-align:center;margin:0"><a id="magicLink" style="cursor:pointer;color:var(--sub);font-size:13px" onclick="toggleMagic()">初回ログイン・パスワードを忘れた方</a></p>
     <p id="loginMsg" style="color:var(--accent)"></p>
   </div>
@@ -455,12 +486,12 @@
     <div class="screen">
       <div class="sec">内容</div>
       <div class="card pad">
-        <div class="amount-row"><span class="yen">¥</span><input class="amount" id="amt" inputmode="numeric" placeholder="0"></div>
-        <div class="field"><label>紐づく案件</label>
+        <div class="amount-row"><span class="yen">¥</span><input class="amount" id="amt" inputmode="numeric" placeholder="0" aria-label="金額（円）"></div>
+        <div class="field"><label for="proj">紐づく案件</label>
           <select class="control" id="proj"></select></div>
-        <div class="field"><label>メモ（何を買ったか）</label>
+        <div class="field"><label for="memo">メモ（何を買ったか）</label>
           <input class="control" id="memo" placeholder="木材・ビス など"></div>
-        <div class="field"><label>レシート（任意・撮ると金額を自動読み取り）</label>
+        <div class="field"><label for="receipt">レシート（任意・撮ると金額を自動読み取り）</label>
           <input class="control" id="receipt" type="file" accept="image/*" capture="environment" onchange="onReceipt(event)">
           <div id="ocrMsg" style="font-size:12px;color:var(--sub);margin-top:6px"></div></div>
         <button class="btn" id="recBtn" onclick="record()">記録する</button>
@@ -475,17 +506,17 @@
     <div class="screen">
       <button class="btn btn-ghost" id="addProjToggle" style="margin:4px 0 12px" onclick="toggleProjForm()">＋ 案件を追加</button>
       <div id="projForm" class="card pad hidden" style="margin-bottom:12px">
-        <div class="field"><label>案件名</label><input class="control" id="npName" placeholder="○○ビル改修"></div>
-        <div class="field"><label>派生元の案件（任意）</label><select class="control" id="npParent"></select></div>
-        <div class="field"><label>受注元（任意）</label><input class="control" id="npClient" placeholder="◇◇建設"></div>
-        <div class="field"><label>受注金額（円・任意）</label><input class="control" id="npAmt" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label for="npName">案件名</label><input class="control" id="npName" placeholder="○○ビル改修"></div>
+        <div class="field"><label for="npParent">派生元の案件（任意）</label><select class="control" id="npParent"></select></div>
+        <div class="field"><label for="npClient">受注元（任意）</label><input class="control" id="npClient" placeholder="◇◇建設"></div>
+        <div class="field"><label for="npAmt">受注金額（円・任意）</label><input class="control" id="npAmt" inputmode="numeric" placeholder="0"></div>
         <div class="row-inline" style="margin-bottom:12px">
-          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700">開始日（任意）</label>
+          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700" for="npStart">開始日（任意）</label>
             <input class="control" id="npStart" type="date"></div>
-          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700">納品日（任意）</label>
+          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700" for="npDeliv">納品日（任意）</label>
             <input class="control" id="npDeliv" type="date"></div>
         </div>
-        <div class="field hidden" id="npLeaderField"><label>案件リーダー</label><select class="control" id="npLeader"></select></div>
+        <div class="field hidden" id="npLeaderField"><label for="npLeader">案件リーダー</label><select class="control" id="npLeader"></select></div>
         <div style="display:flex;gap:8px">
           <button class="btn" id="npSave" style="flex:1" onclick="addProject()">追加</button>
           <button class="btn btn-ghost" style="flex:1" onclick="toggleProjForm(false)">キャンセル</button>
@@ -535,13 +566,13 @@
     <div class="screen">
       <button class="btn btn-ghost" style="margin:4px 0 12px" onclick="toggleOrderForm()">＋ 発注する</button>
       <div id="orderForm" class="card pad hidden" style="margin-bottom:12px">
-        <div class="field"><label>案件（発注元）</label><select class="control" id="odProj"></select></div>
-        <div class="field"><label>種別</label>
+        <div class="field"><label for="odProj">案件（発注元）</label><select class="control" id="odProj"></select></div>
+        <div class="field"><label for="odKind">種別</label>
           <select class="control" id="odKind" onchange="onOrderKind()">
             <option value="外注">外注（外部の業者へ）</option>
             <option value="内注">内注（社内の人・別部門へ）</option>
           </select></div>
-        <div class="field" id="odVendorField"><label>外注先</label>
+        <div class="field" id="odVendorField"><label for="odVendor">外注先</label>
           <select class="control" id="odVendor"></select>
           <div class="row-inline" style="margin-top:8px">
             <input class="control" id="odNewVendor" placeholder="新しい外注先名" style="flex:1">
@@ -550,13 +581,13 @@
             <button class="btn btn-ghost mini" onclick="addVendorO()">追加</button>
           </div>
         </div>
-        <div class="field hidden" id="odUserField"><label>内注先（部門）</label>
+        <div class="field hidden" id="odUserField"><label for="odDept">内注先（部門）</label>
           <select class="control" id="odDept" onchange="fillOrderUsers()"></select>
-          <label style="margin-top:10px">担当者（その部門の人・任意）</label>
+          <label style="margin-top:10px" for="odUser">担当者（その部門の人・任意）</label>
           <select class="control" id="odUser"></select>
           <div class="task-meta" style="margin-top:4px">部門だけでも発注できます。担当者を選ぶとその人に届きます。</div></div>
-        <div class="field"><label>依頼内容</label><input class="control" id="odTitle" placeholder="例）図面作成・運搬 など"></div>
-        <div class="field"><label>金額（円）</label><input class="control" id="odAmount" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label for="odTitle">依頼内容</label><input class="control" id="odTitle" placeholder="例）図面作成・運搬 など"></div>
+        <div class="field"><label for="odAmount">金額（円）</label><input class="control" id="odAmount" inputmode="numeric" placeholder="0"></div>
         <div style="display:flex;gap:8px">
           <button class="btn" style="flex:1" onclick="addOrder(this)">発注する</button>
           <button class="btn btn-ghost" style="flex:1" onclick="toggleOrderForm(false)">キャンセル</button>
@@ -570,18 +601,23 @@
   </section>
 
   <nav class="tabbar hidden" id="tabbar">
-    <div class="tab on" data-s="expense" onclick="nav('expense')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>経費</div>
-    <div class="tab" data-s="projects" onclick="nav('projects')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>案件</div>
-    <div class="tab" data-s="schedule" onclick="nav('schedule')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h10M3 10h14M3 15h7"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>タスク</div>
-    <div class="tab" data-s="orders" onclick="nav('orders')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>発注</div>
-    <div class="tab hidden" data-s="finance" onclick="nav('finance')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>経理</div>
+    <button type="button" class="tab on" data-s="expense" onclick="nav('expense')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>経費</button>
+    <button type="button" class="tab" data-s="projects" onclick="nav('projects')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>案件</button>
+    <button type="button" class="tab" data-s="schedule" onclick="nav('schedule')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h10M3 10h14M3 15h7"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>タスク</button>
+    <button type="button" class="tab" data-s="orders" onclick="nav('orders')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>発注</button>
+    <button type="button" class="tab hidden" data-s="finance" onclick="nav('finance')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>経理</button>
   </nav>
   <div class="toast" id="toast"></div>
+  <div class="pwa-banner" id="pwaBanner" role="dialog" aria-label="アプリのインストール">
+    <div class="pwa-txt">ホーム画面に追加すると、アプリとしてすぐ開けます</div>
+    <button type="button" class="pwa-install" onclick="pwaInstall()">追加する</button>
+    <button type="button" class="pwa-close" onclick="pwaDismiss()" aria-label="閉じる">✕</button>
+  </div>
   <div id="taskModal" class="modal hidden" onclick="if(event.target===this)closeTask()">
     <div class="modal-card"><div id="taskModalBody"></div></div>
   </div>
@@ -589,7 +625,6 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 const cfg = window.OC_CONFIG || {};
 const configured = cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR-PROJECT");
@@ -599,9 +634,15 @@ const isAccounting = ()=> myRole==='経理' || myRole==='管理者';
 const isManager = ()=> myRole==='経理' || myRole==='管理者';
 
 const yen = n => "¥"+Number(n||0).toLocaleString();
-const man = n => "¥"+Math.round(Number(n||0)/10000)+"万";
-function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
-  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);}
+// 万円表記。1万円未満は円表記へフォールバック（¥4,900が「¥0万」になる誤認防止）。端数は小数1桁。
+const man = n => { n=Number(n||0); if(Math.abs(n)<10000)return yen(n);
+  const v=Math.round(n/1000)/10; return "¥"+(Number.isInteger(v)?v:v.toFixed(1))+"万"; };
+// エラーは赤背景・5秒・タップで閉じる（M-5）。第2引数省略時は文言から自動判定。
+function toast(m,isError){const t=document.getElementById('toast');
+  if(isError===undefined)isError=/エラー|失敗|できません/.test(String(m));
+  t.textContent=m;t.classList.toggle('err',!!isError);t.classList.add('show');
+  t.onclick=()=>t.classList.remove('show');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),isError?5000:2200);}
 // 日付バリデーション（年のタイポでスケジュールが全滅するのを防ぐ／開始>終了の逆転を防ぐ）
 function saneDate(v){ if(!v)return true; const y=+String(v).slice(0,4); return y>=2000&&y<=2100; }
 function badRange(s,e){ return !!(s&&e&&s>e); }
@@ -642,18 +683,19 @@ async function signIn(){
 let loginMode='password';
 function toggleMagic(){
   loginMode = loginMode==='password' ? 'magic' : 'password';
-  const pass=document.getElementById('loginPass');
+  const passField=document.getElementById('loginPassField');
   const btn=document.getElementById('loginBtn');
   const link=document.getElementById('magicLink');
   const msg=document.getElementById('loginMsg');
+  // 送信の分岐は form の onsubmit（loginMode参照）が担う。ここでは表示だけ切り替える。
   if(loginMode==='magic'){
-    pass.classList.add('hidden');
-    btn.textContent="ログインリンクを送る"; btn.setAttribute('onclick','sendMagicLink()');
+    passField.classList.add('hidden');
+    btn.textContent="ログインリンクを送る";
     link.textContent="パスワードでログインに戻る";
     msg.textContent="メール内のリンクで初回ログイン／パスワード再設定ができます。ログイン後「🔑 パスワード」で設定してください。";
   }else{
-    pass.classList.remove('hidden');
-    btn.textContent="ログイン"; btn.setAttribute('onclick','signIn()');
+    passField.classList.remove('hidden');
+    btn.textContent="ログイン";
     link.textContent="初回ログイン・パスワードを忘れた方"; msg.textContent="";
   }
 }
@@ -811,7 +853,8 @@ async function loadProjects(){
     sb.from('project_costs').select('*').order('profit',{ascending:false}),
     sb.from('projects').select('id,status,client'),
   ]);
-  if(error){list.innerHTML=`<div class="empty">取得エラー: ${error.message}</div>`;return;}
+  if(error){list.innerHTML=`<div class="empty">取得エラー: ${esc(error.message)}<br>
+    <button class="btn btn-ghost mini" style="margin-top:10px" onclick="loadProjects()">↻ 再読み込み</button></div>`;return;}
   const m=Object.fromEntries((meta||[]).map(x=>[x.id,x]));
   projRows=(data||[]).map(p=>({...p,...(m[p.id]||{})}));
   renderProjects();
@@ -936,7 +979,7 @@ async function openDetail(id){
   const [{data:p},{data:pmeta},{data:exps},tasks,{data:members},{data:logs},{data:ords}]=await Promise.all([
     sb.from('project_costs').select('*').eq('id',id).single(),
     sb.from('projects').select('delivery_date,start_date,client,leader_id').eq('id',id).single(),
-    sb.from('expenses').select('amount,note,spent_at,status,kind,user_id,vendor:vendor_id(name,kind),author:user_id(name,email)')
+    sb.from('expenses').select('amount,note,spent_at,status,kind,user_id,receipt_url,vendor:vendor_id(name,kind),author:user_id(name,email)')
       .eq('project_id',id).order('spent_at',{ascending:false}),
     fetchTasks(id),
     sb.from('project_members').select('user_id').eq('project_id',id),
@@ -953,7 +996,8 @@ async function openDetail(id){
   const expRows=(exps||[]).map(e=>{
     const who=e.author?.name||e.author?.email||'—';
     const tag=e.kind==='外注'?`<span class="st st-wait">外注${e.vendor?'・'+e.vendor.name:''}</span>`:'';
-    return `<div class="exp-row"><div><div class="n">${e.note?esc(e.note):'（メモなし）'}${tag}</div>
+    const rcpt=e.receipt_url?` <span style="color:var(--accent);font-weight:600;cursor:pointer;white-space:nowrap" onclick="viewReceipt('${esc(e.receipt_url)}')">📎レシート</span>`:'';
+    return `<div class="exp-row"><div><div class="n">${e.note?esc(e.note):'（メモなし）'}${tag}${rcpt}</div>
       <div class="d">${new Date(e.spent_at).toLocaleDateString('ja-JP')}・${who}</div></div>
       <div class="a">${yen(e.amount)}<span class="st ${e.status==='承認'?'st-ok':'st-wait'}">${e.status}</span></div></div>`;
   }).join('') || `<div class="empty">経費はまだありません</div>`;
@@ -993,24 +1037,24 @@ async function openDetail(id){
     </div>
 
     <div class="subtabs">
-      <div class="subtab" data-d="tasks" onclick="detSub('tasks')">タスク</div>
-      <div class="subtab" data-d="exp" onclick="detSub('exp')">経費</div>
-      <div class="subtab" data-d="ord" onclick="detSub('ord')">発注</div>
-      <div class="subtab" data-d="info" onclick="detSub('info')">情報</div>
+      <button type="button" class="subtab" data-d="tasks" onclick="detSub('tasks')">タスク</button>
+      <button type="button" class="subtab" data-d="exp" onclick="detSub('exp')">経費</button>
+      <button type="button" class="subtab" data-d="ord" onclick="detSub('ord')">発注</button>
+      <button type="button" class="subtab" data-d="info" onclick="detSub('info')">情報</button>
     </div>
 
     <div class="dpane" id="dp-tasks">
       <div class="card pad">${ganttBlock}${taskList}</div>
       <button class="btn btn-ghost" onclick="toggleTaskForm()">＋ タスクを追加</button>
       <div id="taskForm" class="card pad hidden" style="margin-top:10px">
-        <div class="field"><label>タスク名</label><input class="control" id="tkTitle" placeholder="基礎工事・図面作成 など"></div>
+        <div class="field"><label for="tkTitle">タスク名</label><input class="control" id="tkTitle" placeholder="基礎工事・図面作成 など"></div>
         <div class="row-inline" style="margin:0 0 10px">
-          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700">開始</label>
+          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700" for="tkStart">開始</label>
             <input class="control" id="tkStart" type="date"></div>
-          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700">終了</label>
+          <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700" for="tkEnd">終了</label>
             <input class="control" id="tkEnd" type="date"></div>
         </div>
-        <div class="field"><label>リーダー（進める人）</label><select class="control" id="tkLeader">${peopleOptions('—未設定—')}</select></div>
+        <div class="field"><label for="tkLeader">リーダー（進める人）</label><select class="control" id="tkLeader">${peopleOptions('—未設定—')}</select></div>
         <div style="display:flex;gap:8px">
           <button class="btn" style="flex:1" onclick="addTask(this)">追加</button>
           <button class="btn btn-ghost" style="flex:1" onclick="toggleTaskForm(false)">キャンセル</button>
@@ -1200,15 +1244,28 @@ async function addOrder(btn){
 }
 const ORDER_SELECT='id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,'+
   'vendor:vendor_id(name),proj:project_id(name)';
+// 発注の状態変更（H-4）。RLS: orders_update = from_user/to_user_id/is_manager（db/v3.sql）。
+// 部門宛て（担当者未指定）で受けた側は本人条件を満たさないため、経理/管理者以外は表示のみ。
+const ORDER_STATUS=['依頼中','進行','完了','取消'];
+async function updOrderStatus(id,status){
+  const {error}=await sb.from('orders').update({status}).eq('id',id);
+  if(error){toast('状態の保存エラー: '+error.message);return;}
+  toast('発注を「'+status+'」にしました');
+  loadOrders();
+}
 function orderCard(o,received){
   const dest = o.kind==='外注' ? (o.vendor?.name||'外注先') : (deptName(o.to_dept_id)+(o.to_user_id?'・'+personName(o.to_user_id):''));
   const who = received ? `${personName(o.from_user)} から` : `宛先: ${dest}`;
   const kc = o.kind==='内注'?'b-may':'b-go';
+  const canSt = received ? (o.to_user_id===me?.id||isManager()) : (o.from_user===me?.id||isManager());
+  const st = canSt
+    ? `<select class="control mini" style="margin-top:8px" onchange="updOrderStatus('${o.id}',this.value)">${ORDER_STATUS.map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}</select>`
+    : '';
   return `<div class="card pad">
     <div class="task-h"><span class="tt">${esc(o.title)}</span>
       <span class="badge ${kc}" style="margin-left:auto">${o.kind}</span></div>
     <div class="task-meta">${o.proj?.name||'案件'}・${who}・${yen(o.amount)}・${o.status}</div>
-    <div class="task-meta">${new Date(o.created_at).toLocaleDateString('ja-JP')}</div>
+    <div class="task-meta">${new Date(o.created_at).toLocaleDateString('ja-JP')}</div>${st}
   </div>`;
 }
 async function loadOrders(){
@@ -1271,8 +1328,8 @@ function ganttRows(tasks){
         <div class="gc-bar s-${t.status}" style="left:${left}%;width:${width}%">${t.status}</div></div></div>`;
   });
   html+=`<div class="gc-legend">
-    <span><i style="background:#9A9A9A"></i>未着手</span><span><i style="background:#1A1A1A"></i>進行</span>
-    <span><i style="background:#5B8C5A"></i>完了</span><span><i style="background:#C8A24B"></i>保留</span>
+    <span><i style="background:var(--st-plan)"></i>未着手</span><span><i style="background:var(--st-go)"></i>進行</span>
+    <span><i style="background:var(--st-done)"></i>完了</span><span><i style="background:var(--st-hold)"></i>保留</span>
     <span><i style="background:#B00020"></i>今日</span></div></div>`;
   const win=`${fmtD(lo+1)} 〜 ${fmtD(hi-1)}`;
   return {win, rows:html, undated};
@@ -1323,7 +1380,7 @@ async function openTask(id){
     t.proj=pl||null;
   }
   const subRows=(subs||[]).map(s=>{
-    const chips=(s.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}<b onclick="unassignSub('${s.id}','${a.user_id}','${id}')" style="cursor:pointer;margin-left:3px">×</b></span>`).join('');
+    const chips=(s.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}<b class="x" onclick="unassignSub('${s.id}','${a.user_id}','${id}')">×</b></span>`).join('');
     return `<div class="sub-item">
       <div class="sub-row">
         <select class="st-sel st-mini s-${s.status}" onchange="updSub('${s.id}','status',this.value,'${id}');this.className='st-sel st-mini s-'+this.value">${TASK_STATUS.map(x=>`<option value="${x}" ${x===s.status?'selected':''}>${x.charAt(0)}</option>`).join('')}</select>
@@ -1338,7 +1395,7 @@ async function openTask(id){
     </div>`;
   }).join('') || '<div class="task-meta">サブタスクはありません</div>';
   const chips=(t.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}
-    <b onclick="unassign('${id}','${a.user_id}')" style="cursor:pointer;margin-left:3px">×</b></span>`).join('')||'<span style="color:var(--sub)">担当者なし</span>';
+    <b class="x" onclick="unassign('${id}','${a.user_id}')">×</b></span>`).join('')||'<span style="color:var(--sub)">担当者なし</span>';
   document.getElementById('taskModalBody').innerHTML=`
     <div class="tm-proj">${t.proj?.code?t.proj.code+'　':''}${t.proj?.name||''}</div>
     <input class="control" style="font-size:18px;font-weight:700;margin-bottom:12px" value="${esc(t.title)}" onchange="updTask('${id}','title',this.value)">
@@ -1496,7 +1553,7 @@ function timelineHTML(tasks,pmeta){
   const tdy=todayNum();
   lo=Math.min(lo,tdy)-7; hi=Math.max(hi,tdy)+21;   // 前後に余白（先まで見える）
   const days=hi-lo+1; const trackW=days*DAYPX;
-  const grid=`width:${trackW}px;background-image:repeating-linear-gradient(to right,#ECECEC,#ECECEC 1px,transparent 1px,transparent ${DAYPX}px)`;
+  const grid=`width:${trackW}px;background-image:repeating-linear-gradient(to right,var(--line),var(--line) 1px,transparent 1px,transparent ${DAYPX}px)`;
   const todayLine=(tdy>=lo&&tdy<=hi)?`<div class="tl-today" style="left:${(tdy-lo)*DAYPX}px"></div>`:'';
   // 日付ヘッダ
   let head='';
@@ -1546,7 +1603,7 @@ async function loadGantt(){
   const tasks=await fetchTasks(null);
   const bar=`<div class="viewbar">
     ${[['board','ボード'],['timeline','タイムライン'],['list','リスト']].map(([v,l])=>
-      `<div class="vbtn ${curTaskView===v?'on':''}" onclick="setTaskView('${v}')">${l}</div>`).join('')}</div>`;
+      `<button type="button" class="vbtn ${curTaskView===v?'on':''}" onclick="setTaskView('${v}')">${l}</button>`).join('')}</div>`;
   if(!tasks.length){body.innerHTML=bar+`<div class="empty">タスクがまだありません。<br>案件の詳細画面「タスク」から追加できます。</div>`;return;}
   const pmeta={};
   // project_task_labels: メンバー外のタスク担当者にも案件名/日付だけを安全に返すビュー（金額/客先は含まない・v17）
@@ -1626,7 +1683,8 @@ async function loadFinance(){
     sb.from('project_costs').select('*'),
     sb.from('projects').select('id,status,created_at,client,delivery_date,leader_id'),
   ]);
-  if(e1||e2){table.innerHTML=`<tbody><tr><td class="l">取得エラー: ${(e1||e2).message}</td></tr></tbody>`;return;}
+  if(e1||e2){table.innerHTML=`<tbody><tr><td class="l">取得エラー: ${esc((e1||e2).message)}
+    <button class="btn btn-ghost mini" style="margin-left:8px" onclick="loadFinance()">↻ 再読み込み</button></td></tr></tbody>`;return;}
   const m=Object.fromEntries((meta||[]).map(x=>[x.id,x]));
   finRows=(costs||[]).map(c=>({...c,...(m[c.id]||{})}));
   // 納品月の選択肢
@@ -1671,27 +1729,29 @@ function sortFin(key){
   renderFinance();
 }
 
-// ---- 自然言語 ----
-function parseNL(text){
-  const m=text.replace(/,/g,'').match(/([0-9]+)\s*円?/);
-  const amount=m?m[1]:'';
-  let proj=projects.find(p=>text.includes(p.name));
-  let memo=text; if(m)memo=memo.replace(m[0],''); if(proj)memo=memo.replace(proj.name,'');
-  memo=memo.replace(/[ので・]/g,' ').replace(/\s+/g,' ').trim();
-  return {amount,proj,memo};
+// ---- レシート閲覧（H-3）: 非公開バケットなので都度 signed URL を発行して別タブで開く ----
+async function viewReceipt(path){
+  try{
+    const {data,error}=await sb.storage.from('receipts').createSignedUrl(path,600);
+    if(error||!data?.signedUrl){toast('レシートを開けません: '+(error?.message||'URL発行に失敗'));return;}
+    window.open(data.signedUrl,'_blank','noopener');
+  }catch(e){toast('レシートを開けません: '+e.message);}
 }
-function runNL(){
-  const text=document.getElementById('nlInput').value.trim(); if(!text)return;
-  const r=parseNL(text);
-  if(r.amount)document.getElementById('amt').value=Number(r.amount).toLocaleString();
-  if(r.proj)document.getElementById('proj').value=r.proj.id;
-  if(r.memo)document.getElementById('memo').value=r.memo;
-  const p=document.getElementById('parsed');
-  p.innerHTML=`金額 <b>${r.amount?yen(r.amount):'—'}</b> ／ 案件 <b>${r.proj?r.proj.name:'未判定'}</b> ／ メモ <b>${r.memo||'—'}</b>`;
-  p.classList.add('show');
-}
-
 // ---- レシート：アップロード + ブラウザ内OCR（無料） ----
+// tesseract.js は重いので起動時に読まず、レシート選択時に初めてロードする（現場回線での初期表示を軽く）
+let _tessLoading=null;
+function ensureTesseract(){
+  if(window.Tesseract)return Promise.resolve();
+  if(!_tessLoading){
+    _tessLoading=new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.onload=res; s.onerror=()=>{_tessLoading=null;rej(new Error('OCRライブラリを読み込めませんでした'));};
+      document.head.appendChild(s);
+    });
+  }
+  return _tessLoading;
+}
 async function onReceipt(ev){
   const file=ev.target.files&&ev.target.files[0]; if(!file)return;
   const msg=document.getElementById('ocrMsg');
@@ -1704,6 +1764,7 @@ async function onReceipt(ev){
     receiptPath=path;
     msg.textContent='画像から金額を読み取り中…（初回は辞書DLで数十秒）';
     try{
+      await ensureTesseract();
       const res=await Tesseract.recognize(file,'eng');
       const text=res.data.text||'';
       const nums=(text.match(/\d[\d,]{1,8}/g)||[]).map(s=>parseInt(s.replace(/,/g,''),10))
@@ -1732,6 +1793,41 @@ async function record(){
   }finally{ btn.disabled=false; }   // 通信例外でもボタンが永久disabledにならないよう必ず戻す
 }
 
+// ---- PWA（Service Worker 登録＋インストール導線） ----
+// SW は「アプリシェルのみキャッシュ」方針（詳細は sw.js 冒頭コメント）。Supabase のデータはキャッシュしない。
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW登録失敗:',e));
+  });
+}
+let pwaPrompt=null;
+const pwaStandalone = ()=> (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone===true;
+window.addEventListener('beforeinstallprompt',(e)=>{
+  e.preventDefault();
+  // インストール済み（standalone起動）・一度閉じた人には出さない
+  let dismissed=null; try{dismissed=localStorage.getItem('oc_pwa_dismissed');}catch(err){}
+  if(pwaStandalone()||dismissed)return;
+  pwaPrompt=e;
+  document.getElementById('pwaBanner').classList.add('show');
+});
+async function pwaInstall(){
+  document.getElementById('pwaBanner').classList.remove('show');
+  if(!pwaPrompt)return;
+  pwaPrompt.prompt();
+  const {outcome}=await pwaPrompt.userChoice;
+  pwaPrompt=null;
+  if(outcome==='accepted'){toast('ホーム画面に追加しました');}
+  else{try{localStorage.setItem('oc_pwa_dismissed','1');}catch(e){}}  // 断られたら再表示しない
+}
+function pwaDismiss(){
+  document.getElementById('pwaBanner').classList.remove('show');
+  try{localStorage.setItem('oc_pwa_dismissed','1');}catch(e){}
+}
+window.addEventListener('appinstalled',()=>{
+  pwaPrompt=null;
+  document.getElementById('pwaBanner').classList.remove('show');
+});
+
 // ---- 起動 ----
 (async function init(){
   applyTheme();
@@ -1752,7 +1848,7 @@ async function boot(){
   await loadProjectOptions();
   await loadVendors();
   document.getElementById('acctBtn').classList.add('show');
-  nav('projects');
+  nav('expense');   // 現場スタッフの主用途「その場で経費を記録」に着地（M-6）
 }
 </script>
 </body>
