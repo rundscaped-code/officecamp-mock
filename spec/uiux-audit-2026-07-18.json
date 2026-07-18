@@ -1,0 +1,744 @@
+{
+  "findings": [
+    {
+      "title": "PC版タイムライン: バーからステータスを直接変更できず、最短4クリック（バー→モーダル→状態select→保存）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 1112,
+      "current": "paintTaskTimeline のバーは `onclick=\"openTaskModal('${t.id}')\"` のみ（1112-1114行）。ステータス変更はモーダルの tmStatus を選び、さらに保存ボタン（1006行）を押す必要があり、バークリック(1)→select展開(2)→選択(3)→保存(4)の4クリック。ボードはドラッグ1操作、リストは statusSel で2クリックなのに対し、タイムラインだけ突出して深い。バーの色分け（s-未着手/s-進行/s-完了/s-保留 クラス）は既にある。",
+      "proposal": "バークリックでモーダルではなくポップオーバーを開く。実装: bar() の onclick を `openBarPop(event,'${t.id}')` に変更し、`<div id=\"barPop\" class=\"mpop\">` を body 直下に1個常設。openBarPop は event.clientX/Y に position:fixed で表示し、中身は (a) TSTATUS 4件のボタン（`onclick=\"saveTaskField('${id}','status','進行');closeBarPop()\"`、左に stColor(s) の10pxドット）、(b) `<input type=date onchange=\"saveTaskField(...,'start_date',...)\">` ×2、(c) 「詳細を開く」リンク（openTaskModal へ）。saveTaskField は既存で toast+reloadTasks まで面倒を見るので配線のみ。既存の document click リスナー（930行）と同様に外側クリックで閉じる。既存 .mfilt/.mpop のCSSを流用すれば追加CSSは数行。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "PC版タイムライン: 左カラム（タスク名列）にもインラインのステータスselectが無い（スマホ版には有る）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 1131,
+      "current": "taskRow の gname には状態を示す `<i class=\"dot s-...\">`（表示のみ）とタイトルリンクだけ。app.html のタイムラインは左カラムに statusSelectMini（1字表示のselect、app.html 1581行）を置いていて1操作で変更できるが、PC版に相当物が無い。",
+      "proposal": "taskRow の `<i class=\"dot ...\">` を `statusSel(t)`（959行の既存関数）のミニ版に差し替える。`<select class=\"einput stmini s-${st}\" onchange=\"saveTaskField('${t.id}','status',this.value)\">` で option は s.charAt(0)（未/進/完/保）表示、CSS `.stmini{width:34px;padding:2px;border:none;background:transparent;font-weight:700}` を追加。ポップオーバー案（前項）と独立に数行で入り、日付なしタスク（バーが描画されない行）にも効く。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "PC版タスク詳細モーダル: 「閉じる」で未保存編集が無警告で消える。担当・サブタスクは即時保存なのに本体は保存ボタン式で不整合",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 1006,
+      "current": "openTaskModal 内で担当（assignPick/removeAsg）とサブタスク状態（saveSubField）は onchange 即時保存だが、タイトル・状態・リーダー・日付・メモは saveTaskModal('id')（1009行）の保存ボタンを押すまで保存されない。閉じる（onclick=\"closeModal()\"）は差分チェックなしで破棄。半分が即時保存のUIなので「全部自動保存」と誤解して閉じるとステータス変更が消える。",
+      "proposal": "tmStatus に `onchange=\"saveTaskField('${id}','status',this.value)\"` を付けて即時保存化（saveTaskField は既存、toast「保存しました」も出る）。tmStart/tmEnd/tmLeader も同様に onchange 即時保存にし、モーダルのフッターは「閉じる」1個に統一（タイトル・メモは onchange=\"saveTaskField(...)\" で blur 時保存）。app.html のモーダル（1391行〜、全項目 onchange 即時保存）と挙動が揃う。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ版ボード: 列が横スクロール（220px固定×4列）なのに、長押しドラッグ中に画面外の列へ運べない",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 1507,
+      "current": ".board は overflow-x:auto・.bcol は flex:0 0 220px（CSS 212-213行）で、375px幅の端末では約1.6列しか見えない。boardPointerDown（1507行）の onMove は ev.preventDefault() でスクロールを殺し、ghost 移動と elementFromPoint 判定だけで端到達時の自動スクロールが無い。「未着手→完了」など2列先へのドロップが物理的に不可能。フォールバックはカードtap→モーダル→select の3タップ。",
+      "proposal": "bcard の先頭に statusSelectMini(t)（1353行の既存関数、onclick=stopPropagation 済みで boardCardClick と干渉しない）を追加し、ドラッグ不能でも1タップ+選択で状態変更できるようにする。挿入位置は `<div class=\"bpc\">` の直前、`<div class=\"bcard-h\" style=\"display:flex;gap:6px\">` で横並び。ドラッグの自動エッジスクロール実装（onMove で clientX が画面端60px以内なら board.scrollLeft を加算）は次段でよい。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ版・案件詳細のガント: バーにonclickが無く、クリックしても何も起きない",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 1329,
+      "current": "ganttRows（案件詳細の「タスク」サブタブで使用、呼び出しは1007行）のバーは `<div class=\"gc-bar s-${t.status}\" style=\"...\">${t.status}</div>` でハンドラなし。タスクを開くには下の一覧（taskItemHTML）までスクロールして行をtapする必要がある。タスクタブ側の tl-bar（1583行）は onclick=\"openTask\" 済みで挙動が割れている。",
+      "proposal": "gc-bar と gc-nm（タスク名セル）の両方に `onclick=\"openTask('${t.id}')\"` を追加し、CSS .gc-bar に cursor:pointer。openTask のモーダルは全項目即時保存なので、これだけでガント→状態変更が2タップになる。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ版タイムライン: 「日付未設定」のタスク名がプレーンテキストで、開く導線がゼロ",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 1586,
+      "current": "timelineHTML の末尾で日付なしタスクを `日付未設定：${undated.map(t=>t.title).join('、')}` と文字列連結して表示。tap不可のため、日付を入れてタイムラインに載せるにはリスト/ボードへビューを切り替えて探し直す必要がある。",
+      "proposal": "`undated.map(t=>`<span style=\"color:var(--accent);font-weight:600\" onclick=\"openTask('${t.id}')\">${esc(t.title)}</span>`).join('、')` に変更。tapで詳細モーダルが開き、その場で開始・終了日を入れられる（updTask 即時保存→refreshTasks でタイムラインに現れる）。esc() が現状かかっていない点も同時に直る。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "共通コンテキストメニュー関数が無い（全指摘の土台）",
+      "file": "pc.html",
+      "line": 340,
+      "current": "モーダルは modal(html)/closeModal()（pc.html:340-341）、ドロップダウンは .mpop（CSS pc.html:191、外側クリックで閉じる document.addEventListener('click',...) が pc.html:920 に既存）。contextmenu ハンドラはリポジトリ全体で0件（grep 確認済み）。",
+      "proposal": "modal() の直後に ctxMenu(ev, items) を1つ追加し、以降の全行で使い回す。実装: ev.preventDefault() → 既存 #ctxMenu を remove → div.className='mpop' を document.body に append、style は position:fixed; display:block; z-index:90; left:Math.min(ev.clientX, innerWidth-230)px; top:Math.min(ev.clientY, innerHeight-items.length*34-16)px（画面右端・下端でのはみ出しクランプ）。items は [{label:'削除', fn:()=>..., danger:true},{sep:true},...] 形式で、danger は color:var(--bad)。行生成は既存 .mpop label の見た目をそのまま流用（padding:7px 9px / hover: var(--accent-soft)）。閉じるのは pc.html:920 の既存グローバル click リスナーに !e.target.closest('#ctxMenu') 条件を足して #ctxMenu.remove() を追記（新規リスナーを増やさない）。各行への配線は既存の流儀どおりインラインで oncontextmenu=\"projCtx(event,'${p.id}')\" のように id だけ渡す。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "案件一覧行: 右クリックで状態変更・複製・削除",
+      "file": "pc.html",
+      "line": 527,
+      "current": "<tr data-pid onclick=\"selectProject('${p.id}')\"> のみ。状態変更は右ペインの select（pc.html:564）まで移動が必要。削除機能は PC/スマホ両 UI に存在しない（shared.js に deleteProject 無し。RLS projects_delete = owner or is_manager は db/schema.sql:153 に定義済み）。",
+      "proposal": "tr に oncontextmenu=\"projCtx(event,'${p.id}')\" を追加。メニュー項目: 「詳細を開く」(selectProject)、区切り、「見込/進行/完了/失注 にする」4項目（saveProjField(id,'status',s) をそのまま呼ぶ。現状態の項目は ✓ 付きで disabled）、区切り、「複製して新規…」(openProjModal を開き mName に元名+「（コピー）」、mParent に元案件 id を選択済みでプリセット)、「削除…」(danger)。削除は confirm(name+' を削除します。経費・タスク・発注も対象です。よろしいですか？') → shared.js に OC.deleteProject=id=>OC.sb.from('projects').delete().eq('id',id) を追加して呼ぶ。expenses.project_id が on delete restrict（db/schema.sql:82）のため経費が残っていると DB エラーになる。error.code==='23503' なら toast('経費が残っている案件は削除できません（先に経費を削除）',true) と訳す。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "タスク（リスト行・ガントバー・ボードカード）: 右クリックで状態変更と削除。削除はUI全体に存在しない",
+      "file": "pc.html",
+      "line": 1041,
+      "current": "リスト行（pc.html:1041）は cursor:default で行自体の操作なし、状態変更は行内 select。ガントバー（pc.html:1114）は onclick=openTaskModal のみ。ボードカード（pc.html:1064）は draggable でドラッグ=状態変更、クリックはタイトル部分のみ。タスク削除は shared.js に関数が無く、誤作成タスクを消す手段が PC/スマホどちらにも無い（RLS tasks_cud for all は db/v2.sql:193 で削除も許可済み）。",
+      "proposal": "3描画とも同じ taskCtx(event, id) を配線する（リスト行=tr、ガント=.gbar、ボード=.bcard に oncontextmenu 追加。.gbar は onclick と共存可）。項目: 「詳細を開く」(openTaskModal)、区切り、「未着手/進行/完了/保留 にする」（saveTaskField(id,'status',s)。ボードではドラッグ不要の代替になる）、区切り、「複製」（openTaskAddModal(t.project_id) を開き ntTitle に元タイトル、ntStatus='未着手'、日付・担当をプリセット）、「削除…」(danger)。削除は confirm('「'+t.title+'」を削除します。サブタスクも削除されます。') → shared.js に OC.deleteTask=id=>OC.sb.from('tasks').delete().eq('id',id) を追加（parent_task_id は on delete cascade・db/v8.sql:2 なのでサブタスクは自動削除）→ reloadTasks()。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "経費行: 右クリックで承認/差戻・レシート表示・削除。経費の削除・訂正手段が無い",
+      "file": "pc.html",
+      "line": 697,
+      "current": "経費行は <tr style=\"cursor:default\">（pc.html:697・713）で、操作は経理のみ表示される状態 select（expStatusCell, pc.html:668）だけ。金額・メモの訂正も削除も UI に無く、誤入力は残り続ける（RLS expenses_delete = 本人 or is_manager は db/schema.sql:167、update も同条件で定義済み）。",
+      "proposal": "expRowsHTML と flat 表示の tr 両方に oncontextmenu=\"expCtx(event,'${e.id}')\" を追加。項目: 「レシートを開く」（receipt_url がある時のみ。viewReceipt を呼ぶ）、経理のみ「承認にする/差戻にする」（saveExpStatus をそのまま呼ぶ）、区切り、本人 or 経理のみ「削除…」(danger)。削除は confirm(OC.yen(e.amount)+' の経費を削除します。') → shared.js に OC.deleteExpense=id=>OC.sb.from('expenses').delete().eq('id',id) を追加 → expCache から除去して paintExpenses()。権限外ユーザーには該当項目を出さない（RLS で弾かれるのを待たず、e.user_id===OC.effectiveUserId()||OC.isManager() で分岐）。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "発注行: 右クリックで状態変更・案件ジャンプ・取消/削除",
+      "file": "pc.html",
+      "line": 1161,
+      "current": "<tr style=\"cursor:default\">。状態変更は権限がある場合のみ行内 select（orderStatusCell, pc.html:1146）、案件へは「案件」列のリンクのみ。削除は UI に無い（RLS orders_delete = from_user or is_manager は db/v3.sql:40 に定義済み）。",
+      "proposal": "oCard の tr に oncontextmenu=\"orderCtx(event,'${o.id}',${recv})\" を追加。項目: 「案件を開く」（project_id がある時。既存の go('projects')+selectProject 遷移）、権限がある場合「依頼中/進行/完了/取消 にする」（saveOrderStatus をそのまま呼ぶ）、区切り、発注者 or 経理のみ「削除…」(danger、confirm 後 shared.js に OC.deleteOrder=id=>OC.sb.from('orders').delete().eq('id',id) を追加して呼ぶ → renderOrders 再描画）。取消（状態）と削除（レコード抹消）は別項目として両方置き、削除の confirm 文言は「記録ごと消えます。通常は「取消」を使ってください。」とする。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "メンバー行: 右クリックで編集・代理操作・パスワード初期化・削除を直接呼ぶ",
+      "file": "pc.html",
+      "line": 1249,
+      "current": "行内ボタンは「編集」「代理操作」の2つ。パスワード初期化と削除は編集モーダルを開いてから（openMemberEdit 内 pc.html:1299-1300）の2段階。",
+      "proposal": "tr に oncontextmenu=\"memberCtx(event,'${p.id}')\" を追加。項目: 「編集」(openMemberEdit)、「代理操作」(startImpersonation。自分の行では非表示)、区切り、「パスワード初期化…」(resetMemberPasswordUI を直接呼ぶ。既存 confirm がそのまま効く)、「削除…」(danger、openMemberDeleteConfirm を直接呼ぶ。自分の行では非表示)。既存関数を呼ぶだけなので新規ロジック不要。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "経理テーブル行: 右クリックで案件を開く・状態変更",
+      "file": "pc.html",
+      "line": 855,
+      "current": "<tr style=\"cursor:default\">。編集は fcell クリックのその場編集（finEdit, pc.html:866）、案件詳細へは案件名リンクのみ。状態変更は fcell クリック → select 操作の2段階。",
+      "proposal": "tr に oncontextmenu=\"finCtx(event,'${p.id}')\" を追加。項目: 「案件を開く」（既存の go('projects')+selectProject）、「見込/進行/完了/失注 にする」（saveProjField(id,'status',s)。保存後は既存フローどおり paintFinance() が走る）。fcell のその場編集は残し、右クリックは状態だけのショートカットに絞る（金額・日付は誤爆しやすいのでメニューに載せない）。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ・案件カード: 長押しでアクションシート（経費/タスク/発注/状態変更）",
+      "file": "app.html",
+      "line": 876,
+      "current": "案件カードは onclick=\"openDetail('${p.id}')\" のみ。経費追加・タスク追加・発注は詳細画面へ入ってサブタブ（app.html:1041-1073）を経由する2〜3タップ。長押し判定の実装前例はボードの boardPointerDown（app.html:1507、220ms タイマー＋8px 移動キャンセル＋navigator.vibrate(15)）が既にある。",
+      "proposal": "boardPointerDown と同じ方式の汎用 longPress(el生成時: onpointerdown=\"lpStart(event,()=>projSheet('${p.id}'))\") を1関数化して案件カードに配線。発火時は既存の .sheet 流儀（#settings と同じ構造、app.html:429）で下からアクションシートを出す: 「詳細を開く」「＋経費を足す」（経費タブへ遷移し案件 select をこの案件にプリセット）「＋タスクを追加」（openDetail 後 taskForm を開く）「＋発注する」（発注タブへ遷移し oProj 相当をプリセット）「状態: 見込/進行/完了/失注」（updProj(id,'status',s) 相当）。長押し中のテキスト選択と iOS の標準メニューを止めるため、対象カードに CSS で -webkit-touch-callout:none; user-select:none を追加。ポインタが8px動いたらキャンセル（スクロールと衝突させない）。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "スマホ・タスク行: 長押しで状態変更・削除のシート",
+      "file": "app.html",
+      "line": 1366,
+      "current": ".tk-lean 行は onclick=openTask のみ。状態変更は行頭の select で可能だが、削除は openTask のモーダル内にも存在しない（誤作成タスクを消せない）。ボードカード（app.html:1492）は長押し=ドラッグに割当済み。",
+      "proposal": "リスト表示の .tk-lean と案件詳細内タスク行に onpointerdown=\"lpStart(event,()=>taskSheet('${t.id}'))\" を配線（ボードカードは長押しがドラッグと衝突するため対象外。ボードは既存どおりタップ=詳細に据え置く）。シート項目: 「詳細を開く」「未着手/進行/完了/保留 にする」（updTask(id,'status',s)）「削除…」(danger)。削除は confirm('「'+t.title+'」を削除します。サブタスクも削除されます。') → sb.from('tasks').delete().eq('id',id) → refreshTasks()。RLS tasks_cud（db/v2.sql:193）で削除可否はサーバ側担保済み、エラー時は既存 toast にメッセージを流す。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "スマホ・案件詳細の経費行: 長押しでレシート表示・削除",
+      "file": "app.html",
+      "line": 1001,
+      "current": ".exp-row は onclick 等の操作が一切なく表示のみ（レシートリンクだけ個別 onclick、app.html:1000）。自分が誤入力した経費を消す手段がスマホに無い。",
+      "proposal": ".exp-row に onpointerdown=\"lpStart(event,()=>expSheet('${e.id}'))\" を配線。シート項目: 「レシートを開く」（receipt_url がある時のみ）、本人 or 経理のみ「削除…」(danger)。削除は confirm(yen(e.amount)+' の経費を削除します。') → sb.from('expenses').delete().eq('id',e.id) → openDetail(curDetail) で再描画。表示条件は e.user_id===me.id||isManager() で分岐（RLS expenses_delete と同条件、db/schema.sql:167）。発注行 .exp-row（app.html:1015）にも同型の orderSheet（状態変更・削除）を同時に配線すると1回の実装で済む。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "案件の削除がどちらのUIからも不可（RLSは許可済み）",
+      "file": "pc.html",
+      "line": 564,
+      "current": "pc.html の案件詳細ペインは saveProjField(611行) によるインライン編集のみで、削除ボタンが無い。app.html も projects への .delete() 呼び出しがゼロ（insert:955行、update:1645/1656行のみ）。shared.js にも deleteProject が無い。RLS は projects_delete（db/schema.sql:152-154、owner_id=auth.uid() or is_manager()）で許可済み。ただし expenses.project_id が on delete restrict（db/schema.sql:82）のため経費のある案件はDBで削除が弾かれる（tasks/orders/project_members は cascade）。テスト作成した案件や重複登録を消す手段が無く、「失注」に落として放置するしかない。",
+      "proposal": "pc.html 案件詳細ペインのメタ情報末尾（564行の状態 select の下）に「<button class=\"btn sm\" style=\"background:#c0392b;color:#fff;border-color:#c0392b\" onclick=\"deleteProject('${id}')\">この案件を削除…</button>」を追加。deleteProject は confirm(`案件「${p.name}」を削除します。タスク・発注・メンバーも消えます。`) → OC.sb.from('projects').delete().eq('id',id)。error.code==='23503'（FK restrict）の時は toast('経費が紐づく案件は削除できません。先に経費を移すか経理に相談してください') と案内。成功時は go('projects')。shared.js に OC.deleteProject = (id) => OC.sb.from('projects').delete().eq('id',id) を追加。メンバー削除(1320行)と同様の名前入力確認まではやり過ぎず confirm で足りる（経費ありはDBが守る）。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "タスク・サブタスクの削除がどちらのUIからも不可（RLSは許可済み）",
+      "file": "pc.html",
+      "line": 1006,
+      "current": "pc.html タスク詳細モーダルのフッター(1006行)は「閉じる」「保存」のみ。サブタスク行(1000-1003行)も状態 select のみ。app.html もタスクは insert(1161/1445行)・update(1453/1471/1477行)だけで tasks への .delete() が無い。RLS は tasks_cud for all（db/v2.sql:192-197、is_manager/leader_id/案件owner）で delete も許可済み。parent_task_id は on delete cascade（db/v8.sql:2）なので親削除でサブタスクも消える。誤作成・重複タスクを消せず、ガント(1114行)とボード(1061行)に残骸が並び続ける。",
+      "proposal": "pc.html:1006 のフッターを「<button class=\"btn ghost\" style=\"color:#c0392b;margin-right:auto\" onclick=\"deleteTask('${id}')\">削除</button><button class=\"btn ghost\" onclick=\"closeModal()\">閉じる</button><button class=\"btn\" onclick=\"saveTaskModal('${id}')\">保存</button>」に変更。deleteTask は subs 件数を見て confirm(subs.length?`サブタスク${subs.length}件も一緒に削除します。よろしいですか？`:`タスク「${t.title}」を削除します。`) → OC.sb.from('tasks').delete().eq('id',id) → closeModal();reloadTasks()。サブタスク行(1002行)の select 横にも「<span class=\"link\" style=\"color:#c0392b\" onclick=\"deleteTask('${s.id}')\">✕</span>」。app.html はタスク詳細(1471行の編集UI)に同じ削除リンクを追加。shared.js に OC.deleteTask を追加。",
+      "impact": "高",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "経費の編集・削除が本人にも経理にも不可（登録とステータス変更のみ）",
+      "file": "pc.html",
+      "line": 702,
+      "current": "pc.html 経費テーブルの行(697-703行)は経理向けステータス select（expStatusCell:668-671行、申請/承認/差戻）だけで、金額・メモ・日付・案件の編集UIも削除UIも無い。app.html は record()(1782-1795行)で登録のみ。RLS は expenses_update（db/schema.sql:163-165、本人 or is_manager）と expenses_delete（db/schema.sql:166-168、同条件）で両方許可済み。金額の桁ミスやレシートOCRの誤読(app.html:1773-1775行で最大値を自動入力)をそのまま登録すると、直す手段が二重登録しか無く、原価集計(project_costs)が狂ったまま残る。",
+      "proposal": "pc.html expRowsHTML(697行)の行末に「<td><span class=\"link\" onclick=\"openExpEdit('${e.id}')\">編集</span></td>」を追加（表示条件: e.author?.id===OC.effectiveUserId()||OC.isAccounting()。loadExpenses の select に user_id を足す）。openExpEdit は openExpModal を流用し金額/メモ/案件/日付をプリフィル、フッターに「削除」（confirm→OC.sb.from('expenses').delete().eq('id',id)）と「保存」（update）。承認済み(status='承認')の行は経理のみ編集可にし、本人には「承認済みの経費は経理に連絡してください」を toast。app.html は record() 直下に「自分の直近の経費」5件リストを置き、status='申請'のものだけ「修正」「取消」リンクを付ける。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "発注の編集・削除が不可（ステータス変更のみ。誤発注を取り消せない）",
+      "file": "pc.html",
+      "line": 1149,
+      "current": "発注は pc.html addOrder(1209行)/app.html(1238行)で作成、saveOrderStatus(pc.html:1151-1155行、app.html:1252行)でステータス変更のみ可能。タイトル・金額・宛先の修正UIと削除UIが無い。RLS は orders_update（db/v3.sql:36-38、from_user/to_user_id/is_manager）と orders_delete（db/v3.sql:39-41、from_user/is_manager）で許可済み。金額を間違えて発注すると、外注費として project_costs の原価に乗ったまま訂正できず、受け手にも誤った金額の依頼が残る。",
+      "proposal": "pc.html 発注一覧の各行（orderStatusCell:1148-1149行の隣）に、o.from_user===OC.effectiveUserId()||OC.isManager() の時だけ「<span class=\"link\" onclick=\"openOrderEdit('${o.id}')\">編集</span>」を追加。openOrderEdit は openOrderModal(1160行台)をプリフィル流用し、フッターに「削除」（confirm(`発注「${o.title}」を取り消します。受け手からも消えます。`)→OC.sb.from('orders').delete().eq('id',id)）と「保存」（title/amount/vendor_id/to_dept_id/to_user_id を update）。app.html の発注カード(1252行付近)にも同条件で「取消」リンク。audit_log トリガ(db/v3.sql:44-46)が DELETE を記録するので履歴は残る。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "スマホ版で案件メンバーを外せない（追加のみ。解除はPC版限定）",
+      "file": "app.html",
+      "line": 1178,
+      "current": "app.html addMember(1175-1182行)は project_members への insert のみで、削除UIが無い。PC版には removeMember(pc.html:977行)がある。RLS は pm_cud for all（db/v2.sql:180-185、is_manager or 案件owner）で削除も許可済み。スマホしか使わない現場メンバーの案件オーナーは、誤って追加した人を外すのにPCを開く必要がある。",
+      "proposal": "app.html 案件詳細のメンバーチップに、操作権限がある時（me.id===p.owner_id||isManager()）だけ「×」を付ける: `<span class=\"chip\">${personName(uid)}<span onclick=\"removeMember('${uid}')\" style=\"margin-left:6px;color:var(--sub)\">×</span></span>`。removeMember は confirm 無しで sb.from('project_members').delete().match({project_id:curDetail,user_id:uid}) → toast(personName(uid)+' を外しました') → openDetail(curDetail)。CSS は既存の「チップの削除×」当たり判定拡大(175行)がそのまま効く。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ版で経費の承認・差戻ができない（承認フローがPC版限定）",
+      "file": "app.html",
+      "line": 983,
+      "current": "app.html の案件詳細は経費を表示するだけ（983行の select 句に id が含まれず、行に操作UIも無い）。承認/差戻のステータス変更は pc.html の expStatusCell(669-670行)+saveExpStatus(672-677行)のみ。RLS expenses_update（db/schema.sql:163-165）は is_manager に許可済みなのでモバイルからも通る。経理・管理者が外出中にスマホで申請を捌けず、承認が机に戻るまで滞留する。",
+      "proposal": "app.html:983 の select に「id」を追加し、経費行の描画で isManager() の時だけステータス表示を「<select onchange=\"saveExpStatus('${e.id}',this.value)\"><option>申請</option><option>承認</option><option>差戻</option></select>」に差し替える。saveExpStatus は pc.html:672-677 と同じ実装（sb.from('expenses').update({status}).eq('id',id) → toast('経費を「'+status+'」にしました') → openDetail(curDetail)）をコピー。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "複製が全エンティティで未実装（定型案件・定型タスクを毎回手入力）",
+      "file": "pc.html",
+      "line": 645,
+      "current": "pc.html / app.html / shared.js の全体を通して複製（duplicate/copy/複製）に該当する機能が存在しない。案件・タスク・発注すべて新規作成フォームへの手入力のみ（pc.html addProject:645行、addTask:756行、addOrder:1209行）。同じクライアントの繰り返し案件（projects には parent_id=派生案件の概念が既にある: db/v6.sql:8）や、案件ごとに毎回同じタスク一式を組む運用で入力コストが積み上がる。",
+      "proposal": "案件詳細ペインに「複製」ボタンを追加: 現案件の name+'（コピー）'/client/leader_id/amount を OC.addProject でinsert → .select().single() で新IDを取得 → 元案件の tasks を loadProjectDetail で取り、title/leader_id/parent_task_id 構造だけ新 project_id で OC.addTask（日付・進捗・statusは引き継がず'未着手'。親→子の順に旧ID→新IDのマップで復元）→ selectProject(新ID)。経費・発注はコピーしない。タスクモーダル(987行)にも「複製」を置き、title+'（コピー）'/leader_id/start_date/end_date を同一案件に addTask。insert 権限は projects_insert(schema.sql:148)/tasks_cud(v2.sql:193)の既存RLSで足りる。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "メンバー管理（作成・編集・削除・パスワード初期化）がPC版限定",
+      "file": "app.html",
+      "line": 1621,
+      "current": "メンバーのCRUDは pc.html のメンバー画面（作成/更新: 1357行 OC.updateMember、削除: 1300/1320-1345行の名前入力確認付き deleteMember）に揃っており、Edge Functions（create-member/update-member/delete-member/reset-member-password、shared.js:29-89行）経由で完結している。app.html にはメンバー管理UIが一切無く、さらに app.html は shared.js 自体を読み込んでいない（shared.js:280行のコメントに「app.html は shared.js 未読込」と明記）ため OC.* ヘルパも使えない。管理者が出先で新人のパスワード初期化すらできない。",
+      "proposal": "フル実装は持ち込まず、app.html の設定シートに管理者限定の「メンバー」項目を1つ足し、頻度の高い2操作だけ置く: 一覧（profiles を name 順に表示）と、各行の「パスワード初期化」ボタン（fetch で ${SUPABASE_URL}/functions/v1/reset-member-password を直接叩く。shared.js:75-89行と同じ実装をローカル関数として複製）。作成・削除は「PC版から操作してください」の文言を出すに留める。M-7（shared.js 統合）が済んだら OC.resetMemberPassword に差し替える。",
+      "impact": "低",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "メンバー削除の確認入力が壊れており、削除ボタンが永久に disabled のまま",
+      "file": "pc.html",
+      "line": 1328,
+      "current": "openMemberDeleteConfirm の確認入力が `oninput=\"...disabled=(this.value!==${JSON.stringify(name)})\"` とテンプレート展開している。JSON.stringify は値を二重引用符で包むため（例: \"山田\"）、HTML 属性の二重引用符がそこで閉じ、oninput ハンドラは `document.getElementById('delConfirmBtn').disabled=(this.value!==` で切れる。入力のたびに SyntaxError となり、名前を正確に入力しても「削除する」ボタン（1329行、初期 disabled）は一度も有効化されない。名前一致確認のUI自体は良い設計だが、機能していない。",
+      "proposal": "input に data 属性で名前を持たせて比較する: `<input id=\"delConfirmInput\" class=\"input\" data-n=\"${esc(name)}\" placeholder=\"${esc(name)} と入力\" oninput=\"document.getElementById('delConfirmBtn').disabled=(this.value!==this.dataset.n)\">`。引用符・エスケープ問題が構造的に消える。修正後、名前に「\"」を含むケースも esc() が &quot; にするので安全。",
+      "impact": "高",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "インライン編集の保存エラー時に画面を巻き戻さず、未保存の値が表示され続ける（PC版8箇所）",
+      "file": "pc.html",
+      "line": 612,
+      "current": "saveProjField は入力バリデーション失敗時（607-608行）は loadProjects+selectProject で表示を戻すが、DB 保存エラー時（612行）は `toast('保存エラー: '+error.message);return;` のみで再描画しない。select/contenteditable セルは変更後の値を表示したまま、DB は旧値という「見た目は保存済み」状態になる。同型が saveTaskField(971行)、saveSubField(1024行)、saveExpStatus(674行、expCache も未更新)、saveOrderStatus(1153行)にある。RLS 拒否（権限不足）やオフライン時に、ユーザーは保存されたと誤認したまま画面を閉じる。",
+      "proposal": "error 分岐にバリデーション分岐と同じ復元処理を1行足す。612行: `if(error){toast('保存エラー: '+error.message);await OC.loadProjects();if(curView==='finance')paintFinance();if(curView==='projects'){paintProjTable();selectProject(id);}return;}`。971行と1024行は `reloadTasks()` / `refreshAfterTaskEdit(parentId)`、674行は `renderExpenses(document.getElementById('content'))`、1153行は `renderOrders(document.getElementById('content'))` を error 分岐に追加。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "インライン編集の保存エラー時の巻き戻し欠如（スマホ版4箇所、PC版と同型）",
+      "file": "app.html",
+      "line": 1472,
+      "current": "タスクのその場編集 updTask(1469-1473行)は日付バリデーション失敗時は refreshTasks() で戻すが、保存エラー時（1472行）は toast のみ。サブタスク編集(1454行)、経理の案件フィールド編集(1646行)・金額編集(1657行)、発注状態変更(1253行)も同じ。バリデーション時は loadFinance()/refreshTasks() を呼ぶのに error 時は呼ばない非対称が全箇所共通。",
+      "proposal": "各 error 分岐の toast 直後に、同じ関数のバリデーション分岐が呼んでいる再描画（refreshTasks() / openTask(parentId) / loadFinance() / loadOrders()）を追加。1472行の例: `if(error){toast('保存エラー: '+error.message);refreshTasks();return;}`。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "PC版のタスク追加モーダルに連打防御が無く、ダブルクリックでタスクが二重登録される",
+      "file": "pc.html",
+      "line": 749,
+      "current": "saveNewTask は追加ボタン（746行、id 無し）を disable せずに await OC.addTask する。tasks に重複制約は無いため、ダブルクリックで同名タスクが2件できる。app.html の同機能は `if(btn)btn.disabled=true; // 連打によるタスクの重複登録を防ぐ`（1159行）で対策済みで、pc.html だけ漏れている。案件追加(644行 mSave)・経費(778行 eSave)・発注(1209行付近 oSave)・メンバー発行(1276行 mSave)は disable 済み。サブタスク追加 addSub(1027行)も Enter キー連打で同様に二重登録する。",
+      "proposal": "746行のボタンに `id=\"ntSave\"` を付け、saveNewTask のバリデーション通過直後に `document.getElementById('ntSave').disabled=true;`、757行の error 分岐で `document.getElementById('ntSave').disabled=false;` を追加（mSave と同じ型）。addSub は関数先頭で `if(addSub._busy)return;addSub._busy=true;` を置き、finally で解除。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "所属部署の保存が delete→insert 非トランザクションで、insert 失敗時に所属が全消えする",
+      "file": "app.html",
+      "line": 762,
+      "current": "saveDepts は先に `await sb.from('profile_departments').delete().eq('profile_id',pid)`（error 未検査）で全行削除し、その後 insert する。delete 成功後に insert が失敗（通信断・RLS）すると、toast は「保存エラー」を出すが所属データは既に全消えで、巻き戻しは無い。画面上の select は選択値を表示したままなので消えたことにも気づけない。",
+      "proposal": "差分適用に変える: `const cur=peopleDepts[pid]||[]; const del=cur.filter(d=>!uniq.includes(d)); const add=uniq.filter(d=>!cur.includes(d));` とし、del があれば `.delete().eq('profile_id',pid).in('department_id',del)`、add があれば insert。各呼び出しの error を検査して失敗時は `await loadPeople(); renderDeptAdmin();` で実データに再同期してから toast を出す。失敗しても消えるのは差分だけになる。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "経費・タスク・発注に削除手段が無い。追加するなら soft delete + undo トーストで",
+      "file": "shared.js",
+      "line": 252,
+      "current": "shared.js のデータ層に delete API があるのは task_assignees(255行 unassignTask)・project_members(235行)・メンバー(60行 Edge Function)のみ。expenses / tasks / orders / projects には削除が無く、誤登録した経費は経理が「差戻」にする以外に一覧から消せない。誤作成タスクはガント・ボードに残り続ける。今後、削除を物理 DELETE ＋ confirm() だけで足すと、取り消し不能な事故経路になる（audit_log に diff は残るが復元UIは無い）。",
+      "proposal": "db に `alter table tasks add column deleted_at timestamptz; alter table expenses add column deleted_at timestamptz; alter table orders add column deleted_at timestamptz;` を足し、既存 select に `.is('deleted_at',null)` を追加。shared.js に `OC.softDelete=(table,id)=>OC.sb.from(table).update({deleted_at:new Date().toISOString()}).eq('id',id)` と `OC.undelete=(table,id)=>...update({deleted_at:null})` を置く。UI は confirm() を使わず、削除実行→`toast('タスクを削除しました　元に戻す')` 形式（toast 関数を `toast(msg,{undoFn})` に拡張し、undo リンク付き・8秒表示。クリックで undelete＋再描画）。物理削除は残さない。承認済み経費の削除だけは経理ロール限定にする（RLS: `deleted_at` 更新は作成者 or is_manager()）。",
+      "impact": "中",
+      "effort": "L",
+      "backend": true
+    },
+    {
+      "title": "担当チップの×がワンクリック即削除で、成功フィードバックも undo も無い",
+      "file": "pc.html",
+      "line": 975,
+      "current": "removeAsg は担当チップの「×」（961行、チップ内の小さい b 要素）クリックで即 unassignTask を実行する。confirm は不要な軽操作だが、成功時の toast が無く（error 時のみ toast）、再描画で人が消えるだけなので、誤クリックに気づきにくい。誰を外したかの手掛かりも残らない。app.html の同機能（1437行）は「外しました」と toast を出しており、PC版だけ無言。",
+      "proposal": "975行を `async function removeAsg(id,uid){const n=OC.personName(uid);const {error}=await OC.unassignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast(n+' を担当から外しました');refreshAfterTaskEdit(id);}` に変更。前項の undo 付き toast を導入する場合は `toast(n+' を外しました　元に戻す',{undoFn:()=>OC.assignTask(id,uid).then(()=>refreshAfterTaskEdit(id))})` にする（担当は task_assignees の再 insert だけで完全復元できるため undo の初弾に最適）。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "ボードのドラッグ＆ドロップが楽観更新でなく、回線が遅いとカードが元列に留まり再ドロップを誘発する",
+      "file": "pc.html",
+      "line": 1077,
+      "current": "boardDrop は saveTaskField を呼ぶだけで、カードの移動は DB 更新→loadAllTasks 全件再取得→paintTasks 完了まで画面に反映されない（967-972行）。その間カードは元の列に表示されたままで、遅い回線では「効いていない」と見えてもう一度ドラッグする操作を誘発する（結果は同値更新なので実害は小さいが、体感が悪い）。",
+      "proposal": "drop 時に先にローカルを書き換えて即描画する: 1077行を `const t=tasksCache.find(x=>x.id===id);if(!t||(t.status||'未着手')===st)return; t.status=st; paintTasks(); OC.updateTask(id,{status:st}).then(({error})=>{if(error){toast('保存エラー: '+error.message);} reloadTasks();});` に変更。成功時トースト「保存しました」は出さなくてよい（移動自体が確認になる）。失敗時は reloadTasks が元の列へ戻す。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "PC版: Escape キーでモーダルが閉じない",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 340,
+      "current": "modal() はオーバーレイのクリック（event.target===this）でのみ closeModal() を呼ぶ。ファイル全体に Escape の keydown ハンドラが存在せず、案件追加・経費・タスク追加/詳細・発注・パスワード・メンバー発行/編集/削除の全モーダルが Escape で閉じない。",
+      "proposal": "modal() 内で document.addEventListener('keydown', handler) を張り、handler は if(e.key==='Escape')closeModal() のみ。closeModal() で removeEventListener する。実装は modal() に this._esc=e=>{if(e.key==='Escape')closeModal()};document.addEventListener('keydown',modal._esc) の2行、closeModal() に removeEventListener 1行の計3行。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "PC版: 全モーダルで Enter 送信ができない（form 包装があるのはログインのみ）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 622,
+      "current": "ログイン（278行）だけ form onsubmit で Enter 送信対応済み。openProjModal(622)・openExpModal(767)・openTaskAddModal(736)・openOrderModal(1176)・openPwModal(363)・openMemberModal(1257) は div+onclick ボタンのみで、テキスト入力中に Enter を押しても何も起きない。経費入力のような高頻度操作で毎回マウスに持ち替えが必要。",
+      "proposal": "各モーダルの modal-b〜modal-f を <form onsubmit=\"event.preventDefault();saveExp()\"> で包み、主ボタンを type=\"submit\" に、キャンセルを type=\"button\" に変更（既存バリデーションはそのまま saveXxx 内で効く）。最低限、頻度の高い経費（saveExp）・タスク追加（saveNewTask）・案件追加（saveProj）・パスワード（savePw）の4つを先行。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "PC版: 初回フォーカスが設定されるモーダルがタスク追加のみ",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 747,
+      "current": "openTaskAddModal だけ setTimeout(()=>ntTitle.focus(),30) がある。openExpModal は eAmt に autofocus 属性（768行）を付けているが、innerHTML 挿入後の autofocus 発火はブラウザ依存で確実でない。openProjModal(mName)・openOrderModal(oTitle)・openPwModal(pwNew)・openMemberModal(mName)・openTaskModal(tmTitle) にはフォーカス処理が一切ない。",
+      "proposal": "openTaskAddModal と同じ setTimeout(()=>{const e=document.getElementById('mName');if(e)e.focus();},30) 方式に統一し、各モーダルの先頭テキスト入力（mName / eAmt / oTitle / pwNew / tmTitle）へ初回フォーカスを入れる。eAmt の autofocus 属性は削除。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "PC版: 経理セルその場編集に Escape キャンセルが無く、blur が常に保存する",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 872,
+      "current": "finEdit の金額・納品日入力は onblur=\"saveProjField(...)\" で、Enter→blur は対応済み（onkeydown Enter で this.blur()）。しかし Escape を押しても何も起きず、編集を取り消す手段が無い。誤ってセルをクリック→値を触った後、どこをクリックしても保存が走る。",
+      "proposal": "onkeydown を if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.dataset.esc='1';this.blur()} に拡張し、onblur 側を if(!this.dataset.esc)saveProjField(...);paintFinance() に変更。Escape なら保存せず paintFinance() で表示を戻す。status/leader_id の select にも同じ onkeydown を付ける。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "PC版: キーボードショートカットが未実装（/ 検索・n 新規・数字キーでタブ移動）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 920,
+      "current": "920行に mfilt 閉鎖用の document click リスナーはあるが、keydown のグローバルハンドラは無い。ビュー切替はサイドバークリックのみ、検索欄（pSearch/fSearch）へのフォーカスもマウス必須。",
+      "proposal": "document.addEventListener('keydown') を1つ追加。ガード条件: if(e.target.closest('input,select,textarea')||document.querySelector('.ov'))return。割当は「1〜5」→go('home'/'projects'/'expenses'/'tasks'/'orders')、「/」→ e.preventDefault() して curView に応じ pSearch/fSearch/tfProj を focus、「n」→ curView に応じ openProjModal/openExpModal/openTaskAddModal/openOrderModal。あわせて mfilt ドロップダウン開時の Escape 閉鎖も同ハンドラで処理（.mfilt.open があれば remove して return）。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "両UI: 日付のその場編集は開始日＞納品日の逆転を検証しない（badRange はモーダル経由のみ）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 608,
+      "current": "saveProjField は saneDate（年の範囲）だけ検証し badRange を呼ばない。案件詳細ペインの開始日/納品日（568-569行）や経理セル編集で「納品日＜開始日」を保存できる。saveTaskField（967行）も同様。一方、新規モーダル saveProj(639行)・saveNewTask(755行)・saveTaskModal(1012行) は badRange で弾く。app.html の updProj(1643行)・updTask(1469行) も badRange 未検証で同じ穴がある。",
+      "proposal": "saveProjField に if(field==='start_date'&&p.delivery_date&&badRange(v,p.delivery_date)) / if(field==='delivery_date'&&p.start_date&&badRange(p.start_date,v)) を追加し、toast('納品日は開始日以降にしてください') で保存中断して再描画。saveTaskField・app.html の updProj/updTask/updSub にも同じ相手側フィールド参照の逆転チェックを入れる。タイムラインのバー消失（開始>終了だと描画されない）を防げる。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "PC版: タスク追加モーダルで開始日を入れても終了日が補完されない",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 743,
+      "current": "ntStart / ntEnd は素の type=date で連動なし。開始日だけ入れて終了日を忘れるとタイムラインに表示されない（bar() は start_date と end_date 両方必須、1112行）。",
+      "proposal": "ntStart に onchange=\"const e=document.getElementById('ntEnd');if(!e.value||e.value<this.value)e.value=this.value\" を追加（終了日未入力なら開始日と同日をセット）。タスク詳細モーダルの tmStart/tmEnd（994-995行）と app.html の tkStart/tkEnd（1054-1056行）にも同じ1行を入れる。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ版: インラインフォーム4つで Enter 送信ができない",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 509,
+      "current": "ログインだけ form 包装済み（471行）。案件追加 projForm（509行、addProject）・発注 orderForm（569行、addOrder）・経費 s-expense（490行、record）・設定のパスワード pwInput（440行、savePassword）はボタン onclick のみで、モバイルキーボードの「開く/go」キーや外付けキーボードの Enter が効かない。",
+      "proposal": "各フォームを <form onsubmit=\"event.preventDefault();addProject()\"> で包み主ボタンを type=submit に変更（addProject/addOrder は引数 this を渡している箇所を document.getElementById('npSave') 参照へ差し替え）。特に経費は enterkeyhint=\"done\" を amt/memo に付けるとモバイルのキーラベルも適切になる。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "スマホ版: サブタスク追加入力で Enter が効かない（PC版は対応済みで不一致）",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 1421,
+      "current": "タスク詳細モーダルの subInput は「追加」ボタンのみ。PC版の同等欄 tmNewSub（pc.html 1004行）は onkeydown=\"if(event.key==='Enter')addSub(...)\" 対応済み。",
+      "proposal": "subInput に onkeydown=\"if(event.key==='Enter')addSubtask('${id}','${t.project_id}')\" を追加。あわせて addSubtask 成功後に inp.value='' でクリア（現状 openTask 再描画でクリアされるが、失敗時に入力が残る挙動と揃う）。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ版: 案件追加成功後に開始日（npStart）がクリアされず次回に残留する",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 958,
+      "current": "addProject 成功時に npName・npClient・npAmt・npDeliv は空にするが npStart だけクリア漏れ。次に「＋案件を追加」を開くと前回の開始日が入ったままで、気づかず別案件に前案件の開始日が保存される。",
+      "proposal": "958行のクリア列に document.getElementById('npStart').value=''; を追加。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ版: タスク詳細モーダル・設定シートが Escape で閉じない",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 622,
+      "current": "taskModal（622行）・settings シート・deptAdmin シート（451行）はオーバーレイクリックのみで閉じる。app.html は isDesktop() 分岐（885行）で PC からも常用される設計だが、キーボードで閉じる手段が無い。",
+      "proposal": "document.addEventListener('keydown',e=>{if(e.key!=='Escape')return; if(!document.getElementById('taskModal').classList.contains('hidden'))return closeTask(); toggleDeptAdmin(false); toggleSettings(false);}) を1つ追加。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ版: 経理テーブルのセル編集入力に Enter→確定が無い（PC版は対応済み）",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 1632,
+      "current": "FIN_COLS の案件名・受注元・受注金額の input は onchange（=blur 時）のみ。Enter を押しても確定されず、別の場所をタップするまで保存されない。PC版 finEdit（pc.html 872行）は onkeydown Enter→blur 対応済み。",
+      "proposal": "1628・1629・1632行の各 input に onkeydown=\"if(event.key==='Enter')this.blur()\" を追加（3箇所、各1属性）。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "スマホ版: 発注フォームの外注先種別 select に class 属性が重複",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 580,
+      "current": "odNewVendorKind に class=\"control\" と class=\"mini\" が二重指定されており、HTML 仕様上2つ目は無視されるため mini（小型化）が効いていない。",
+      "proposal": "class=\"control mini\" に統合。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "経費一覧に検索・フィルタが一切無い（案件・経理には両方ある非対称）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 686,
+      "current": "renderExpenses のツールバー（686-691行）は合計表示と「案件ごと/一覧」切替ボタンのみ。案件一覧には pSearch＋状態 select（493-496行）、経理には検索＋状態＋担当＋納品月の4フィルタ（797-800行）があるのに、経費は最大500件をフィルタ手段ゼロで流し込む。paintExpenses は expCache をそのまま描画する。",
+      "proposal": "toolbar に3点追加: (1) <input id=\"xSearch\" class=\"input search\" placeholder=\"🔍 メモ・案件名・入力者\" oninput=\"paintExpenses()\">、(2) <select id=\"xStatus\">（申請/承認/差戻、EXP_STATUS を流用）、(3) <select id=\"xMonth\">（expCache の spent_at.slice(0,7) からユニーク月を生成。経理の fMonth と同型）。paintExpenses 冒頭に finFiltered と同型の expFiltered() を挟み、合計・件数表示もフィルタ後の値に切り替える。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "PC版に経費の修正・削除の入口が無い（金額・メモ・案件の誤入力を直せない）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 697,
+      "current": "expRowsHTML（697-703行）と flat 表（713-719行）の行は style=\"cursor:default\" で、インライン編集は経理限定の状態 select（expStatusCell、668-671行）のみ。金額・メモ・日付・紐づく案件を編集する UI も削除ボタンも pc.html に存在しない（openExpModal は新規追加専用）。一方 RLS は expenses_update / expenses_delete が定義済み（db/schema.sql:164,167）で、タスクリストは status/開始/終了が .einput でその場編集できる（1044-1046行）非対称。",
+      "proposal": "shared.js に OC.updateExpense=(id,patch)=>OC.sb.from('expenses').update(patch).eq('id',id) と OC.deleteExpense=(id)=>OC.sb.from('expenses').delete().eq('id',id) を追加。経費行の金額セルと メモセルをタスクリスト同様の .einput（onchange=\"saveExpField('id','amount',this.value)\"）にし、行末に「削除」リンク（confirm('この経費を削除しますか？')→deleteExpense→expCache から除去して paintExpenses）。編集可否は本人 or OC.isManager() で出し分け（RLS と同条件）。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "経費承認が1件ずつしかできない（一括承認が無い）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 672,
+      "current": "saveExpStatus（672-677行）は select の onchange で1件ずつ update。月締めで申請中の経費が数十件あると、経理は行数分だけ select を開閉する操作になる。チェックボックス列はどの一覧にも無い。",
+      "proposal": "OC.isAccounting() 時のみ flat 一覧の先頭に <input type=\"checkbox\" class=\"xck\" value=\"id\"> 列と thead に全選択チェックを追加。ツールバーに「選択を承認」「選択を差戻」ボタン（選択0件時 disabled）。実装は OC.sb.from('expenses').update({status:'承認'}).in('id',ids) の1クエリで済み RLS 変更不要。完了後 expCache の該当行 status を書き換えて paintExpenses、toast('◯件を承認しました')。",
+      "impact": "高",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "全テーブルの列見出しが cursor:pointer でソート可能に見えるが、実際に効くのは案件・経理のみ",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 81,
+      "current": "table.tbl thead th の共通 CSS（80-81行）に cursor:pointer と hover 色変化（83行）が入っているため、経費（711・731行）・タスクリスト（1053行）・発注（1166行）・メンバー（1243行）の見出しもクリック可能に見える。しかし onclick でソートするのは案件（sortProj、522-526行）と経理（sortFin、846-853行）だけで、他はクリックしても何も起きない。",
+      "proposal": "CSS を table.tbl thead th{cursor:default} に戻し、ソート付き見出しだけ th.sortable{cursor:pointer} を効かせる（sortProj/sortFin を持つ th に class=\"sortable\" を付与。hover 色変化も .sortable 限定に）。あわせて経費 flat 一覧の「日付」「金額」には projSort と同型の expSort を実装してソート対象を1画面増やすのが実利が大きい。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "発注（金額・依頼内容）が作成後に修正できない（インライン編集は状態のみ）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 1161,
+      "current": "発注行（oCard、1161-1165行）で編集できるのは orderStatusCell の状態 select だけ。金額・依頼内容（title）・宛先は作成後に直す UI が無く、金額の桁間違いは削除もできないため「取消」にして作り直すしかない。RLS 側は orders_update = from_user/to_user_id/is_manager（1143行コメント、db/v3.sql）で更新自体は通る。",
+      "proposal": "「自分が出した発注」表のみ、金額セルを経理の finEdit と同型のクリック編集にする: <td class=\"fcell\" onclick=\"orderEdit(this,'id','amount')\">。orderEdit は einput(type=number) を差し込み onblur で OC.sb.from('orders').update({amount}).eq('id',id) → renderOrders 再描画。依頼内容セルも同様に text input 版を用意。編集可否は o.from_user===OC.effectiveUserId()||OC.isManager() で orderStatusCell と同条件。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "発注一覧にフィルタ・検索・並べ替えが無く、取消・完了も含む全件を無制限描画",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 1157,
+      "current": "renderOrders（1157-1170行）は loadOrders の結果をそのまま2表に描画。shared.js の loadOrders（331-340行）は created_at 降順のみで .limit() が無い。状態フィルタが無いため「取消」「完了」した過去の発注が「依頼中」と同列に永久に積み上がり、運用が続くほど現役の依頼が埋もれる。",
+      "proposal": "各カードヘッダに <select onchange> で状態フィルタ（すべて/依頼中/進行/完了/取消。既定は「すべて」だが localStorage 'oc_order_filter' に保持）を追加し、tbl() に渡す前に rows.filter(o=>!st||o.status===st)。あわせて shared.js の両クエリに .limit(300) を付け、件数がちょうど300件のとき「表示は直近300件」の注記を出す（経費の capped 表示・687行と同じ型）。",
+      "impact": "中",
+      "effort": "M",
+      "backend": false
+    },
+    {
+      "title": "タスクにキーワード検索が無い（案件・状態・担当の構造フィルタのみ）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 937,
+      "current": "タスクのツールバー（937-943行）は案件 select・状態 mcheck・担当 mcheck・クリアのみ。タイトルの部分一致で探す手段が無く、タスク数が増えるとリスト/タイムラインを目視スクロールするしかない。案件一覧の pSearch（493行）と非対称。",
+      "proposal": "ツールバー先頭に <input id=\"tfQ\" class=\"input search\" placeholder=\"🔍 タスク名\" oninput=\"setTaskQ()\"> を追加。taskFilter に q を持たせ（saveTaskFilter で localStorage にも保存）、visibleTasks の filter に if(taskFilter.q&&!(t.title||'').toLowerCase().includes(taskFilter.q.toLowerCase()))return false を1行追加。clearTaskFilter でも q:'' に戻す。3ビュー共通で効く。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "経費の「案件ごと/一覧」切替ボタンの選択状態が視覚化されない（.btn.on の CSS が存在しない）",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 706,
+      "current": "paintExpenses が egProj/egFlat に classList.toggle('on') している（706-707行）が、CSS に .btn.on の定義が無い（.on のスタイルは .viewbar button.on と .nav の2箇所のみ）。そのため今どちらのモードかがボタン外観から判別できない。",
+      "proposal": "タスクのビュー切替と同じ .viewbar マークアップに置き換える: <div class=\"viewbar\"><button id=\"egProj\" onclick=\"setExpMode('proj')\">案件ごと</button><button id=\"egFlat\" onclick=\"setExpMode('flat')\">一覧</button></div>。既存の .viewbar button.on スタイル（115行）がそのまま効き、CSS 追加は不要。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "タスクは全件取得・全件描画（完了タスクが永続的に DOM を膨らませる）",
+      "file": "officecamp-mock/officecamp-mock/shared.js",
+      "line": 258,
+      "current": "loadAllTasks（shared.js 256-263行）は .limit() 無しで全タスクを取得し、paintTaskList（pc.html 1037-1055行）は1行あたり select＋date input×2＋担当 select を持つ行を全件描画する。タイムラインも同様に全行を描く。状態フィルタは存在するが既定は「すべて」で、運用1年分の完了タスクも毎回取得・描画される。",
+      "proposal": "初回（localStorage 'oc_task_filter' 未保存）の既定を taskFilter.status=['未着手','進行','保留'] にする（loadTaskFilter の初期値1箇所の変更。完了を見たい時は状態 mcheck で明示チェック）。あわせて loadAllTasks に .limit(2000) を付け、上限到達時は tfCount 横に「表示は2000件まで」を出す。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "メンバー一覧は名前昇順固定・検索無し・部署での絞り込み不可",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 1238,
+      "current": "renderMembers（1238-1253行）は OC.people を名前昇順に固定ソートして全件描画。検索・ロール/部署フィルタ・見出しソートは無い。数十名規模までは実害が小さいが、部署ごとの棚卸し（どの部署に誰がいるか）は目視走査になる。",
+      "proposal": "card-h に <select onchange=\"paintMembers()\">（部署：すべて＋OC.departments）と <select>（ロール：すべて/メンバー/経理/管理者）を置き、描画をpaintMembers() に分離して rows を絞る。件数も「◯名」で card-h に表示。テーブル構造・操作列は現状のまま。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "タイムライン表示時に「今日」へ自動スクロールしない",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 1587,
+      "current": "timelineHTML() は lo=Math.min(タスク最古日,今日)-7 を起点に1日40pxで全期間を描画し（1555-1557行）、返した HTML を loadGantt() が body.innerHTML に入れるだけ（1616行）。.tl-scroll の scrollLeft は常に0のため、過去のタスクがあると初期表示は数週間〜数ヶ月前の左端で、今日の列（.tl-day.td の赤ハイライト）まで毎回手で横スクロールする必要がある。ステータス変更のたびに refreshTasks→loadGantt で再描画され、その都度また左端に戻る。",
+      "proposal": "loadGantt() の body.innerHTML=bar+view の直後に3行追加: const sc=body.querySelector('.tl-scroll'); const td=sc&&sc.querySelector('.tl-day.td'); if(td)sc.scrollLeft=Math.max(0,td.offsetLeft-160); （今日の列を左端から160px＝sticky な .tl-name 幅+余白の位置に出す）。再描画時は後述のとおり旧 scrollLeft があればそれを優先復元する。",
+      "impact": "高",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "案件詳細でタスク更新のたびにスクロール位置が先頭に戻る",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 979,
+      "current": "openDetail() は冒頭で body.innerHTML='読み込み中…' に置換してから7クエリの Promise.all を待って全再構築する。updTask/assignUser/addSubtask 等は成功後すべて refreshTasks()→openDetail(curDetail)（1483行）を呼ぶため、詳細画面下方（経費一覧やタスク下部）でステータスを1つ変えるたびに #detailBody（.screen＝スクロールコンテナ）の中身が一瞬「読み込み中」に潰れ、scrollTop が0にクランプされて先頭へ飛ぶ。現場で連続してタスクを消化する操作が毎回スクロールし直しになる。",
+      "proposal": "openDetail() の先頭で const keep=(curDetail===id); const st=keep?body.scrollTop:0; を取り、keep の場合は「読み込み中…」への置換をスキップ（旧内容を出したまま裏で取得）。最後の body.innerHTML=... と detSub(curSub) の直後に body.scrollTop=st; を追加。",
+      "impact": "高",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "ボードの長押しドラッグが pointercancel 未処理でゴーストが画面に残る",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 1541,
+      "current": "boardPointerDown() は window に pointermove/pointerup だけを登録している（1540-1541行）。.bcard にも .board にも touch-action の指定が無いため、タッチでは長押し220ms成立後に指を動かした瞬間ブラウザがパンスクロールを開始して pointercancel が発火する。onUp は呼ばれず cleanup() が走らないので、複製した .drag-ghost が document.body に固定表示されたまま残り、dragging の半透明カードと pointermove リスナーも残留する。スマホでのドラッグ状態変更（このアプリ唯一のD&D操作）が実質成立しない。",
+      "proposal": "(1) start() 内に card.style.touchAction='none'; try{card.setPointerCapture(e.pointerId)}catch(_){} を追加し、cleanup() で card.style.touchAction='' に戻す。(2) window.addEventListener('pointercancel',onUp) を1541行の隣に追加し、cleanup() の removeEventListener にも pointercancel を足す。(3) 保険として CSS .bcard{touch-action:manipulation} を追加（ダブルタップズーム抑止も兼ねる）。",
+      "impact": "高",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "ボードのドロップ直後に横スクロールが左端へ戻り、移動先の列が見えなくなる",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 1616,
+      "current": "列は .bcol{flex:0 0 220px} の4列＝約900pxで、480px画面では「完了」「保留」列は横スクロールしないと見えない。カードを「完了」列にドロップすると updTask→refreshTasks→loadGantt が board 全体を innerHTML で作り直すため scrollLeft が0に戻り、いま置いたカードが視界から消える（置けたのか確認できない）。",
+      "proposal": "loadGantt() で再描画前に const prev=document.getElementById('board'); const sl=prev?prev.scrollLeft:0; を取り、innerHTML 差し替え後に const b=document.getElementById('board'); if(b)b.scrollLeft=sl; で復元する。タイムライン用の .tl-scroll も同じ2行で復元し、無い場合のみ「今日へスクロール」の初期位置を使う。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "検索・フィルタ入力(.fbi)が13pxで、iOSでフォーカス時に画面がズームする",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 300,
+      "current": ".fbi{padding:9px 10px;font-size:13px} が .control（font-size:var(--fs-lg)=16px）を後勝ちで上書きしている。#projSearch・#finSearch はテキスト入力なので、iOS Safari は16px未満の input フォーカスで自動ズームし、検索のたびに画面が拡大→手でピンチアウトして戻す羽目になる。st-sel を16pxにした対策（285行コメント H-6）と矛盾した抜け。高さも約36pxで44px基準未満。",
+      "proposal": ".fbi を padding:11px 10px;font-size:16px;min-height:44px に変更（13pxのままにしたい select は select.fbi{font-size:13px} で分ければ input だけ16pxにできるが、統一して16pxを推奨）。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "案件詳細の戻り導線「‹ 案件一覧」のタップ領域が約27px",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 99,
+      "current": ".back{font-size:15px;padding:4px} で高さ約27px。スマホの案件詳細（537行）ではこのテキストリンクが一覧へ戻る唯一の手段（下タブ「案件」は on 表示のままで、タップすれば戻れるがそうと分からない）。ヘッダ左上の小さな文字を狙う操作が最頻動線に乗っている。",
+      "proposal": ".back を display:inline-flex;align-items:center;min-height:44px;padding:4px 12px 4px 4px;margin:-4px 0 0 -4px に変更（見た目の位置はほぼ維持しつつ当たり判定を44pxへ）。あわせて「‹」を12px相当のSVG chevron にすると押せる要素に見える。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "タイムライン行のステータスselect(28px)とタスクバー(22px)がタップ基準未満",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 246,
+      "current": ".st-mini{min-height:28px;padding:6px 7px}（246行）と .tl-bar{height:22px}（254行、onclick=openTask で詳細を開くタップ対象・1583行）が44px基準を大きく下回る。行自体も .tl-row{min-height:34px}（232行）。横スクロール中の指で22pxのバーを正確に叩くのは困難で、誤って隣行のバーやステータスを触りやすい。",
+      "proposal": ".tl-row{min-height:44px} に、.tl-bar{top:7px;height:30px;font-size:11px} に、.st-mini{min-height:36px;padding:8px} に変更。1日40px幅は維持し、行の縦方向だけで当たり判定を確保する（列密度は変えない）。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "mini系ボタン（保存・追加・割り当て）の高さが約34px",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 179,
+      "current": ".mini{padding:9px 12px;font-size:13px} で高さ約34px。設定シートの表示名保存（437行）、部署保存（755行）、メンバー追加（1091行）、タスクモーダルの担当割り当て（1415行）・サブタスク追加（1422行）など、書き込み確定ボタンの大半がこのサイズ。隣接する select と近接しており誤タップしやすい。",
+      "proposal": ".mini を padding:12px 14px;min-height:44px;font-size:14px に変更。row-inline 内の select（.sub-asg select 等は min-height:38px）も min-height:44px に揃えると行の縦ズレも消える。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "PWA常駐中に新バージョンが配信されても告知が無く、古いJSのまま使い続ける",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 1799,
+      "current": "sw.js は navigation を network-first にしているため「開き直せば」最新になるが、SW登録（1799-1803行）は register するだけで updatefound/controllerchange を一切監視していない。スマホのスタンドアロンPWAは何日も開きっぱなしになりがちで（タブ復帰では再fetchされない）、新SWが skipWaiting+clients.claim（sw.js 26・37行）で裏で有効化されても画面側は旧 app.html のJSのまま。シェル更新が現場端末に届いたか分からない。",
+      "proposal": "register の then で reg.addEventListener('updatefound',...) を張り、newWorker.state==='activated' かつ navigator.serviceWorker.controller が存在する時に toast('新しいバージョンがあります。タップで更新',false) を出し、toast の onclick を location.reload() に差し替える（toast関数は既存流用）。あわせて document.addEventListener('visibilitychange',()=>{if(!document.hidden)reg.update()}) で復帰時に更新チェックを走らせる。",
+      "impact": "中",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "シート・モーダルでスクロールが末端に達すると背面画面が連れてスクロールする",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 273,
+      "current": ".modal-card{max-height:88vh;overflow-y:auto}（273行）と .sheet-card（42行）・#deptAdmin のカード（452行 max-height:82vh;overflow:auto）はいずれも overscroll-behavior 未指定。タスクモーダル（サブタスクが多いと縦に長い）を末端までフリックすると、慣性が背面の .screen に連鎖して裏の一覧が動く。閉じた時に背面のスクロール位置がズレる。閉じる操作は背景タップ（622行の event.target 判定）のみでスワイプダウンは無いが、そちらは実害が小さいので対象外。",
+      "proposal": ".modal-card,.sheet-card{overscroll-behavior:contain} を1行追加。#deptAdmin のインラインstyleにも overscroll-behavior:contain を足す。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    },
+    {
+      "title": "リスト表示の「詳細 ›」リンクのタップ領域が約14pxで、外すと折りたたみが誤発動する",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 265,
+      "current": ".pj-detail-link{font-size:12px} でパディング無し＝高さ約14px。summary 内に置かれ（1596行）、stopPropagation で details のトグルを止めているが、12pxのテキストを外して触ると summary 側が反応して案件カードが折りたたまれる。「詳細を見ようとしたらタスク一覧が閉じた」という逆の結果になる。",
+      "proposal": ".pj-detail-link に padding:12px 10px;margin:-12px -10px を追加して当たり判定を約38x44pxへ拡大（レイアウト位置は不変）。",
+      "impact": "低",
+      "effort": "S",
+      "backend": false
+    }
+  ],
+  "gaps": [
+    {
+      "area": "パフォーマンス体感/起動: ログイン済みリロードのたびに完全な白画面",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 1375,
+      "why": "boot() は loadMe → Promise.all(4本) → loadProjects を直列 await し、完了後の1382行で初めて #app の hidden を外す。それまで #login も #app も hidden のため、遅い回線では数秒間まっさらな白画面（applyTheme 前は dark ユーザーにも白）。app.html も同型（boot が5本直列 await 後に nav('expense')、app.html:1844）。提案: init 直後に「読み込み中…」のスプラッシュ（ロゴ＋スピナー）を表示し、boot 完了で差し替える。シェルを先に出して中身だけ『読み込み中…』にするのが本筋。impact 中 / effort S / backend false"
+    },
+    {
+      "area": "エラー状態: PC版はデータ取得失敗が「まだありません」という偽の空状態で表示される",
+      "file": "officecamp-mock/officecamp-mock/shared.js",
+      "line": 201,
+      "why": "loadProjects は {data} しか見ず error を捨てる（loadExpenses:238、loadAllTasks:258 は console.error のみで [] を返す）。オフラインや RLS エラー時、PC版のホーム/案件/経費/タスクは『案件がありません』『経費はまだありません』を表示し、データ消失と誤認させる。renderTasks(pc.html:923) の try/catch は loadAllTasks が throw しないため到達しない。スマホ版も loadGantt(app.html:1602) と loadOrders(app.html:1272) が同型（案件・経理のみ再読み込みボタン有り）。提案: 各 load 関数で error 時に throw し、描画側で『取得エラー: <message> ＋ ↻再読み込みボタン』（app.html:857 と同じ型）を出す。impact 高 / effort M / backend false"
+    },
+    {
+      "area": "PWA/オフライン: オフライン起動が「オフラインです」画面に到達せず白画面で止まる",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 628,
+      "why": "sw.js は app.html をキャッシュするが supabase-js は CDN（クロスオリジン＝network-only）。オフライン起動ではキャッシュ済み app.html が描画され、CDN スクリプトが失敗して init()（1836行 supabase.createClient）が ReferenceError で停止、全セクション hidden のまま白画面。sw.js の OFFLINE_HTML は app.html 未キャッシュ時しか出ない。提案: init を try/catch し、window.supabase 未定義なら『オフラインです。接続してから再読み込み』＋再読み込みボタンを #needConfig 相当の画面で表示。恒久策は supabase-js を同一オリジンに vendoring して SHELL_ASSETS に追加。impact 高（PWA常用者の日常事象）/ effort S（表示）〜M（vendoring）/ backend false"
+    },
+    {
+      "area": "ナビゲーション: 履歴 API 未使用で Android 戻る操作がアプリ終了になり、URL が状態を持たない",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 654,
+      "why": "nav()/openDetail() は pushState を一切呼ばず（両ファイルとも history./popstate の出現ゼロを grep で確認）、スマホ PWA で案件詳細から戻るジェスチャをするとアプリごと閉じる。リロードは常に経費タブへ戻り、案件詳細の URL 共有・ブックマークも不可。提案: nav と openDetail で location.hash（#projects, #detail/<id>）を pushState し、popstate で nav を逆再生。起動時に hash があれば復元する。pc.html の go() も同型。impact 高（スマホの基本操作）/ effort M / backend false"
+    },
+    {
+      "area": "通知/未読: 受けた内注・経費の差戻に気付く手段が無い（バッジ・件数表示ゼロ）",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 604,
+      "why": "内注は発注タブを自発的に開かない限り見えず（loadOrders はタブ表示時のみ）、経費の差戻も本人が一覧を見返さない限り分からない。タブバー（app.html:604）にもサイドバー（pc.html:293）にもバッジが無い。提案: boot 時に『自分宛て orders で status=依頼中の件数』『自分の expenses で status=差戻の件数』を count 取得し、発注/経費タブに赤バッジ（例: 発注タブ右上に 8px 円＋件数）を表示。タブを開いたら既読化（localStorage に最終閲覧時刻）。impact 高（内注が仕事の受け渡し手段なのに届いたことに気付けない）/ effort M / backend false"
+    },
+    {
+      "area": "ホーム(PC): KPI が失注・見込案件込みで集計され「受注合計」「粗利合計」が実態より大きく出る",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 456,
+      "why": "renderHome の rev/prof は OC.projects 全件（失注・見込含む）の reduce。失注案件の受注金額が『受注合計』に入り続け、経営数字の誤読を招く。粗利トップ案件（459行）にも失注が並ぶ。提案: 既定は status が 進行・完了 のみ集計し、KPI サブテキストを『進行＋完了のみ』と明記。トップ案件リストも失注を除外。impact 中 / effort S / backend false"
+    },
+    {
+      "area": "ホーム(PC): 「最近の経費」の行がクリック不能で、経費タブへの導線も無い",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 475,
+      "why": "粗利トップ案件の行は onclick で案件詳細に飛ぶ（469行）のに、最近の経費の行（475-478行）は onclick 無しの死に要素。カードヘッダにも『すべて見る』が無い。提案: 各行に onclick=\"go('projects');setTimeout(()=>selectProject('<project_id>'),50)\" を付け（loadExpenses の select に project_id は既に含まれる）、card-h 右端に『経費タブへ ›』リンクを追加。impact 低 / effort S / backend false"
+    },
+    {
+      "area": "ログイン画面: エラー文言が赤で表示されない（スマホ版は常時アクセント青、PC版はマジックリンク後に灰色固定）",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 479,
+      "why": "app.html の #loginMsg は style=\"color:var(--accent)\" 固定のため『ログインできません: メールかパスワードが違います』が案内文と同じ青で出る。pc.html は .login-msg が赤だが magic()（pc.html:358）が msg.style.color='var(--sub)' をインラインで上書きし、以後のログイン失敗が灰色のままになる。提案: 文言セット時に成功/案内は var(--sub)、エラーは var(--bad) をその都度セットする（toast と同じ /エラー|できません/ 判定でよい）。impact 中 / effort S / backend false"
+    },
+    {
+      "area": "代理操作: ログアウトしても代理状態が localStorage に残り、再ログイン時に無告知で代理操作が再開する",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 361,
+      "why": "doLogout は OC.signOut() のみで oc_impersonating_user_id を消さない。管理者が代理操作のままログアウト→後日ログインすると、loadImpersonation（shared.js:104）が復元し、本人はホーム画面のバーを見落とすと他人基準の画面で作成・編集を始める。提案: doLogout 冒頭で OC.stopImpersonation() を呼ぶ。加えて復元時（boot 後）に toast『前回の代理操作（<名前>）を継続中』を1回出す。impact 中（作成主体の取り違え事故）/ effort S / backend false"
+    },
+    {
+      "area": "テーマ: メンバー削除確認モーダルの警告ボックスがダークテーマで読めない",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 1321,
+      "why": "警告ボックスは background:#fdecea（淡ピンク）固定だが color 未指定のため文字色は継承の var(--ink)＝ダーク時 #E8EAED。淡ピンク地に白文字で削除の注意書きがほぼ読めない。提案: style に color:#7a1f18 を追記（ライト/ダーク共用で成立。内側の <b style=\"color:#c0392b\"> はそのままで可）。impact 低（管理者のみ・ただし最重要の警告文）/ effort S / backend false"
+    },
+    {
+      "area": "印刷: @media print が両ファイルに一切無く、経理一覧・案件詳細を印刷すると崩れる",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 7,
+      "why": "grep で両ファイルとも @media print ゼロを確認。印刷すると黒サイドバー（.side）がインク全面、.content が overflow:auto のため1ページ目で切れ、経理テーブル（max-height:calc(100dvh - 300px)、pc.html:803）は先頭行しか出ない。経理は CSV があるが、案件詳細（見積根拠の共有）とタスクリストに紙の逃げ道が無い。提案: @media print { .side,.top,.toolbar,.btn{display:none} .content,.card-b,.md .detail-card{overflow:visible;max-height:none} body{background:#fff} } の十数行を追加。impact 低〜中 / effort S / backend false"
+    },
+    {
+      "area": "初回利用: 案件ゼロの状態で経費タブに着地し、何をしても先へ進めない",
+      "file": "officecamp-mock/officecamp-mock/app.html",
+      "line": 818,
+      "why": "boot は nav('expense')（1852行）に着地するが、案件ゼロだと案件 select は value=\"\" の『案件がありません』1択で、記録するを押しても『金額（正の数）と案件を入れてください』が出るだけ。案件を先に作る必要があることをどこも案内しない。PC版 openExpModal（pc.html:766）も同型で opts が空 select になる。提案: projects.length===0 のとき経費カードの上に『まず案件を1件作成してください ＋案件を追加』ボタン（onclick=\"nav('projects');toggleProjForm(true)\"）を表示し、select と記録ボタンを disabled にする。impact 中（導入時の第一印象）/ effort S / backend false"
+    },
+    {
+      "area": "PC版タイムライン: 初期スクロールが左端（最古日）で「今日」が画面外から始まる",
+      "file": "officecamp-mock/officecamp-mock/pc.html",
+      "line": 1139,
+      "why": "paintTaskTimeline は .gwrap（overflow-x:auto）に描画するだけで scrollLeft を設定しない。範囲は最古タスクの7日前起点（1098行）なので、過去タスクが溜まるほど初期表示は過去に張り付き、毎回手で今日まで横スクロールする。既出リストはスマホ版（app.html:1587）のみでPC版は未指摘。提案: 描画直後に const w=body.querySelector('.gwrap'); if(w&&todayLeft>=0)w.scrollLeft=Math.max(0,todayLeft-w.clientWidth*0.3); を追加（todayLeft は1105行で算出済み）。impact 中 / effort S / backend false"
+    }
+  ]
+}
