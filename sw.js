@@ -4,7 +4,7 @@
  * データの陳腐化・不整合を避けるため、同一オリジンの静的シェルだけを扱う。
  * 更新手順: シェル（app.html 等）を変えたら VERSION を上げる → 旧キャッシュは activate で破棄。
  */
-const VERSION = 'v5';
+const VERSION = 'v6';
 const CACHE_NAME = 'officecamp-shell-' + VERSION;
 
 // プレキャッシュするアプリシェル（すべて同一オリジン・相対パス）

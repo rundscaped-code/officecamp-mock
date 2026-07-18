@@ -134,14 +134,14 @@
   .grid-g{min-width:max-content}
   .grow{display:flex;align-items:stretch;border-top:1px solid var(--line);min-height:34px}
   .grow:first-child{border-top:none}
-  .gname{position:sticky;left:0;z-index:2;width:250px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+  .gname{position:sticky;left:0;z-index:5;width:250px;flex:none;background:var(--panel);border-right:1px solid var(--line);
     padding:7px 10px;font-size:12.5px;display:flex;align-items:center;gap:0;overflow:hidden;white-space:nowrap}
   .gnttl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .gnasg{margin-left:auto;padding-left:8px;flex:none;font-size:11px;font-weight:700;color:var(--accent);max-width:96px;overflow:hidden;text-overflow:ellipsis}
   .gaddbtn{margin-left:auto;flex:none;border:1px solid var(--line);background:var(--panel);color:var(--accent);border-radius:6px;width:22px;height:22px;font-size:13px;font-weight:800;cursor:pointer;line-height:1}
   .gaddbtn:hover{background:var(--accent-soft)}
   .gcells{position:relative;flex:none;overflow:hidden}
-  .ghead .gname{background:var(--accent-soft);font-weight:800;z-index:3}
+  .ghead .gname{background:var(--accent-soft);font-weight:800;z-index:6}
   .ghead{background:var(--accent-soft)}
   .gday{width:30px;flex:none;text-align:center;font-size:10.5px;color:var(--sub);padding:4px 0;line-height:1.25;border-left:1px solid var(--line)}
   .gday.we{background:rgba(0,0,0,.09)}.gday.td{background:#FDECEC;color:var(--bad);font-weight:700}   /* 週末は視認できる濃さに（L-5） */
@@ -370,6 +370,30 @@ function ctxMenu(ev,items){
   });
   document.body.appendChild(el);
 }
+// キーボードショートカット（P2-5）: 1-5 タブ切替・/ 検索フォーカス・n 新規。Escapeはメニュー類→モーダルの順で閉じる。
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(document.getElementById('ctxMenu')){document.getElementById('ctxMenu').remove();return;}
+    const bp=document.getElementById('barPop');
+    if(bp&&bp.classList.contains('show')){closeBarPop();return;}
+    const mf=document.querySelector('.mfilt.open');
+    if(mf){mf.classList.remove('open');return;}
+    if(document.querySelector('.ov'))closeModal();
+    return;
+  }
+  if(e.target.closest('input,select,textarea')||document.querySelector('.ov'))return;
+  const viewByKey={'1':'home','2':'projects','3':'expenses','4':'tasks','5':'orders'};
+  if(viewByKey[e.key]){go(viewByKey[e.key]);return;}
+  if(e.key==='/'){
+    const searchId={projects:'pSearch',expenses:'fSearch',tasks:'tfProj'}[curView];
+    if(searchId){e.preventDefault();document.getElementById(searchId)?.focus();}
+    return;
+  }
+  if(e.key==='n'){
+    const openByView={projects:()=>openProjModal(),expenses:()=>openExpModal(),tasks:()=>openTaskAddModal(),orders:()=>openOrderModal()}[curView];
+    if(openByView)openByView();
+  }
+});
 
 // ---- 認証 ----
 async function doLogin(){
@@ -392,10 +416,12 @@ async function magic(){
 async function doLogout(){OC.stopImpersonation();await OC.signOut();location.reload();}
 function openPwModal(){
   modal('<div class="modal"><div class="modal-h">パスワードを設定 / 変更</div>'+
+    '<form onsubmit="event.preventDefault();savePw()">'+
     '<div class="modal-b"><div class="field"><label class="fl">新しいパスワード（6文字以上）</label>'+
     '<input id="pwNew" class="input" type="password" autocomplete="new-password"></div></div>'+
-    '<div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button>'+
-    '<button class="btn" onclick="savePw()">設定</button></div></div>');
+    '<div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button>'+
+    '<button type="submit" class="btn">設定</button></div></form></div>');
+  setTimeout(()=>{const e=document.getElementById('pwNew');if(e)e.focus();},30);
 }
 async function savePw(){
   const p=document.getElementById('pwNew').value;
@@ -688,7 +714,7 @@ function openProjModal(preset){
   const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===preset.dupParent?'selected':''}>${esc(p.name)}</option>`).join('');
   const effectiveId=OC.effectiveUserId();
   const leaderField=OC.isManager()?`<div class="field"><label class="fl" for="mLeader">案件リーダー</label><select id="mLeader" class="input">${OC.people.map(p=>`<option value="${p.id}" ${p.id===effectiveId?'selected':''}>${esc(p.name||p.email)}</option>`).join('')}</select></div>`:'';
-  modal(`<div class="modal"><div class="modal-h">案件を追加</div><div class="modal-b">
+  modal(`<div class="modal"><div class="modal-h">案件を追加</div><form onsubmit="event.preventDefault();saveProj()"><div class="modal-b">
     <div class="field"><label class="fl" for="mName">案件名</label><input id="mName" class="input" placeholder="○○ビル改修" value="${esc(preset.dupName||'')}"></div>
     <div class="field"><label class="fl" for="mClient">受注元（任意）</label><input id="mClient" class="input" placeholder="◇◇建設"></div>
     <div class="field"><label class="fl" for="mAmt">受注金額（円・任意）</label><input id="mAmt" class="input" inputmode="numeric" placeholder="0"></div>
@@ -696,7 +722,8 @@ function openProjModal(preset){
       <div class="field" style="flex:1"><label class="fl" for="mDeliv">納品日</label><input id="mDeliv" class="input" type="date"></div></div>
     <div class="field"><label class="fl" for="mParent">派生元の案件（任意）</label><select id="mParent" class="input"><option value="">新規（派生元なし）</option>${opts}</select></div>
     ${leaderField}
-    </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="mSave" onclick="saveProj()">追加</button></div></div>`);
+    </div><div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="mSave">追加</button></div></form></div>`);
+  setTimeout(()=>{const e=document.getElementById('mName');if(e)e.focus();},30);
 }
 // 右クリックメニュー: 状態変更・複製・削除（P0-B #7）
 function projCtx(ev,id){
@@ -865,17 +892,17 @@ function paintExpenses(){
 function openTaskAddModal(pid,preset){
   preset=preset||{};
   const projField=pid?'':`<div class="field"><label class="fl" for="ntProj">案件</label><select id="ntProj" class="input">${OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')||'<option value="">案件なし</option>'}</select></div>`;
-  modal(`<div class="modal"><div class="modal-h">タスクを追加</div><div class="modal-b">
+  modal(`<div class="modal"><div class="modal-h">タスクを追加</div><form onsubmit="event.preventDefault();saveNewTask('${pid||''}')"><div class="modal-b">
     ${projField}
     <div class="field"><label class="fl" for="ntTitle">タイトル</label><input id="ntTitle" class="input" placeholder="図面作成 など" value="${esc(preset.title||'')}"></div>
     <div class="tm-grid">
       <div class="field"><label class="fl" for="ntStatus">状態</label><select id="ntStatus" class="input">${TSTATUS.map(s=>`<option ${s===(preset.status||'未着手')?'selected':''}>${s}</option>`).join('')}</select></div>
       <div class="field"><label class="fl" for="ntLeader">リーダー（進める人）</label><select id="ntLeader" class="input">${leaderOptions(preset.leaderId||'')}</select></div>
       <div class="field"><label class="fl">担当（複数可）</label>${mcheck('ntAsg','担当',OC.people.map(p=>({v:p.id,label:(p.name||p.email)+'（'+(p.role||'—')+'）'})),preset.asg||[],'onMpickChange')}</div>
-      <div class="field"><label class="fl" for="ntStart">開始日</label><input id="ntStart" class="input" type="date" value="${preset.start||''}"></div>
+      <div class="field"><label class="fl" for="ntStart">開始日</label><input id="ntStart" class="input" type="date" value="${preset.start||''}" onchange="const e=document.getElementById('ntEnd');if(!e.value||e.value<this.value)e.value=this.value"></div>
       <div class="field"><label class="fl" for="ntEnd">終了日</label><input id="ntEnd" class="input" type="date" value="${preset.end||''}"></div>
     </div></div>
-    <div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="ntSave" onclick="saveNewTask('${pid||''}')">追加</button></div></div>`);
+    <div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="ntSave">追加</button></div></form></div>`);
   setTimeout(()=>{const e=document.getElementById('ntTitle');if(e)e.focus();},30);
 }
 // 右クリックメニュー: 状態変更・複製・削除（P0-B #8。リスト行・ガントバー・ボードカード共通）
@@ -921,11 +948,12 @@ async function saveNewTask(pid){
 }
 function openExpModal(projectId){
   const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${esc(p.name)}</option>`).join('');
-  modal(`<div class="modal"><div class="modal-h">経費を記録</div><div class="modal-b">
-    <div class="field"><label class="fl" for="eAmt">金額（円）</label><input id="eAmt" class="input" inputmode="numeric" placeholder="0" autofocus></div>
+  modal(`<div class="modal"><div class="modal-h">経費を記録</div><form onsubmit="event.preventDefault();saveExp()"><div class="modal-b">
+    <div class="field"><label class="fl" for="eAmt">金額（円）</label><input id="eAmt" class="input" inputmode="numeric" placeholder="0"></div>
     <div class="field"><label class="fl" for="eProj">紐づく案件</label><select id="eProj" class="input">${opts}</select></div>
     <div class="field"><label class="fl" for="eMemo">メモ（何を買ったか）</label><input id="eMemo" class="input" placeholder="木材・ビス など"></div>
-    </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="eSave" onclick="saveExp()">記録する</button></div></div>`);
+    </div><div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="eSave">記録する</button></div></form></div>`);
+  setTimeout(()=>{const e=document.getElementById('eAmt');if(e)e.focus();},30);
 }
 async function saveExp(){
   const amount=parseInt((document.getElementById('eAmt').value||'0').replace(/[,，]/g,''),10)||0;
@@ -1041,10 +1069,11 @@ function finEdit(td,pid,field){
   if(td.querySelector('select,input'))return;
   const p=OC.projects.find(x=>x.id===pid);if(!p)return;
   let ctrl;
-  if(field==='status')ctrl=`<select class="einput" onchange="saveProjField('${pid}','status',this.value)" onblur="paintFinance()">${pstatusOptions(p.status)}</select>`;
-  else if(field==='leader_id')ctrl=`<select class="einput" onchange="saveProjField('${pid}','leader_id',this.value)" onblur="paintFinance()">${leaderOptions(p.leader_id)}</select>`;
-  else if(field==='amount')ctrl=`<input class="einput" type="number" style="text-align:right" value="${p.revenue||0}" onblur="saveProjField('${pid}','amount',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
-  else ctrl=`<input class="einput" type="date" value="${p.delivery_date||''}" onblur="saveProjField('${pid}','delivery_date',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`;
+  const esck="if(event.key==='Escape'){this.dataset.esc='1';this.blur()}";
+  if(field==='status')ctrl=`<select class="einput" onchange="saveProjField('${pid}','status',this.value)" onblur="paintFinance()" onkeydown="${esck}">${pstatusOptions(p.status)}</select>`;
+  else if(field==='leader_id')ctrl=`<select class="einput" onchange="saveProjField('${pid}','leader_id',this.value)" onblur="paintFinance()" onkeydown="${esck}">${leaderOptions(p.leader_id)}</select>`;
+  else if(field==='amount')ctrl=`<input class="einput" type="number" style="text-align:right" value="${p.revenue||0}" onblur="if(!this.dataset.esc)saveProjField('${pid}','amount',this.value);paintFinance()" onkeydown="if(event.key==='Enter')this.blur();${esck}">`;
+  else ctrl=`<input class="einput" type="date" value="${p.delivery_date||''}" onblur="if(!this.dataset.esc)saveProjField('${pid}','delivery_date',this.value);paintFinance()" onkeydown="if(event.key==='Enter')this.blur();${esck}">`;
   td.innerHTML=ctrl;const el=td.querySelector('select,input');if(el)el.focus();
 }
 // ---- タスク（タイムライン / ボード / リスト） ----
@@ -1179,6 +1208,20 @@ async function saveTaskField(id,field,value){
   if(error){toast('保存エラー: '+error.message);reloadTasks();return;}
   toast('保存しました');reloadTasks();
 }
+// タスク詳細モーダルの開始日変更用。終了日を繰り上げる場合は個別保存(saveTaskField)だと
+// 終了日の旧値でバリデーションに引っかかり保存されないため、start_date/end_dateをまとめて保存する。
+async function tmStartChange(id,el){
+  const e=document.getElementById('tmEnd');
+  if(!e.value||e.value<el.value){
+    e.value=el.value;
+    if(el.value&&!saneDate(el.value)){toast('日付の年を確認してください（2000〜2100）');reloadTasks();return;}
+    const {error}=await OC.updateTask(id,{start_date:el.value,end_date:e.value});
+    if(error){toast('保存エラー: '+error.message);reloadTasks();return;}
+    toast('保存しました');reloadTasks();
+    return;
+  }
+  saveTaskField(id,'start_date',el.value);
+}
 async function assignPick(id,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.assignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast('担当を追加');refreshAfterTaskEdit(id);}
 async function removeAsg(id,uid){const {error}=await OC.unassignTask(id,uid);if(error){toast('エラー: '+error.message);return;}refreshAfterTaskEdit(id);}
 async function addMemberPick(pid,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.addProjectMember(pid,uid);if(error){toast('メンバー追加エラー: '+error.message);return;}toast('メンバーを追加');selectProject(pid);}
@@ -1199,7 +1242,7 @@ async function openTaskModal(id,silent){
       <div class="tm-grid">
         <div class="field"><label class="fl" for="tmStatus">状態</label><select id="tmStatus" class="input" onchange="saveTaskField('${id}','status',this.value)">${TSTATUS.map(s=>`<option ${s===(t.status||'未着手')?'selected':''}>${s}</option>`).join('')}</select></div>
         <div class="field"><label class="fl" for="tmLeader">リーダー（進める人）</label><select id="tmLeader" class="input" onchange="saveTaskField('${id}','leader_id',this.value||null)">${leaderOptions(t.leader_id)}</select></div>
-        <div class="field"><label class="fl" for="tmStart">開始日</label><input id="tmStart" class="input" type="date" value="${t.start_date||''}" onchange="saveTaskField('${id}','start_date',this.value)"></div>
+        <div class="field"><label class="fl" for="tmStart">開始日</label><input id="tmStart" class="input" type="date" value="${t.start_date||''}" onchange="tmStartChange('${id}',this)"></div>
         <div class="field"><label class="fl" for="tmEnd">終了日</label><input id="tmEnd" class="input" type="date" value="${t.end_date||''}" onchange="saveTaskField('${id}','end_date',this.value)"></div>
       </div>
       <div class="field" style="margin-top:12px"><label class="fl">担当</label>${asg}</div>
@@ -1213,6 +1256,7 @@ async function openTaskModal(id,silent){
     </div>
     <div class="modal-f"><button class="btn ghost" onclick="closeModal()">閉じる</button></div>
   </div>`);
+  if(!silent)setTimeout(()=>{const e=document.getElementById('tmTitle');if(e)e.focus();},30);
 }
 async function saveSubField(sid,parentId,field,value){
   if((field==='start_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');refreshAfterTaskEdit(parentId);return;}
@@ -1417,6 +1461,7 @@ function openOrderModal(pid){
     <div class="field"><label class="fl" for="oAmt">金額（円）</label><input id="oAmt" class="input" inputmode="numeric" placeholder="0"></div>
     </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="oSave" onclick="saveOrder()">発注する</button></div></div>`);
   orderKind();
+  setTimeout(()=>{const e=document.getElementById('oTitle');if(e)e.focus();},30);
 }
 function orderKind(){const k=document.getElementById('oKind').value;
   document.getElementById('oVendorF').classList.toggle('hidden',k!=='外注');
@@ -1506,6 +1551,7 @@ function openMemberModal(){
     <div class="field"><label class="fl">所属部署（最大3）</label>${mcheck('mDepts','所属部署',OC.departments.map(d=>({v:d.id,label:d.name})),[],'onMpickChange')}</div>
     <div class="muted" style="font-size:12px;line-height:1.6">発行後、このメールと初期パスワードを本人に渡してください。本人はログイン後に左下「パスワード」から変更できます。</div>
     </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="mSave" onclick="saveMember()">発行</button></div></div>`);
+  setTimeout(()=>{const e=document.getElementById('mName');if(e)e.focus();},30);
 }
 async function saveMember(){
   const name=document.getElementById('mName').value.trim();
