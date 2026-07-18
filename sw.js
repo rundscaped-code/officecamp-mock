@@ -4,7 +4,7 @@
  * データの陳腐化・不整合を避けるため、同一オリジンの静的シェルだけを扱う。
  * 更新手順: シェル（app.html 等）を変えたら VERSION を上げる → 旧キャッシュは activate で破棄。
  */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE_NAME = 'officecamp-shell-' + VERSION;
 
 // プレキャッシュするアプリシェル（すべて同一オリジン・相対パス）
@@ -60,7 +60,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          if (res && res.ok) {
+          // './app.html' キーに保存するのは app.html 本体の応答のみ。
+          // pc.html や index.html の応答を混ぜると、オフライン時のフォールバックが別画面になる。
+          if (res && res.ok && url.pathname.endsWith('/app.html')) {
             const copy = res.clone();
             caches.open(CACHE_NAME).then((c) => c.put('./app.html', copy));
           }
