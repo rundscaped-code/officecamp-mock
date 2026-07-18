@@ -72,7 +72,7 @@
   .btn:disabled{opacity:.5}
   .btn-ghost{background:var(--card);color:var(--ink);border:1.5px solid var(--line);box-shadow:none}
   /* 案件 */
-  .proj{display:flex;flex-direction:column;gap:6px;cursor:pointer}
+  .proj{display:flex;flex-direction:column;gap:6px;cursor:pointer;-webkit-touch-callout:none;user-select:none}
   .proj-top{display:flex;align-items:center;gap:8px}
   .dot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--st-plan)}
   .dot.s-見込{background:var(--st-plan)}.dot.s-進行{background:var(--st-go)}.dot.s-完了{background:var(--st-done)}.dot.s-保留{background:var(--st-hold)}.dot.s-失注{background:var(--st-lost)}
@@ -90,7 +90,7 @@
   .kpi .l{font-size:var(--fs-xs);color:var(--sub);font-weight:700}
   .kpi .n{font-size:16px;font-weight:700;margin-top:3px}
   .kpi.pf{background:var(--accent-soft)}
-  .exp-row{display:flex;align-items:center;padding:13px 16px;gap:10px;border-top:1px solid var(--line)}
+  .exp-row{display:flex;align-items:center;padding:13px 16px;gap:10px;border-top:1px solid var(--line);-webkit-touch-callout:none;user-select:none}
   .exp-row:first-child{border-top:none}
   .exp-row .n{font-weight:600}.exp-row .d{font-size:12px;color:var(--sub);margin-top:2px}
   .exp-row .a{margin-left:auto;font-weight:700}
@@ -191,7 +191,7 @@
   .tk-prog i{display:block;height:100%;background:var(--accent)}
   .tk-badge{font-size:10px;padding:1px 8px;border-radius:10px;font-weight:700;flex:none;background:var(--accent-soft);color:var(--accent)}
   /* lean タスク行 */
-  .tk-lean{display:flex;align-items:center;gap:10px;padding:11px 6px;border-top:1px solid var(--line);cursor:pointer}
+  .tk-lean{display:flex;align-items:center;gap:10px;padding:11px 6px;border-top:1px solid var(--line);cursor:pointer;-webkit-touch-callout:none;user-select:none}
   .tk-lean:first-child{border-top:none}
   .tk-lean:active{background:var(--bg)}
   .tk-lean-main{min-width:0;flex:1}
@@ -216,7 +216,7 @@
   .st-dot{width:10px;height:10px;border-radius:50%;flex:none}
   .st-dot.s-未着手{background:var(--st-plan)}.st-dot.s-進行{background:var(--st-go)}
   .st-dot.s-完了{background:var(--st-done)}.st-dot.s-保留{background:var(--st-hold)}
-  .bcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px;margin-bottom:9px;cursor:pointer;box-shadow:var(--shadow)}
+  .bcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px;margin-bottom:9px;cursor:pointer;box-shadow:var(--shadow);touch-action:manipulation}
   .bcard:active{background:var(--bg)}
   .bpc{font-size:11px;color:var(--sub);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .bcard .bt{font-weight:700;font-size:14px;margin:3px 0 4px}
@@ -454,6 +454,11 @@
       <div id="deptAdminList"></div>
       <button class="btn btn-ghost" onclick="toggleDeptAdmin(false)">閉じる</button>
     </div>
+  </div>
+
+  <!-- 長押しアクションシート（P0-B。案件/タスク/経費/発注の共通枠） -->
+  <div id="actSheet" class="sheet hidden" onclick="if(event.target===this)closeActSheet()">
+    <div class="sheet-card" id="actSheetBody"></div>
   </div>
 
   <!-- 設定未投入バナー -->
@@ -769,6 +774,39 @@ async function saveDepts(pid){
   toast('所属部署を更新しました');
 }
 
+// ---- 汎用長押し＋アクションシート（P0-B。boardPointerDownと同方式: 220ms＋8px移動キャンセル＋vibrate） ----
+let _lpFired=false;
+function lpStart(e,fn){
+  if(e.button&&e.button!==0)return;
+  if(e.target.closest('select'))return;   // ネイティブselectの操作と衝突させない
+  const sx=e.clientX,sy=e.clientY;
+  const timer=setTimeout(()=>{_lpFired=true;if(navigator.vibrate)navigator.vibrate(15);fn();},220);
+  function onMove(ev){ if(Math.hypot(ev.clientX-sx,ev.clientY-sy)>8)cleanup(); }
+  function onUp(){ cleanup(); }
+  function cleanup(){
+    clearTimeout(timer);
+    window.removeEventListener('pointermove',onMove); window.removeEventListener('pointerup',onUp); window.removeEventListener('pointercancel',onUp);
+  }
+  window.addEventListener('pointermove',onMove,{passive:true});
+  window.addEventListener('pointerup',onUp);
+  window.addEventListener('pointercancel',onUp);
+}
+// 長押し発火直後のclickを無視する（onclickの先頭で使う。boardCardClickの_dragJustEndedと同じ考え方）
+function lpGuard(){ if(_lpFired){_lpFired=false;return false;} return true; }
+function openActSheet(title,items){
+  const body=document.getElementById('actSheetBody');
+  body.innerHTML=`<div class="sheet-h">${esc(title)}</div>`+items.map((it,i)=>{
+    if(it.sep)return '<div style="height:1px;background:var(--line);margin:4px 0"></div>';
+    const label=(it.checked?'✓ ':'')+esc(it.label);
+    return `<button type="button" class="btn btn-ghost" style="${it.danger?'color:#B00020;border-color:#B00020':''}" data-as="${i}">${label}</button>`;
+  }).join('');
+  body.querySelectorAll('[data-as]').forEach(btn=>{
+    btn.onclick=()=>{ closeActSheet(); const it=items[+btn.dataset.as]; it.fn&&it.fn(); };
+  });
+  document.getElementById('actSheet').classList.remove('hidden');
+}
+function closeActSheet(){ document.getElementById('actSheet').classList.add('hidden'); }
+
 // ---- データ ----
 async function loadMe(){
   const {data:{user}}=await sb.auth.getUser();
@@ -873,7 +911,7 @@ function renderProjects(){
   if(isDesktop()){ renderProjTable(rows); }
   else {
     list.innerHTML=rows.map(p=>`
-      <div class="card"><div class="pad proj" data-pid="${p.id}" onclick="openDetail('${p.id}')">
+      <div class="card"><div class="pad proj" data-pid="${p.id}" onpointerdown="lpStart(event,()=>projSheet('${p.id}'))" onclick="lpGuard()&&openDetail('${p.id}')">
         <div class="proj-top"><span class="dot s-${p.status}" style="width:9px;height:9px;border-radius:50%"></span>
           <span class="proj-name">${p.code?esc(p.code)+' ':''}${esc(p.name)}</span>
           <div class="profit"><div class="v">粗利 ${man(p.profit)}</div><div class="r">${p.profit_rate}%</div></div></div>
@@ -920,6 +958,19 @@ function showDetailPlaceholder(){
   const b=document.getElementById('detailBody');
   if(b)b.innerHTML='<div class="detail-empty">← 左の一覧から案件を選んでください</div>';
   document.getElementById('dName').textContent='案件詳細';
+}
+// 長押しアクションシート: 経費/タスク/発注のプリセット付き追加・状態変更（P0-B #13）
+function projSheet(pid){
+  const p=projRows.find(x=>x.id===pid); if(!p)return;
+  openActSheet(p.name||'案件',[
+    {label:'詳細を開く',fn:()=>openDetail(pid)},
+    {sep:true},
+    {label:'＋経費を足す',fn:()=>{nav('expense');const s=document.getElementById('proj');if(s)s.value=pid;}},
+    {label:'＋タスクを追加',fn:async()=>{await openDetail(pid);toggleTaskForm(true);}},
+    {label:'＋発注する',fn:()=>{nav('orders');toggleOrderForm(true);const s=document.getElementById('odProj');if(s)s.value=pid;}},
+    {sep:true},
+    ...['見込','進行','完了','失注'].map(s=>({label:'状態: '+s+' にする',checked:p.status===s,fn:()=>updProj(pid,'status',s)})),
+  ]);
 }
 function toggleProjForm(show){
   const f=document.getElementById('projForm');
@@ -980,7 +1031,7 @@ async function openDetail(id){
   const [{data:p},{data:pmeta},{data:exps},tasks,{data:members},{data:logs},{data:ords}]=await Promise.all([
     sb.from('project_costs').select('*').eq('id',id).single(),
     sb.from('projects').select('delivery_date,start_date,client,leader_id').eq('id',id).single(),
-    sb.from('expenses').select('amount,note,spent_at,status,kind,user_id,receipt_url,vendor:vendor_id(name,kind),author:user_id(name,email)')
+    sb.from('expenses').select('id,amount,note,spent_at,status,kind,user_id,receipt_url,vendor:vendor_id(name,kind),author:user_id(name,email)')
       .eq('project_id',id).order('spent_at',{ascending:false}),
     fetchTasks(id),
     sb.from('project_members').select('user_id').eq('project_id',id),
@@ -998,7 +1049,7 @@ async function openDetail(id){
     const who=e.author?.name||e.author?.email||'—';
     const tag=e.kind==='外注'?`<span class="st st-wait">外注${e.vendor?'・'+e.vendor.name:''}</span>`:'';
     const rcpt=e.receipt_url?` <span style="color:var(--accent);font-weight:600;cursor:pointer;white-space:nowrap" onclick="viewReceipt('${esc(e.receipt_url)}')">📎レシート</span>`:'';
-    return `<div class="exp-row"><div><div class="n">${e.note?esc(e.note):'（メモなし）'}${tag}${rcpt}</div>
+    return `<div class="exp-row" onpointerdown="lpStart(event,()=>expSheet('${e.id}'))"><div><div class="n">${e.note?esc(e.note):'（メモなし）'}${tag}${rcpt}</div>
       <div class="d">${new Date(e.spent_at).toLocaleDateString('ja-JP')}・${who}</div></div>
       <div class="a">${yen(e.amount)}<span class="st ${e.status==='承認'?'st-ok':'st-wait'}">${e.status}</span></div></div>`;
   }).join('') || `<div class="empty">経費はまだありません</div>`;
@@ -1012,7 +1063,7 @@ async function openDetail(id){
   // 発注
   const ordRows=(ords||[]).map(o=>{
     const dest=o.kind==='外注'?esc(o.vendor?.name||'外注先'):(deptName(o.to_dept_id)+(o.to_user_id?'・'+personName(o.to_user_id):''));
-    return `<div class="exp-row"><div><div class="n">${esc(o.title)}
+    return `<div class="exp-row" onpointerdown="lpStart(event,()=>orderSheet('${o.id}'))"><div><div class="n">${esc(o.title)}
       <span class="badge ${o.kind==='内注'?'b-may':'b-go'}">${o.kind}</span></div>
       <div class="d">宛先 ${dest}・${o.status}・依頼 ${personName(o.from_user)}</div></div>
       <div class="a">${yen(o.amount)}</div></div>`;
@@ -1363,10 +1414,75 @@ function dateText(t){
 // 1タスク=1行（ステータス色＋内容＋日付）。タップで詳細モーダル
 function taskItemHTML(t){
   const who=(t.task_assignees||[]).map(a=>personName(a.user_id)).join('、');
-  return `<div class="tk-lean" onclick="openTask('${t.id}')">${statusSelect(t)}
+  return `<div class="tk-lean" onpointerdown="lpStart(event,()=>taskSheet('${t.id}'))" onclick="lpGuard()&&openTask('${t.id}')">${statusSelect(t)}
     <div class="tk-lean-main"><div class="tk-title">${esc(t.title)}</div>
       <div class="tk-sub">${dateText(t)}${who?'　担当：'+who:''}</div></div>
     <span class="tk-chev">›</span></div>`;
+}
+// 長押しアクションシート: 状態変更・削除（P0-B #14。ボードカードはドラッグと衝突するため対象外）
+async function taskSheet(id){
+  const {data:t}=await sb.from('tasks').select('id,title,status,parent_task_id').eq('id',id).single();
+  if(!t){toast('タスクが見つかりません');return;}
+  openActSheet(t.title||'タスク',[
+    {label:'詳細を開く',fn:()=>openTask(id)},
+    {sep:true},
+    ...TASK_STATUS.map(s=>({label:'状態: '+s+' にする',checked:t.status===s,fn:()=>updTask(id,'status',s)})),
+    {sep:true},
+    {label:'削除…',danger:true,fn:()=>deleteTaskUI(id,t.title)},
+  ]);
+}
+async function deleteTaskUI(id,title){
+  if(!confirm('「'+(title||'')+'」を削除します。サブタスクも削除されます。'))return;
+  const {error}=await sb.from('tasks').delete().eq('id',id);
+  if(error){toast('削除エラー: '+error.message);return;}
+  toast('タスクを削除しました');
+  refreshTasks();
+}
+// 長押しアクションシート: レシート表示・削除（P0-B #15。本人or経理のみ削除できる）
+async function expSheet(id){
+  const {data:e}=await sb.from('expenses').select('id,amount,user_id,receipt_url').eq('id',id).single();
+  if(!e){toast('経費が見つかりません');return;}
+  const items=[];
+  if(e.receipt_url)items.push({label:'レシートを開く',fn:()=>viewReceipt(e.receipt_url)});
+  if(e.user_id===me.id||isManager()){
+    if(items.length)items.push({sep:true});
+    items.push({label:'削除…',danger:true,fn:()=>deleteExpenseUI(id,e.amount)});
+  }
+  if(!items.length){toast('操作できる項目がありません');return;}
+  openActSheet(yen(e.amount)+' の経費',items);
+}
+async function deleteExpenseUI(id,amount){
+  if(!confirm(yen(amount)+' の経費を削除します。'))return;
+  const {error}=await sb.from('expenses').delete().eq('id',id);
+  if(error){toast('削除エラー: '+error.message);return;}
+  toast('経費を削除しました');
+  if(curDetail)openDetail(curDetail);
+}
+// 長押しアクションシート: 状態変更・削除（P0-B #15。発注行にも同型で配線）
+async function orderSheet(id){
+  const {data:o}=await sb.from('orders').select('id,title,amount,status,from_user').eq('id',id).single();
+  if(!o){toast('発注が見つかりません');return;}
+  const canManage=o.from_user===me.id||isManager();
+  const items=[];
+  if(canManage){
+    ORDER_STATUS.forEach(s=>items.push({label:'状態: '+s+' にする',checked:o.status===s,fn:async()=>{
+      const {error}=await sb.from('orders').update({status:s}).eq('id',id);
+      if(error){toast('状態の保存エラー: '+error.message);return;}
+      toast('発注を「'+s+'」にしました');
+      if(curDetail)openDetail(curDetail);
+    }}));
+    items.push({sep:true});
+    items.push({label:'削除…',danger:true,fn:()=>deleteOrderUI(id,o.title)});
+  }
+  if(!items.length){toast('操作できる項目がありません');return;}
+  openActSheet(o.title||'発注',items);
+}
+async function deleteOrderUI(id,title){
+  if(!confirm('発注「'+(title||'')+'」を取り消します。記録ごと消えます。通常は状態の「取消」を使ってください。'))return;
+  const {error}=await sb.from('orders').delete().eq('id',id);
+  if(error){toast('削除エラー: '+error.message);return;}
+  toast('発注を削除しました');
+  if(curDetail)openDetail(curDetail);
 }
 // ---- タスク詳細モーダル（概要・メモ・担当） ----
 async function openTask(id){
@@ -1512,6 +1628,8 @@ function boardPointerDown(e,taskId){
   function start(){
     started=true; bdrag={taskId};
     card.classList.add('dragging');
+    card.style.touchAction='none';
+    try{card.setPointerCapture(e.pointerId);}catch(_){}
     const g=card.cloneNode(true); g.className='bcard drag-ghost'; g.style.width=card.offsetWidth+'px';
     document.body.appendChild(g); bdrag.ghost=g; moveGhost(sx,sy);
     if(navigator.vibrate)navigator.vibrate(15);
@@ -1533,12 +1651,13 @@ function boardPointerDown(e,taskId){
     cleanup();
   }
   function cleanup(){
-    if(bdrag){ card.classList.remove('dragging'); bdrag.ghost&&bdrag.ghost.remove();
+    if(bdrag){ card.classList.remove('dragging'); card.style.touchAction=''; bdrag.ghost&&bdrag.ghost.remove();
       document.querySelectorAll('.bcol.drop-hot').forEach(c=>c.classList.remove('drop-hot')); bdrag=null; }
-    window.removeEventListener('pointermove',onMove); window.removeEventListener('pointerup',onUp);
+    window.removeEventListener('pointermove',onMove); window.removeEventListener('pointerup',onUp); window.removeEventListener('pointercancel',onUp);
   }
   window.addEventListener('pointermove',onMove,{passive:false});
   window.addEventListener('pointerup',onUp);
+  window.addEventListener('pointercancel',onUp);
 }
 function boardCardClick(e,id){ if(window._dragJustEnded){window._dragJustEnded=false;return;} openTask(id); }
 function timelineHTML(tasks,pmeta){

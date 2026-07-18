@@ -233,12 +233,15 @@
   // 案件メンバーの明示追加/削除（タスク担当の自動昇格は廃止＝v14。メンバーは全タスクを見られる）
   OC.addProjectMember = (project_id, user_id) => OC.sb.from('project_members').insert({ project_id, user_id });
   OC.removeProjectMember = (project_id, user_id) => OC.sb.from('project_members').delete().match({ project_id, user_id });
+  // 案件削除（P0-B）。RLS projects_delete = owner or is_manager（db/schema.sql:153）。
+  // expenses.project_id が on delete restrict のため、経費が残る案件は error.code==='23503' を呼び出し側で文言変換する。
+  OC.deleteProject = (id) => OC.sb.from('projects').delete().eq('id', id);
 
   // ---- 経費 ----
   OC.loadExpenses = async function (limit) {
     await OC._ensureVisible();
     let q = OC.sb.from('expenses')
-      .select('id,amount,note,spent_at,status,kind,project_id,receipt_url,proj:project_id(name,code),author:user_id(name,email),vendor:vendor_id(name)')
+      .select('id,amount,note,spent_at,status,kind,project_id,user_id,receipt_url,proj:project_id(name,code),author:user_id(name,email),vendor:vendor_id(name)')
       .order('spent_at', { ascending: false });
     if (limit && !OC._visIds) q = q.limit(limit);
     const { data } = await q;
@@ -247,12 +250,17 @@
     return rows;
   };
   OC.addExpense = (project_id, amount, note) => OC.sb.from('expenses').insert({ project_id, amount, note, user_id: OC.effectiveUserId() });
+  // 経費の編集・削除（P0-B）。RLS expenses_update/expenses_delete = 本人 or is_manager（db/schema.sql:163,167）。
+  OC.updateExpense = (id, patch) => OC.sb.from('expenses').update(patch).eq('id', id);
+  OC.deleteExpense = (id) => OC.sb.from('expenses').delete().eq('id', id);
 
   // ---- タスク ----
   OC.updateTask = (id, patch) => OC.sb.from('tasks').update(patch).eq('id', id);
   OC.addTask = (payload) => OC.sb.from('tasks').insert({ created_by: OC.effectiveUserId(), ...payload }).select().single();
   OC.assignTask = (task_id, user_id) => OC.sb.from('task_assignees').insert({ task_id, user_id });
   OC.unassignTask = (task_id, user_id) => OC.sb.from('task_assignees').delete().match({ task_id, user_id });
+  // タスク削除（P0-B）。RLS tasks_cud for all（db/v2.sql:193）。parent_task_id は on delete cascade（db/v8.sql:2）なのでサブタスクは自動削除される。
+  OC.deleteTask = (id) => OC.sb.from('tasks').delete().eq('id', id);
   OC.loadAllTasks = async function () {
     await OC._ensureVisible();
     const { data, error } = await OC.sb.from('tasks')
@@ -328,6 +336,8 @@
 
   // ---- 発注 ----
   OC.addOrder = (payload) => OC.sb.from('orders').insert({ from_user: OC.effectiveUserId(), ...payload });
+  // 発注削除（P0-B）。RLS orders_delete = from_user or is_manager（db/v3.sql:40）。
+  OC.deleteOrder = (id) => OC.sb.from('orders').delete().eq('id', id);
   OC.loadOrders = async function () {
     const sel = 'id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,vendor:vendor_id(name),proj:project_id(name)';
     const effectiveId = OC.effectiveUserId();

@@ -336,7 +336,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=15"></script>
+<script src="shared.js?v=16"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -352,6 +352,24 @@ function applyTheme(){let t=null;try{t=localStorage.getItem('oc_theme');}catch(e
 function toggleTheme(){const c=document.documentElement.dataset.theme==='dark'?'dark':'light';const n=c==='dark'?'light':'dark';document.documentElement.dataset.theme=n;try{localStorage.setItem('oc_theme',n);}catch(e){}}
 function modal(html){document.getElementById('modalRoot').innerHTML='<div class="ov" onclick="if(event.target===this)closeModal()">'+html+'</div>';}
 function closeModal(){document.getElementById('modalRoot').innerHTML='';}
+// 共通コンテキストメニュー（右クリック）。.mpop流用・画面端クランプ・既存のグローバルclickリスナーで閉じる。
+// items: [{label,fn,danger,checked,disabled,sep}]
+function ctxMenu(ev,items){
+  ev.preventDefault();
+  document.getElementById('ctxMenu')?.remove();
+  const el=document.createElement('div');
+  el.id='ctxMenu';el.className='mpop';
+  el.style.cssText='position:fixed;display:block;z-index:90;left:'+Math.min(ev.clientX,window.innerWidth-230)+'px;top:'+Math.min(ev.clientY,window.innerHeight-items.length*34-16)+'px';
+  items.forEach(it=>{
+    if(it.sep){el.insertAdjacentHTML('beforeend','<div class="sep"></div>');return;}
+    const row=document.createElement('label');
+    row.textContent=(it.checked?'✓ ':'')+it.label;
+    if(it.danger)row.style.color='var(--bad)';
+    if(it.disabled){row.style.opacity='.5';row.style.cursor='default';}else{row.onclick=()=>{el.remove();it.fn&&it.fn();};}
+    el.appendChild(row);
+  });
+  document.body.appendChild(el);
+}
 
 // ---- 認証 ----
 async function doLogin(){
@@ -537,7 +555,7 @@ function paintProjTable(){
       <th onclick="sortProj('profit')">粗利${ar('profit')}</th>
       <th onclick="sortProj('profit_rate')">粗利率${ar('profit_rate')}</th>
       <th class="l" onclick="sortProj('status')">状態${ar('status')}</th>
-    </tr></thead><tbody>${rows.map(p=>`<tr data-pid="${p.id}" onclick="selectProject('${p.id}')">
+    </tr></thead><tbody>${rows.map(p=>`<tr data-pid="${p.id}" onclick="selectProject('${p.id}')" oncontextmenu="projCtx(event,'${p.id}')">
       <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
       <td>${OC.yen(p.revenue)}</td>
       <td class="${(p.profit||0)<0?'neg':''}">${OC.yen(p.profit)}</td>
@@ -628,12 +646,13 @@ async function saveProjField(id,field,value){
   if(curView==='finance')paintFinance();
   if(curView==='projects'){paintProjTable();selectProject(id);}
 }
-function openProjModal(){
-  const opts=OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+function openProjModal(preset){
+  preset=preset||{};
+  const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===preset.dupParent?'selected':''}>${esc(p.name)}</option>`).join('');
   const effectiveId=OC.effectiveUserId();
   const leaderField=OC.isManager()?`<div class="field"><label class="fl" for="mLeader">案件リーダー</label><select id="mLeader" class="input">${OC.people.map(p=>`<option value="${p.id}" ${p.id===effectiveId?'selected':''}>${esc(p.name||p.email)}</option>`).join('')}</select></div>`:'';
   modal(`<div class="modal"><div class="modal-h">案件を追加</div><div class="modal-b">
-    <div class="field"><label class="fl" for="mName">案件名</label><input id="mName" class="input" placeholder="○○ビル改修"></div>
+    <div class="field"><label class="fl" for="mName">案件名</label><input id="mName" class="input" placeholder="○○ビル改修" value="${esc(preset.dupName||'')}"></div>
     <div class="field"><label class="fl" for="mClient">受注元（任意）</label><input id="mClient" class="input" placeholder="◇◇建設"></div>
     <div class="field"><label class="fl" for="mAmt">受注金額（円・任意）</label><input id="mAmt" class="input" inputmode="numeric" placeholder="0"></div>
     <div style="display:flex;gap:10px"><div class="field" style="flex:1"><label class="fl" for="mStart">開始日</label><input id="mStart" class="input" type="date"></div>
@@ -641,6 +660,36 @@ function openProjModal(){
     <div class="field"><label class="fl" for="mParent">派生元の案件（任意）</label><select id="mParent" class="input"><option value="">新規（派生元なし）</option>${opts}</select></div>
     ${leaderField}
     </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="mSave" onclick="saveProj()">追加</button></div></div>`);
+}
+// 右クリックメニュー: 状態変更・複製・削除（P0-B #7）
+function projCtx(ev,id){
+  const p=OC.projects.find(x=>x.id===id);
+  if(!p){ev.preventDefault();return;}
+  ctxMenu(ev,[
+    {label:'詳細を開く',fn:()=>selectProject(id)},
+    {sep:true},
+    ...PSTATUS.map(s=>({label:s+' にする',checked:p.status===s,fn:()=>saveProjField(id,'status',s)})),
+    {sep:true},
+    {label:'複製して新規…',fn:()=>openProjModal({dupName:(p.name||'')+'（コピー）',dupParent:id})},
+    {sep:true},
+    {label:'削除…',danger:true,fn:()=>deleteProjectUI(id,p.name)},
+  ]);
+}
+async function deleteProjectUI(id,name){
+  if(!confirm('案件「'+(name||'')+'」を削除します。経費・タスク・発注も対象です。よろしいですか？'))return;
+  const {error}=await OC.deleteProject(id);
+  if(error){
+    toast(error.code==='23503'?'経費が残っている案件は削除できません（先に経費を削除）':'削除エラー: '+error.message);
+    return;
+  }
+  toast('案件を削除しました');
+  if(curProject===id){
+    curProject=null;
+    const box=document.getElementById('projDetail');
+    if(box)box.innerHTML='<div class="empty">← 左の一覧から案件を選んでください</div>';
+  }
+  await OC.loadProjects();await OC.projectOptions();
+  if(curView==='projects')paintProjTable();
 }
 async function saveProj(){
   const name=document.getElementById('mName').value.trim();
@@ -707,13 +756,40 @@ async function renderExpenses(c){
 }
 function setExpMode(m){expGroupMode=m;paintExpenses();}
 function expRowsHTML(list){
-  return list.map(e=>`<tr style="cursor:default">
+  return list.map(e=>`<tr style="cursor:default" oncontextmenu="expCtx(event,'${e.id}')">
     <td class="l">${OC.fmtDate(e.spent_at)}</td>
     <td class="l">${esc(e.note||'（メモなし）')}${e.kind==='外注'&&e.vendor?' <span class="pill">外注'+esc(e.vendor.name)+'</span>':''}${receiptLink(e)}</td>
     <td class="l">${esc(e.author?.name||e.author?.email||'—')}</td>
     <td><b>${OC.yen(e.amount)}</b></td>
     <td class="l">${expStatusCell(e)}</td>
   </tr>`).join('');
+}
+// 右クリックメニュー: レシート・承認/差戻・削除（P0-B #9。本人or経理で出し分け）
+function expCtx(ev,id){
+  const e=expCache.find(x=>x.id===id);
+  if(!e){ev.preventDefault();return;}
+  const items=[];
+  if(e.receipt_url)items.push({label:'レシートを開く',fn:()=>viewReceipt(e.receipt_url)});
+  if(OC.isAccounting()){
+    if(items.length)items.push({sep:true});
+    EXP_STATUS.forEach(s=>items.push({label:s+' にする',checked:e.status===s,fn:()=>saveExpStatus(id,s)}));
+  }
+  if(e.user_id===OC.effectiveUserId()||OC.isManager()){
+    if(items.length)items.push({sep:true});
+    items.push({label:'削除…',danger:true,fn:()=>deleteExpenseUI(id,e.amount)});
+  }
+  if(!items.length){ev.preventDefault();return;}
+  ctxMenu(ev,items);
+}
+async function deleteExpenseUI(id,amount){
+  if(!confirm(OC.yen(amount)+' の経費を削除します。'))return;
+  const {error}=await OC.deleteExpense(id);
+  if(error){toast('削除エラー: '+error.message);return;}
+  expCache=expCache.filter(x=>x.id!==id);
+  toast('経費を削除しました');
+  paintExpenses();
+  if(curView==='projects'&&curProject)selectProject(curProject);
+  if(curView==='home')renderHome(document.getElementById('content'));
 }
 function paintExpenses(){
   document.getElementById('egProj').classList.toggle('on',expGroupMode==='proj');
@@ -723,7 +799,7 @@ function paintExpenses(){
   if(expGroupMode==='flat'){
     body.innerHTML=`<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
       <th class="l">日付</th><th class="l">案件 / メモ</th><th class="l">入力者</th><th>金額</th><th class="l">状態</th>
-    </tr></thead><tbody>${expCache.map(e=>`<tr style="cursor:default">
+    </tr></thead><tbody>${expCache.map(e=>`<tr style="cursor:default" oncontextmenu="expCtx(event,'${e.id}')">
       <td class="l">${OC.fmtDate(e.spent_at)}</td>
       <td class="l">${e.proj?.code?'<span class="code">'+esc(e.proj.code)+'</span> ':''}${esc(e.proj?.name||'—')}<div class="muted" style="font-size:12px">${esc(e.note||'（メモなし）')}${receiptLink(e)}</div></td>
       <td class="l">${esc(e.author?.name||e.author?.email||'—')}</td>
@@ -744,20 +820,45 @@ function paintExpenses(){
       <th class="l">日付</th><th class="l">メモ</th><th class="l">入力者</th><th>金額</th><th class="l">状態</th>
     </tr></thead><tbody>${expRowsHTML(g.items)}</tbody></table></div></div>`).join('');
 }
-function openTaskAddModal(pid){
+function openTaskAddModal(pid,preset){
+  preset=preset||{};
   const projField=pid?'':`<div class="field"><label class="fl" for="ntProj">案件</label><select id="ntProj" class="input">${OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')||'<option value="">案件なし</option>'}</select></div>`;
   modal(`<div class="modal"><div class="modal-h">タスクを追加</div><div class="modal-b">
     ${projField}
-    <div class="field"><label class="fl" for="ntTitle">タイトル</label><input id="ntTitle" class="input" placeholder="図面作成 など"></div>
+    <div class="field"><label class="fl" for="ntTitle">タイトル</label><input id="ntTitle" class="input" placeholder="図面作成 など" value="${esc(preset.title||'')}"></div>
     <div class="tm-grid">
-      <div class="field"><label class="fl" for="ntStatus">状態</label><select id="ntStatus" class="input">${TSTATUS.map(s=>`<option ${s==='未着手'?'selected':''}>${s}</option>`).join('')}</select></div>
-      <div class="field"><label class="fl" for="ntLeader">リーダー（進める人）</label><select id="ntLeader" class="input">${leaderOptions('')}</select></div>
-      <div class="field"><label class="fl">担当（複数可）</label>${mcheck('ntAsg','担当',OC.people.map(p=>({v:p.id,label:(p.name||p.email)+'（'+(p.role||'—')+'）'})),[],'onMpickChange')}</div>
-      <div class="field"><label class="fl" for="ntStart">開始日</label><input id="ntStart" class="input" type="date"></div>
-      <div class="field"><label class="fl" for="ntEnd">終了日</label><input id="ntEnd" class="input" type="date"></div>
+      <div class="field"><label class="fl" for="ntStatus">状態</label><select id="ntStatus" class="input">${TSTATUS.map(s=>`<option ${s===(preset.status||'未着手')?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="field"><label class="fl" for="ntLeader">リーダー（進める人）</label><select id="ntLeader" class="input">${leaderOptions(preset.leaderId||'')}</select></div>
+      <div class="field"><label class="fl">担当（複数可）</label>${mcheck('ntAsg','担当',OC.people.map(p=>({v:p.id,label:(p.name||p.email)+'（'+(p.role||'—')+'）'})),preset.asg||[],'onMpickChange')}</div>
+      <div class="field"><label class="fl" for="ntStart">開始日</label><input id="ntStart" class="input" type="date" value="${preset.start||''}"></div>
+      <div class="field"><label class="fl" for="ntEnd">終了日</label><input id="ntEnd" class="input" type="date" value="${preset.end||''}"></div>
     </div></div>
     <div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" onclick="saveNewTask('${pid||''}')">追加</button></div></div>`);
   setTimeout(()=>{const e=document.getElementById('ntTitle');if(e)e.focus();},30);
+}
+// 右クリックメニュー: 状態変更・複製・削除（P0-B #8。リスト行・ガントバー・ボードカード共通）
+function taskCtx(ev,id){
+  const t=tasksCache.find(x=>x.id===id);
+  if(!t){ev.preventDefault();return;}
+  ctxMenu(ev,[
+    {label:'詳細を開く',fn:()=>openTaskModal(id)},
+    {sep:true},
+    ...TSTATUS.map(s=>({label:s+' にする',checked:(t.status||'未着手')===s,fn:()=>saveTaskField(id,'status',s)})),
+    {sep:true},
+    {label:'複製',fn:()=>openTaskAddModal(t.project_id,{title:t.title,status:'未着手',leaderId:t.leader_id,start:t.start_date,end:t.end_date,asg:(t.task_assignees||[]).map(a=>a.user_id)})},
+    {sep:true},
+    {label:'削除…',danger:true,fn:()=>deleteTaskUI(id,t.title)},
+  ]);
+}
+async function deleteTaskUI(id,title){
+  const subs=tasksCache.filter(s=>s.parent_task_id===id);
+  if(!confirm(subs.length?('サブタスク'+subs.length+'件も一緒に削除します。よろしいですか？'):('タスク「'+(title||'')+'」を削除します。')))return;
+  const {error}=await OC.deleteTask(id);
+  if(error){toast('削除エラー: '+error.message);return;}
+  toast('タスクを削除しました');
+  if(document.getElementById('tmRoot'))closeModal();
+  await reloadTasks();
+  if(curView==='projects'&&curProject)selectProject(curProject);
 }
 async function saveNewTask(pid){
   const v=x=>document.getElementById(x).value;
@@ -865,7 +966,7 @@ function paintFinance(){
     <th onclick="sortFin('profit')">粗利${ar('profit')}</th>
     <th onclick="sortFin('profit_rate')" title="粗利率 ＝ 粗利 ÷ 受注">粗利率${ar('profit_rate')}</th>
     <th class="l">納品</th>
-  </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:default">
+  </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:default" oncontextmenu="finCtx(event,'${p.id}')">
     <td class="l"><b><span class="link" onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','status')"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'—')}</span></td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','leader_id')">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
@@ -876,6 +977,16 @@ function paintFinance(){
   </tr>`).join('')||'<tr><td class="empty" colspan="9">該当する案件がありません</td></tr>'}</tbody></table>`;
 }
 
+// 右クリックメニュー: 案件を開く・状態変更（P0-B #12。金額・日付は誤爆しやすいので載せない）
+function finCtx(ev,id){
+  const p=OC.projects.find(x=>x.id===id);
+  if(!p){ev.preventDefault();return;}
+  ctxMenu(ev,[
+    {label:'案件を開く',fn:()=>{go('projects');setTimeout(()=>selectProject(id),40);}},
+    {sep:true},
+    ...PSTATUS.map(s=>({label:s+' にする',checked:p.status===s,fn:()=>saveProjField(id,'status',s)})),
+  ]);
+}
 function finEdit(td,pid,field){
   if(td.querySelector('select,input'))return;
   const p=OC.projects.find(x=>x.id===pid);if(!p)return;
@@ -930,7 +1041,7 @@ function onFilterCheck(id,base){
   paintTasks();
 }
 function clearTaskFilter(){taskFilter={proj:'',status:[],asgs:[]};saveTaskFilter();renderTasks(document.getElementById('content'));}
-document.addEventListener('click',e=>{if(!e.target.closest('.mfilt'))document.querySelectorAll('.mfilt.open').forEach(x=>x.classList.remove('open'));if(!e.target.closest('#barPop')&&!e.target.closest('.gbar'))closeBarPop();});
+document.addEventListener('click',e=>{if(!e.target.closest('.mfilt'))document.querySelectorAll('.mfilt.open').forEach(x=>x.classList.remove('open'));if(!e.target.closest('#barPop')&&!e.target.closest('.gbar'))closeBarPop();if(!e.target.closest('#ctxMenu'))document.getElementById('ctxMenu')?.remove();});
 async function renderTasks(c){
   c.innerHTML='<div class="empty">読み込み中…</div>';
   try{ tasksCache=await OC.loadAllTasks(); }
@@ -1056,7 +1167,7 @@ function paintTaskList(body){
   body.innerHTML=taskGroups().map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
-    const row=(t,sub)=>`<tr class="trow s-row-${t.status||'未着手'}" style="cursor:default">
+    const row=(t,sub)=>`<tr class="trow s-row-${t.status||'未着手'}" style="cursor:default" oncontextmenu="taskCtx(event,'${t.id}')">
       <td style="width:6px;padding:0;background:${stColor(t.status)}"></td>
       <td class="l" style="${sub?'padding-left:28px':''}">${sub?'<span class="muted">↳ </span>':''}<span class="stpill st-${t.status||'未着手'}">${esc(t.status||'未着手')}</span> ${titleSpan(t)}</td>
       <td class="l ed" style="width:110px">${statusSel(t)}</td>
@@ -1079,7 +1190,7 @@ function paintTaskBoard(body){
     const list=tops.filter(t=>(t.status||'未着手')===st);
     return `<div class="bcol" data-st="${st}" ondragover="boardOver(event,this)" ondragleave="this.classList.remove('over')" ondrop="boardDrop(event,this)">
       <div class="bcol-h"><i class="dot s-${st}"></i>${st}<span class="c">${list.length}</span></div>
-      ${list.map(t=>`<div class="bcard" draggable="true" ondragstart="boardDrag(event,'${t.id}')" ondragend="this.classList.remove('drag')">
+      ${list.map(t=>`<div class="bcard" draggable="true" oncontextmenu="taskCtx(event,'${t.id}')" ondragstart="boardDrag(event,'${t.id}')" ondragend="this.classList.remove('drag')">
         <div class="bpj">${esc(t.proj?.name||'案件なし')}</div>
         <div class="bt">${titleSpan(t)}</div>
         ${asgHTML(t)}
@@ -1129,7 +1240,7 @@ function paintTaskTimeline(body){
     const wd=d.getDay();const ds=ymd(d);return `<div class="gday ${wd===0||wd===6?'we':''} ${ds===today?'td':''} ${d.getDate()===1?'mo':''}">${d.getMonth()+1}/${d.getDate()}<br>${'日月火水木金土'[wd]}</div>`;}).join('')}</div></div>`;
   const bar=t=>{if(!t.start_date||!t.end_date)return '';const left=dDiff(minD,t.start_date)*W;const w=(dDiff(t.start_date,t.end_date)+1)*W;
     const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
-    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openBarPop(event,'${t.id}')" title="${esc(t.title)}（${esc(t.status||'未着手')}${who?'・'+who:''}）"><span style="position:relative;z-index:1">${esc(t.title)}</span></div>`;};
+    return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openBarPop(event,'${t.id}')" oncontextmenu="taskCtx(event,'${t.id}')" title="${esc(t.title)}（${esc(t.status||'未着手')}${who?'・'+who:''}）"><span style="position:relative;z-index:1">${esc(t.title)}</span></div>`;};
   const rows=groups.map(g=>{
     const tops=g.items.filter(t=>!t.parent_task_id);
     const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
@@ -1174,11 +1285,13 @@ async function saveOrderStatus(id,status){
   toast('発注を「'+status+'」にしました');
   if(curView==='orders')renderOrders(document.getElementById('content'));
 }
+let ordersCache=[];
 async function renderOrders(c){
   document.getElementById('topActions').innerHTML='<button class="btn" onclick="openOrderModal()">＋ 発注する</button>';
   c.innerHTML='<div class="empty">読み込み中…</div>';
   const {out,inbound}=await OC.loadOrders();
-  const oCard=(o,recv)=>`<tr style="cursor:default">
+  ordersCache=[...out.map(o=>({...o,recv:false})),...inbound.map(o=>({...o,recv:true}))];
+  const oCard=(o,recv)=>`<tr style="cursor:default" oncontextmenu="orderCtx(event,'${o.id}')">
     <td class="l"><b>${esc(o.title)}</b> <span class="pill">${esc(o.kind)}</span></td>
     <td class="l">${o.project_id?`<span class="link" onclick="go('projects');setTimeout(()=>selectProject('${o.project_id}'),40)">${esc(o.proj?.name||'案件')}</span>`:'—'}</td>
     <td class="l">${recv?('依頼 '+esc(OC.personName(o.from_user))):('宛先 '+(o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))))}</td>
@@ -1188,6 +1301,32 @@ async function renderOrders(c){
     <div class="card"><div class="card-h">自分が出した発注</div><div class="card-b" style="padding:0">${tbl(out,false,'まだ発注はありません')}</div></div>
     <div class="card"><div class="card-h">自分が受けた内注</div><div class="card-b" style="padding:0">${tbl(inbound,true,'受けた内注はありません')}</div></div>
   </div>`;
+}
+// 右クリックメニュー: 状態変更・案件ジャンプ・削除（P0-B #10。「取消」と「削除」は別項目）
+function orderCtx(ev,id){
+  const o=ordersCache.find(x=>x.id===id);
+  if(!o){ev.preventDefault();return;}
+  const can=o.recv?(o.to_user_id===OC.effectiveUserId()||OC.isManager()):(o.from_user===OC.effectiveUserId()||OC.isManager());
+  const items=[];
+  if(o.project_id)items.push({label:'案件を開く',fn:()=>{go('projects');setTimeout(()=>selectProject(o.project_id),40);}});
+  if(can){
+    if(items.length)items.push({sep:true});
+    ORDER_STATUS.forEach(s=>items.push({label:s+' にする',checked:o.status===s,fn:()=>saveOrderStatus(o.id,s)}));
+  }
+  if(o.from_user===OC.effectiveUserId()||OC.isManager()){
+    if(items.length)items.push({sep:true});
+    items.push({label:'削除…',danger:true,fn:()=>deleteOrderUI(o.id,o.title)});
+  }
+  if(!items.length){ev.preventDefault();return;}
+  ctxMenu(ev,items);
+}
+async function deleteOrderUI(id,title){
+  if(!confirm('発注「'+(title||'')+'」を取り消します。記録ごと消えます。通常は状態の「取消」を使ってください。'))return;
+  const {error}=await OC.deleteOrder(id);
+  if(error){toast('削除エラー: '+error.message);return;}
+  toast('発注を削除しました');
+  if(curView==='orders')renderOrders(document.getElementById('content'));
+  if(curView==='projects'&&curProject)selectProject(curProject);
 }
 function openOrderModal(pid){
   const projOpts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===pid?'selected':''}>${esc(p.name)}</option>`).join('');
@@ -1266,11 +1405,22 @@ async function renderMembers(c){
           const loginBtn=p.id===OC.me.id
             ? '<span class="muted">自分</span>'
             : `<button class="btn ghost sm" onclick="startImpersonation('${p.id}')">代理操作</button>`;
-          return `<tr style="cursor:default"><td class="l"><b>${esc(p.name||'未設定')}</b></td><td class="l">${esc(p.email||'')}</td><td class="l"><span class="role-tag">${esc(p.role||'—')}</span></td><td class="l">${esc(depts)}</td><td class="l"><button class="btn ghost sm" onclick="openMemberEdit('${p.id}')">編集</button> ${loginBtn}</td></tr>`;
+          return `<tr style="cursor:default" oncontextmenu="memberCtx(event,'${p.id}')"><td class="l"><b>${esc(p.name||'未設定')}</b></td><td class="l">${esc(p.email||'')}</td><td class="l"><span class="role-tag">${esc(p.role||'—')}</span></td><td class="l">${esc(depts)}</td><td class="l"><button class="btn ghost sm" onclick="openMemberEdit('${p.id}')">編集</button> ${loginBtn}</td></tr>`;
         }).join('') || '<tr><td class="empty" colspan="5">メンバーがいません</td></tr>'}</tbody>
       </table>
     </div>
   </div>`;
+}
+// 右クリックメニュー: 編集・代理操作・パスワード初期化・削除（P0-B #11。既存関数を呼ぶだけ）
+function memberCtx(ev,id){
+  const p=OC.peopleById[id];
+  if(!p){ev.preventDefault();return;}
+  const isSelf=id===OC.me.id;
+  const items=[{label:'編集',fn:()=>openMemberEdit(id)}];
+  if(!isSelf)items.push({label:'代理操作',fn:()=>startImpersonation(id)});
+  items.push({sep:true},{label:'パスワード初期化…',fn:()=>resetMemberPasswordUI(id)});
+  if(!isSelf)items.push({label:'削除…',danger:true,fn:()=>openMemberDeleteConfirm(id)});
+  ctxMenu(ev,items);
 }
 function openMemberModal(){
   const pw=genPassword();
@@ -1345,7 +1495,7 @@ function openMemberDeleteConfirm(userId){
       ・過去のタスク・経費・発注などの履歴がある場合、記録保護のためメンバー一覧には「ログイン不可」の状態で残ることがあります（履歴データは消えません）。<br>
       ・本当に削除する場合のみ、下に <b>${esc(name)}</b> と正確に入力してください。
     </div>
-    <input id="delConfirmInput" class="input" placeholder="${esc(name)} と入力" oninput="document.getElementById('delConfirmBtn').disabled=(this.value!==${JSON.stringify(name)})">
+    <input id="delConfirmInput" class="input" data-n="${esc(name)}" placeholder="${esc(name)} と入力" oninput="document.getElementById('delConfirmBtn').disabled=(this.value!==this.dataset.n)">
     </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="delConfirmBtn" style="background:#c0392b;color:#fff;border-color:#c0392b" disabled onclick="confirmDeleteMember('${userId}')">削除する</button></div></div>`);
 }
 async function confirmDeleteMember(userId){
