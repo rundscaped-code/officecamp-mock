@@ -225,7 +225,7 @@
       OC.sb.from('expenses').select('amount,note,spent_at,status,kind,receipt_url,author:user_id(name,email),vendor:vendor_id(name)').eq('project_id', id).order('spent_at', { ascending: false }),
       OC.sb.from('orders').select('id,kind,amount,title,status,from_user,to_user_id,to_dept_id,vendor:vendor_id(name)').eq('project_id', id).order('created_at', { ascending: false }),
       OC.sb.from('project_members').select('user_id').eq('project_id', id),
-      OC.sb.from('tasks').select('id,title,status,start_date,end_date,progress,parent_task_id,task_assignees(user_id)').eq('project_id', id).order('start_date', { nullsFirst: false }),
+      OC.sb.from('tasks').select('id,title,status,start_date,end_date,progress,leader_id,parent_task_id,task_assignees(user_id)').eq('project_id', id).order('start_date', { nullsFirst: false }),
     ]);
     return { p: { ...(p || {}), ...(pmeta || {}) }, expenses: exps || [], orders: ords || [], members: members || [], tasks: tasks || [] };
   };
@@ -265,12 +265,22 @@
   OC.deleteTask = (id) => OC.sb.from('tasks').delete().eq('id', id);
   OC.loadAllTasks = async function () {
     await OC._ensureVisible();
-    const { data, error } = await OC.sb.from('tasks')
+    if (OC._visIds && OC._visIds.size === 0) return [];
+    // 取得は created_at 降順＋limit(2000)（start_date昇順のままだと日付未設定＝NULLS LASTで
+    // 新規タスクから先に切り捨てられるため）。表示順は取得後に start_date 昇順へ並べ替える。
+    let q = OC.sb.from('tasks')
       .select('id,project_id,title,start_date,end_date,status,progress,leader_id,parent_task_id,task_assignees(user_id)')
-      .order('start_date', { ascending: true });
+      .order('created_at', { ascending: false })
+      .limit(2000);
+    if (OC._visIds) q = q.in('project_id', [...OC._visIds]);
+    const { data, error } = await q;
     if (error) throw error;
-    let rows = data || [];
-    if (OC._visIds) rows = rows.filter((t) => OC._visIds.has(t.project_id));
+    let rows = (data || []).sort((a, b) => {
+      if (!a.start_date && !b.start_date) return 0;
+      if (!a.start_date) return 1;
+      if (!b.start_date) return -1;
+      return a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0;
+    });
     // 案件名/日付は project_task_labels 経由（メンバー外のタスク担当者にも安全に返る。金額/客先は含まない・v17）。
     // projects への直埋め込みだと、案件メンバーでない担当者には行ごとRLSでnullになり案件名が消える。
     const projIds = [...new Set(rows.map((t) => t.project_id).filter(Boolean))];
@@ -340,6 +350,8 @@
   OC.addOrder = (payload) => OC.sb.from('orders').insert({ from_user: OC.effectiveUserId(), ...payload });
   // 発注削除（P0-B）。RLS orders_delete = from_user or is_manager（db/v3.sql:40）。
   OC.deleteOrder = (id) => OC.sb.from('orders').delete().eq('id', id);
+  // 発注の金額・依頼内容のその場編集（P3）。RLS orders_update = from_user/to_user_id/is_manager（db/v3.sql）。
+  OC.updateOrder = (id, patch) => OC.sb.from('orders').update(patch).eq('id', id);
   OC.loadOrders = async function () {
     const sel = 'id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,vendor:vendor_id(name),proj:project_id(name)';
     const effectiveId = OC.effectiveUserId();
@@ -347,9 +359,10 @@
     if (!effectiveId) return { out: [], inbound: [] };
     const deptList = OC.effectiveDepts();
     const inFilter = ['to_user_id.eq.' + effectiveId].concat(deptList.map((d) => 'to_dept_id.eq.' + d)).join(',');
+    // 取消・完了も含めて永久に積み上がるのを防ぐため直近300件に制限（P3）。
     const [{ data: out }, { data: inb }] = await Promise.all([
-      OC.sb.from('orders').select(sel).eq('from_user', effectiveId).order('created_at', { ascending: false }),
-      OC.sb.from('orders').select(sel).or(inFilter).order('created_at', { ascending: false }),
+      OC.sb.from('orders').select(sel).eq('from_user', effectiveId).order('created_at', { ascending: false }).limit(300),
+      OC.sb.from('orders').select(sel).or(inFilter).order('created_at', { ascending: false }).limit(300),
     ]);
     return { out: out || [], inbound: inb || [] };
   };
