@@ -346,6 +346,26 @@
     return t;
   };
 
+  // ---- 通知バッジ（P4-8）: 自分宛て内注(依頼中)・自分の差戻経費の件数。
+  // count は head:true で件数のみ取得（全行フェッチしない）。既読化はlocalStorageの最終閲覧時刻と
+  // created_at を比較し、閲覧後に増えた分だけを「未読」として数える。
+  OC.badgeSeenAt = (key) => { try { return localStorage.getItem('oc_seen_' + key); } catch (e) { return null; } };
+  OC.badgeMarkSeen = (key) => { try { localStorage.setItem('oc_seen_' + key, new Date().toISOString()); } catch (e) {} };
+  OC.loadBadgeCounts = async function () {
+    const uid = OC.effectiveUserId();
+    if (!uid) return { orders: 0, expense: 0 };
+    const deptList = OC.effectiveDepts();
+    const orFilter = ['to_user_id.eq.' + uid].concat(deptList.map((d) => 'to_dept_id.eq.' + d)).join(',');
+    const seenO = OC.badgeSeenAt('orders');
+    let qO = OC.sb.from('orders').select('id', { count: 'exact', head: true }).or(orFilter).eq('status', '依頼中');
+    if (seenO) qO = qO.gt('created_at', seenO);
+    // 差戻は既存行のstatus更新でcreated_atが変わらず「未読」判定が成立しないため、
+    // 解消（status変更）されるまで件数をそのまま出し続ける（P4-8修正）。
+    const qE = OC.sb.from('expenses').select('id', { count: 'exact', head: true }).eq('user_id', uid).eq('status', '差戻');
+    const [{ count: co }, { count: ce }] = await Promise.all([qO, qE]);
+    return { orders: co || 0, expense: ce || 0 };
+  };
+
   // ---- 発注 ----
   OC.addOrder = (payload) => OC.sb.from('orders').insert({ from_user: OC.effectiveUserId(), ...payload });
   // 発注削除（P0-B）。RLS orders_delete = from_user or is_manager（db/v3.sql:40）。

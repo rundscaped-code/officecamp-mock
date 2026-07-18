@@ -278,9 +278,33 @@
     .kpis{grid-template-columns:repeat(2,1fr)}
     .card-b{overflow-x:auto}
   }
+  /* 起動スプラッシュ（P4-9）: boot完了まで#login/#appは共にhiddenで白画面になるため上に重ねる */
+  .splash{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+  .splash-logo{width:56px;height:56px;border-radius:14px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px}
+  .splash-text{color:var(--sub);font-size:13.5px;font-weight:700}
+  /* 通知バッジ（P4-8）: 自分宛て内注(依頼中)・自分の差戻経費の件数 */
+  .nav a,.nav button{position:relative}
+  .navbadge{position:absolute;top:6px;right:8px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;
+    background:var(--bad);color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center}
+  /* 印刷（P4-12）: サイドバー/ツールバー類を消し、経理一覧・案件詳細をページ幅に収める */
+  @media print{
+    .side,.top,.toolbar,.btn,.toast,#modalRoot,#barPop{display:none!important}
+    .app{display:block;height:auto}
+    .main{overflow:visible}
+    .content{overflow:visible;padding:0}
+    .maxw{max-width:none;margin:0}
+    .md{grid-template-columns:1fr}
+    .md .list-card,.md .detail-card{max-height:none;overflow:visible}
+    .card-b{max-height:none!important;overflow:visible!important}
+    .card{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
+    body{background:#fff}
+  }
 </style>
 </head>
 <body>
+
+<!-- 起動スプラッシュ（P4-9）: boot完了で#hideSplashが隠す -->
+<div id="splash" class="splash"><div class="splash-logo">⛺</div><div class="splash-text">読み込み中…</div></div>
 
 <!-- ログイン -->
 <div id="login" class="login-screen hidden">
@@ -306,9 +330,9 @@
     <nav class="nav" id="nav">
       <button type="button" data-v="home"     onclick="go('home')"><span class="ic">▦</span> ホーム</button>
       <button type="button" data-v="projects" onclick="go('projects')"><span class="ic">▤</span> 案件</button>
-      <button type="button" data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費</button>
+      <button type="button" data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費<span id="badgeExpensesPC" class="navbadge hidden"></span></button>
       <button type="button" data-v="tasks"    onclick="go('tasks')"><span class="ic">☷</span> タスク</button>
-      <button type="button" data-v="orders"   onclick="go('orders')"><span class="ic">⇄</span> 発注</button>
+      <button type="button" data-v="orders"   onclick="go('orders')"><span class="ic">⇄</span> 発注<span id="badgeOrdersPC" class="navbadge hidden"></span></button>
       <div class="navsec hidden" id="adminSec">管理</div>
       <button type="button" data-v="finance" id="financeNav" class="hidden" onclick="go('finance')"><span class="ic">▣</span> 経理</button>
       <button type="button" data-v="members" id="membersNav" class="hidden" onclick="go('members')"><span class="ic">👥</span> メンバー</button>
@@ -337,7 +361,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=18"></script>
+<script src="shared.js?v=19"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -445,6 +469,7 @@ function go(v,fromPop){
     v='home';
   }
   curView=v;
+  markBadgeSeenPC(v);
   // リロードで直前のviewへ戻れるようにhistoryへ同期（同一viewへの連続pushは抑止）。
   // popstate起点(fromPop)はpushStateすると再入ループになるためreplaceStateに留める。
   if(location.hash!=='#'+v){
@@ -468,6 +493,24 @@ window.addEventListener('popstate',()=>{
   const h=(location.hash||'').slice(1);
   go(h||'home',true);
 });
+// ---- 通知バッジ（P4-8） ----
+function paintBadgePC(id,n){
+  const b=document.getElementById(id);if(!b)return;
+  if(!n){b.classList.add('hidden');b.textContent='';return;}
+  b.textContent=n>99?'99+':n;b.classList.remove('hidden');
+}
+async function refreshBadges(){
+  let counts={orders:0,expense:0};
+  try{ counts=await OC.loadBadgeCounts(); }catch(e){ console.warn('[badge] 取得失敗',e); }
+  paintBadgePC('badgeExpensesPC',counts.expense);
+  paintBadgePC('badgeOrdersPC',counts.orders);
+}
+// タブ/ビューを開いたら既読化（P4-8）。差戻経費は「見た」では解消しないため対象外。
+function markBadgeSeenPC(v){
+  if(v!=='orders')return;
+  OC.badgeMarkSeen('orders');
+  paintBadgePC('badgeOrdersPC',0);
+}
 function updateImpersonationBar(){
   const bar=document.getElementById('impersonationBar');
   if(!bar)return;
@@ -531,25 +574,27 @@ async function renderHome(c){
     return;
   }
   const active=ps.filter(p=>p.status==='進行');
-  const rev=ps.reduce((s,p)=>s+(p.revenue||0),0);
-  const prof=ps.reduce((s,p)=>s+(p.profit||0),0);
-  const top=[...ps].sort((a,b)=>(b.profit||0)-(a.profit||0)).slice(0,6);
+  // KPIは進行・完了のみ集計（見込・失注を含めると受注/粗利が実態より大きく出るため。P4-10）
+  const counted=ps.filter(p=>p.status==='進行'||p.status==='完了');
+  const rev=counted.reduce((s,p)=>s+(p.revenue||0),0);
+  const prof=counted.reduce((s,p)=>s+(p.profit||0),0);
+  const top=[...counted].sort((a,b)=>(b.profit||0)-(a.profit||0)).slice(0,6);
   c.innerHTML=`
     <div class="kpis">
       <div class="kpi"><div class="l">案件数</div><div class="n">${ps.length}</div><div class="s">進行中 ${active.length}</div></div>
-      <div class="kpi"><div class="l">受注合計</div><div class="n">${OC.yen(rev)}</div></div>
-      <div class="kpi"><div class="l">粗利合計</div><div class="n">${OC.yen(prof)}</div><div class="s">粗利率 ${rev?Math.round(prof/rev*100):0}%</div></div>
+      <div class="kpi"><div class="l">受注合計</div><div class="n">${OC.yen(rev)}</div><div class="s">進行＋完了のみ</div></div>
+      <div class="kpi"><div class="l">粗利合計</div><div class="n">${OC.yen(prof)}</div><div class="s">粗利率 ${rev?Math.round(prof/rev*100):0}%・進行＋完了のみ</div></div>
       ${OC.isManager()?`<div class="kpi"><div class="l">登録メンバー</div><div class="n">${OC.people.length}</div></div>`:`<div class="kpi"><div class="l">進行中の案件</div><div class="n">${active.length}</div></div>`}
     </div>
     <div class="grid2">
-      <div class="card"><div class="card-h">粗利トップ案件</div><div class="card-b" style="padding:0">
+      <div class="card"><div class="card-h">粗利トップ案件<span class="muted" style="font-weight:600;font-size:11.5px;margin-left:6px">進行＋完了のみ</span></div><div class="card-b" style="padding:0">
         <table class="tbl"><tbody>${top.map(p=>`<tr onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),50)">
           <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b></td>
           <td>${OC.yen(p.revenue)}</td><td class="${(p.profit||0)<0?'neg':'pos'}">${OC.yen(p.profit)}</td>
           <td><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td></tr>`).join('')||'<tr><td class="empty">案件がありません</td></tr>'}</tbody></table>
       </div></div>
-      <div class="card"><div class="card-h">最近の経費</div><div class="card-b" style="padding:0">
-        ${exps.length?exps.map(e=>`<div class="ln" style="padding:11px 16px;border-bottom:1px solid var(--line)">
+      <div class="card"><div class="card-h">最近の経費<span style="margin-left:auto;font-size:12px;color:var(--accent);font-weight:700;cursor:pointer" onclick="go('expenses')">経費タブへ ›</span></div><div class="card-b" style="padding:0">
+        ${exps.length?exps.map(e=>`<div class="ln" style="padding:11px 16px;border-bottom:1px solid var(--line);cursor:pointer" onclick="go('projects');setTimeout(()=>selectProject('${e.project_id}'),50)">
           <div><div><b>${esc(e.note||'（メモなし）')}</b></div>
           <div class="muted" style="font-size:12px">${esc(e.proj?.name||'—')}・${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}</div></div>
           <div class="a">${OC.yen(e.amount)}</div></div>`).join(''):'<div class="empty">経費はまだありません</div>'}
@@ -856,7 +901,10 @@ async function renderExpenses(c){
     return;
   }
   const months=[...new Set(expCache.map(e=>(e.spent_at||'').slice(0,7)).filter(Boolean))].sort().reverse();
-  c.innerHTML=`<div class="toolbar">
+  const guide=!OC.projects.length?`<div class="card" style="margin-bottom:16px;background:var(--accent-soft)"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <b>まず案件を1件作成してください</b><button class="btn sm" style="margin-left:auto" onclick="go('projects');openProjModal()">＋ 案件を追加</button>
+  </div></div>`:'';
+  c.innerHTML=`${guide}<div class="toolbar">
     <input id="xSearch" class="input search" placeholder="🔍 メモ・案件名・入力者" value="${esc(expFilter.q)}" oninput="setExpQ(this.value)">
     <select id="xStatus" class="input" onchange="setExpStatusFilter(this.value)"><option value="">状態：すべて</option>${EXP_STATUS.map(s=>`<option value="${s}" ${s===expFilter.status?'selected':''}>${s}</option>`).join('')}</select>
     <select id="xMonth" class="input" onchange="setExpMonthFilter(this.value)"><option value="">月：すべて</option>${months.map(m=>`<option value="${m}" ${m===expFilter.month?'selected':''}>${m}</option>`).join('')}</select>
@@ -1350,7 +1398,7 @@ async function tmStartChange(id,el){
   saveTaskField(id,'start_date',el.value);
 }
 async function assignPick(id,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.assignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast('担当を追加');refreshAfterTaskEdit(id);}
-async function removeAsg(id,uid){const {error}=await OC.unassignTask(id,uid);if(error){toast('エラー: '+error.message);return;}refreshAfterTaskEdit(id);}
+async function removeAsg(id,uid){const n=OC.personName(uid);const {error}=await OC.unassignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast(n+' を担当から外しました');refreshAfterTaskEdit(id);}
 async function addMemberPick(pid,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.addProjectMember(pid,uid);if(error){toast('メンバー追加エラー: '+error.message);return;}toast('メンバーを追加');selectProject(pid);}
 async function removeMember(pid,uid){const {error}=await OC.removeProjectMember(pid,uid);if(error){toast('メンバー削除エラー: '+error.message);return;}toast('メンバーを外しました');selectProject(pid);}
 // --- タスク詳細モーダル ---
@@ -1781,7 +1829,7 @@ function openMemberDeleteConfirm(userId){
   if(!p){toast('メンバーが見つかりません');return;}
   const name=p.name||p.email||'';
   modal(`<div class="modal"><div class="modal-h" style="color:#c0392b">⚠ メンバーを削除</div><div class="modal-b">
-    <div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:12px;margin-bottom:12px;line-height:1.7">
+    <div style="background:#fdecea;color:#7a1f18;border:1px solid #f5c6cb;border-radius:8px;padding:12px;margin-bottom:12px;line-height:1.7">
       <b>${esc(name)}</b>（${esc(p.email||'')}）を削除しようとしています。<br>
       ・ログインは<b>即座に無効化</b>され、二度とログインできなくなります。<br>
       ・この操作は<b>取り消せません</b>。<br>
@@ -1842,21 +1890,34 @@ async function boot(){
   await Promise.all([OC.loadPeople(),OC.loadDepartments(),OC.loadVendors(),OC.projectOptions()]);
   try{ await OC.loadProjects(); }catch(e){ console.error('[boot] loadProjects失敗',e); }
   refreshShell();
+  await refreshBadges();   // go()より先に確定させる。順序が逆だとmarkBadgeSeenPCの既読化前の件数で塗り直されて残る（P4-8）
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
+  hideSplash();
   if(OC.impersonatingUser)toast('前回の代理操作（'+(OC.impersonatingUser.name||OC.impersonatingUser.email)+'）を継続中');
   const h=(location.hash||'').slice(1);
   go(h||'home',true);   // リロード時は直前のviewへ復元（無ければホーム）。fromPop=trueでpush抑止
 }
+// 起動スプラッシュ（P4-9）: ログイン画面・オフライン検知など、boot以外でも画面を出す直前に隠す
+function hideSplash(){ document.getElementById('splash')?.classList.add('hidden'); }
 (async function init(){
   applyTheme();
-  if(!OC.init()){document.getElementById('login').classList.remove('hidden');
-    document.getElementById('lMsg').textContent='Supabase未設定（config.js）';return;}
-  const session=await OC.session();
-  if(!session){
+  try{
+    if(typeof supabase==='undefined')throw new Error('オフライン: supabase-jsを読み込めませんでした');
+    if(!OC.init()){document.getElementById('login').classList.remove('hidden');
+      document.getElementById('lMsg').textContent='Supabase未設定（config.js）';hideSplash();return;}
+    const session=await OC.session();
+    if(!session){
+      document.getElementById('login').classList.remove('hidden');
+      hideSplash();
+      let booted=false; OC.onAuth(s=>{if(s&&!booted){booted=true;boot();}});
+    } else boot();
+  }catch(e){
+    console.error('[init] 失敗',e);
     document.getElementById('login').classList.remove('hidden');
-    let booted=false; OC.onAuth(s=>{if(s&&!booted){booted=true;boot();}});
-  } else boot();
+    document.getElementById('lMsg').textContent='オフラインです。電波の良い場所で再読み込みしてください。';
+    hideSplash();
+  }
 })();
 </script>
 </body>

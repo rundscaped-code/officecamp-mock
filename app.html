@@ -37,9 +37,15 @@
     width:40px;height:40px;border-radius:50%;border:1.5px solid var(--line);background:var(--card);
     color:var(--ink);font-size:18px;cursor:pointer;box-shadow:var(--shadow);display:none}
   .acct-btn.show{display:block}
+  /* 起動スプラッシュ（P4-9）: boot完了までは全セクションhiddenで白画面になるため上に重ねる */
+  .splash{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px}
+  .splash-logo{width:56px;height:56px;border-radius:16px;background:var(--accent);color:var(--bg);
+    display:flex;align-items:center;justify-content:center;font-size:28px}
+  .splash-text{color:var(--sub);font-size:14px;font-weight:700}
   .sheet{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center}
   .sheet.hidden{display:none}
-  .sheet-card{background:var(--card);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px 20px max(env(safe-area-inset-bottom),20px);display:flex;flex-direction:column;gap:10px}
+  .sheet-card{background:var(--card);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px 20px max(env(safe-area-inset-bottom),20px);display:flex;flex-direction:column;gap:10px;overscroll-behavior:contain}
   .sheet-h{font-size:18px;font-weight:800;margin-bottom:2px}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0}
@@ -96,7 +102,9 @@
   .exp-row .a{margin-left:auto;font-weight:700}
   .st{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:700;margin-left:6px}
   .st-ok{background:var(--accent-soft);color:var(--accent)}.st-wait{background:#EDEDED;color:var(--amber)}
-  .back{color:var(--accent);font-weight:600;font-size:15px;cursor:pointer;padding:4px;margin-bottom:4px}
+  /* 案件一覧へ戻るリンク。見た目の位置は保ちつつ当たり判定を44pxへ拡大（P4-4） */
+  .back{display:inline-flex;align-items:center;color:var(--accent);font-weight:600;font-size:15px;cursor:pointer;
+    min-height:44px;padding:4px 12px 4px 4px;margin:-4px 0 0 -4px}
   /* タブ */
   .tabbar{position:fixed;bottom:0;left:0;right:0;height:calc(64px + env(safe-area-inset-bottom));
     padding-bottom:env(safe-area-inset-bottom);background:rgba(255,255,255,.95);backdrop-filter:blur(12px);
@@ -105,10 +113,14 @@
     color:var(--gray);font-size:var(--fs-xs);font-weight:600;cursor:pointer;
     border:none;background:transparent;font-family:inherit;padding:0}   /* button化に伴うリセット（M-4） */
   .tab.on{color:var(--accent)}.tab svg{width:24px;height:24px}
+  /* 通知バッジ（P4-8）: 自分宛て内注(依頼中)・自分の差戻経費の件数 */
+  .tabic{position:relative;display:inline-flex}
+  .navbadge{position:absolute;top:-4px;right:-7px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;
+    background:#C0392B;color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center}
   .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);
     background:var(--ink);color:#fff;padding:12px 20px;border-radius:30px;font-size:14px;font-weight:600;
-    opacity:0;transition:.3s;z-index:10;box-shadow:0 8px 20px rgba(0,0,0,.3)}
-  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    opacity:0;pointer-events:none;transition:.3s;z-index:10;box-shadow:0 8px 20px rgba(0,0,0,.3)}
+  .toast.show{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
   .toast.err{background:#C0392B!important;color:#fff;cursor:pointer}
   /* PWAインストール促進バナー（beforeinstallprompt 発火時のみ表示） */
   .pwa-banner{position:fixed;bottom:calc(76px + env(safe-area-inset-bottom));left:16px;right:16px;
@@ -176,7 +188,8 @@
   .chip .x{cursor:pointer;display:inline-block;padding:9px;margin:-9px -9px -9px -3px;line-height:1}
   .row-inline{display:flex;gap:8px;align-items:center;margin-top:8px}
   .row-inline .control{padding:9px}
-  .mini{width:auto;flex:none;padding:9px 12px;font-size:13px}
+  /* 書き込み確定ボタンの当たり判定を44pxへ（P4-4） */
+  .mini{width:auto;flex:none;padding:12px 14px;min-height:44px;font-size:14px}
   /* タスクリスト(Asana/Monday風) */
   .tk-item{display:flex;gap:10px;align-items:flex-start;padding:11px 4px;border-top:1px solid var(--line)}
   .tk-item:first-child{border-top:none}
@@ -229,7 +242,7 @@
   .tl{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
   .tl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .tl-grid{min-width:max-content}
-  .tl-row{display:flex;align-items:stretch;border-top:1px solid var(--line);min-height:34px}
+  .tl-row{display:flex;align-items:stretch;border-top:1px solid var(--line);min-height:44px}
   .tl-row:first-child{border-top:none}
   .tl-name{position:sticky;left:0;z-index:3;width:160px;flex:none;background:var(--card);padding:6px 8px;
     font-size:12px;font-weight:600;display:flex;align-items:center;border-right:1px solid var(--line);
@@ -243,7 +256,8 @@
   .tl-day.td{background:#FDECEC;color:#B00020;font-weight:700}
   .tl-task{gap:6px}
   .tl-task .tl-tt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .st-mini{padding:6px 7px!important;min-height:28px;font-size:12px;border-radius:6px;flex:none;width:auto;text-align:center}
+  /* タップ基準44pxに寄せる（P4-4）。行密度は.tl-rowのmin-heightで確保し、選択肢自体は控えめな高さのまま */
+  .st-mini{padding:8px!important;min-height:36px;font-size:12px;border-radius:6px;flex:none;width:auto;text-align:center}
   .tl-proj{min-height:30px}
   .tl-proj .tl-name{font-weight:800;font-size:12.5px;background:var(--bg)}
   .tl-proj .tl-cells{background:var(--bg)}
@@ -251,8 +265,9 @@
   .tl-pcap{position:absolute;top:8px;width:3px;height:17px;background:var(--accent);opacity:.6;border-radius:2px}
   .tl-deliv{position:absolute;top:9px;width:13px;height:13px;margin-left:-7px;background:#B00020;
     transform:rotate(45deg);border-radius:2px;z-index:2}
-  .tl-bar{position:absolute;top:5px;height:22px;border-radius:6px;display:flex;align-items:center;
-    color:#fff;font-size:10px;font-weight:700;padding:0 7px;overflow:hidden;white-space:nowrap;cursor:pointer}
+  /* タップ基準に寄せて高さを拡大（P4-4）。1日40px幅・列密度は変えない */
+  .tl-bar{position:absolute;top:7px;height:30px;border-radius:6px;display:flex;align-items:center;
+    color:#fff;font-size:11px;font-weight:700;padding:0 7px;overflow:hidden;white-space:nowrap;cursor:pointer}
   .tl-bar.s-未着手{background:var(--st-plan)}.tl-bar.s-進行{background:var(--st-go)}
   .tl-bar.s-完了{background:var(--st-done)}.tl-bar.s-保留{background:var(--st-hold)}
   .tl-today{position:absolute;top:0;bottom:0;width:2px;background:#B00020;opacity:.55;z-index:1}
@@ -262,7 +277,8 @@
   details.pj-card>summary::-webkit-details-marker{display:none}
   .pj-marker{transition:transform .15s;color:var(--gray);font-size:13px}
   details[open]>summary .pj-marker{transform:rotate(90deg)}
-  .pj-detail-link{margin-left:auto;font-size:12px;color:var(--accent);font-weight:700;cursor:pointer}
+  /* summaryのトグルと干渉しやすいので当たり判定を約38x44pxへ拡大（P4-4。見た目位置は不変） */
+  .pj-detail-link{font-size:12px;color:var(--accent);font-weight:700;cursor:pointer;padding:12px 10px;margin:-12px -10px -12px auto}
   /* タスクタブ：案件を大きく、タスクが枝分かれ */
   .pj-head{display:flex;align-items:baseline;gap:8px;cursor:pointer;margin-bottom:4px}
   .pj-code{font-size:12px;font-weight:700;color:var(--sub);background:var(--accent-soft);padding:1px 8px;border-radius:8px}
@@ -270,7 +286,7 @@
   .pj-tasks{margin-left:8px;padding-left:12px;border-left:2px solid var(--line)}
   /* タスク詳細モーダル */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:20;display:flex;align-items:flex-end;justify-content:center}
-  .modal-card{background:var(--card);width:100%;max-width:480px;max-height:88vh;overflow-y:auto;
+  .modal-card{background:var(--card);width:100%;max-width:480px;max-height:88vh;overflow-y:auto;overscroll-behavior:contain;
     border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
   .tm-proj{font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px}
   .sub-item{padding:9px 0;border-top:1px solid var(--line)}
@@ -297,7 +313,8 @@
   .tk-arrow,.tk-pct{color:var(--sub);font-size:12px}
   /* フィルタバー */
   .filterbar{display:flex;gap:6px;margin:2px 0 12px;flex-wrap:wrap}
-  .fbi{padding:9px 10px;font-size:13px;flex:1;min-width:120px}
+  /* iOSはfont-size 16px未満のinputにフォーカスすると自動ズームするため16pxに統一。44px高も確保（P4-4） */
+  .fbi{padding:11px 10px;font-size:16px;min-height:44px;flex:1;min-width:120px}
   select.fbi{appearance:none}
   /* 経理スプレッドシート編集 */
   .fin-edit{border:none;background:transparent;font:inherit;font-size:var(--fs-lg);color:var(--ink);width:100%;
@@ -420,9 +437,19 @@
     /* 詳細ペインはスクロール独立 */
     #s-detail .screen{padding-top:14px}
   }
+  /* 印刷（P4-12）: タブバー等の固定UIを消し、案件詳細・経理をページ幅に収める */
+  @media print{
+    .tabbar,.acct-btn,.toast,.sheet,.modal,.pwa-banner,#splash{display:none!important}
+    .wrap{height:auto;overflow:visible}
+    .screen{overflow:visible;max-width:none;padding:0}
+    .tl-scroll{overflow:visible}
+    body{background:#fff}
+  }
 </style>
 </head>
 <body>
+<!-- 起動スプラッシュ（P4-9）: boot完了(showOnly呼び出し)で隠れる -->
+<div id="splash" class="splash"><div class="splash-logo">⛺</div><div class="splash-text">読み込み中…</div></div>
 <div class="wrap" id="wrap">
 
   <button id="acctBtn" class="acct-btn" onclick="toggleSettings(true)" aria-label="設定">⚙</button>
@@ -470,6 +497,13 @@
       <code>config.js</code> に Project URL と anon キーを入れると有効になります。</div>
   </div>
 
+  <!-- オフライン起動（P4-6）: supabase-js CDN読み込み失敗などでinitが例外を投げた時の案内 -->
+  <div id="offlineView" class="login hidden">
+    <h1>オフィスキャンプ 案件管理</h1>
+    <div class="banner">オフラインです。電波の良い場所で再読み込みしてください。<br>
+      <button class="btn" style="margin-top:12px" onclick="location.reload()">↻ 再読み込み</button></div>
+  </div>
+
   <!-- ログイン -->
   <div id="loginView" class="login hidden">
     <h1>オフィスキャンプ</h1>
@@ -492,6 +526,10 @@
       <div class="date"><span id="whoami">その場でパッと。</span></div>
     </div>
     <div class="screen">
+      <div id="expenseGuide" class="card pad hidden" style="margin-bottom:12px;background:var(--accent-soft)">
+        <div style="font-weight:700;margin-bottom:8px">まず案件を1件作成してください</div>
+        <button class="btn" type="button" onclick="nav('projects');toggleProjForm(true)">＋ 案件を追加</button>
+      </div>
       <div class="sec">内容</div>
       <div class="card pad">
         <form onsubmit="event.preventDefault();record()">
@@ -616,13 +654,13 @@
 
   <nav class="tabbar hidden" id="tabbar">
     <button type="button" class="tab on" data-s="expense" onclick="nav('expense')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>経費</button>
+      <span class="tabic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg><span id="badgeExpense" class="navbadge hidden"></span></span>経費</button>
     <button type="button" class="tab" data-s="projects" onclick="nav('projects')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>案件</button>
     <button type="button" class="tab" data-s="schedule" onclick="nav('schedule')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h10M3 10h14M3 15h7"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>タスク</button>
     <button type="button" class="tab" data-s="orders" onclick="nav('orders')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg>発注</button>
+      <span class="tabic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/><circle cx="19" cy="17" r="2"/></svg><span id="badgeOrders" class="navbadge hidden"></span></span>発注</button>
     <button type="button" class="tab hidden" data-s="finance" onclick="nav('finance')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>経理</button>
   </nav>
@@ -645,6 +683,7 @@ const configured = cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR-PROJECT"
 let sb=null, projects=[], vendors=[], people=[], peopleById={}, peopleDepts={}, departments=[], myDept=null, myDepts=[], me=null, myRole=null, receiptPath=null, curDetail=null;
 let curProjMeta=null, curTaskCache=null, curSubsCache=[];   // インライン編集の日付逆転チェック(badRange)用に、直近に開いた詳細の相手側フィールドを保持
 const TASK_STATUS=['未着手','進行','完了','保留'];
+const EXP_STATUS=['申請','承認','差戻'];
 const isAccounting = ()=> myRole==='経理' || myRole==='管理者';
 const isManager = ()=> myRole==='経理' || myRole==='管理者';
 
@@ -658,13 +697,24 @@ function toast(m,isError){const t=document.getElementById('toast');
   t.textContent=m;t.classList.toggle('err',!!isError);t.classList.add('show');
   t.onclick=()=>t.classList.remove('show');
   clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),isError?5000:2200);}
+// SW更新告知専用（P4-5）。通常のtoastは2.2秒で自動消滅しタップ不能になるため、
+// タップされるまで居座らせ、onclickも自分で確定させる（他のtoast()呼び出しに巻き込まれない）。
+function showUpdateToast(){
+  const t=document.getElementById('toast');
+  clearTimeout(t._t);
+  t.textContent='新しいバージョンがあります。タップで更新';
+  t.classList.remove('err');t.classList.add('show');
+  t.onclick=()=>{ t.onclick=()=>t.classList.remove('show'); location.reload(); };
+}
 // 日付バリデーション（年のタイポでスケジュールが全滅するのを防ぐ／開始>終了の逆転を防ぐ）
 function saneDate(v){ if(!v)return true; const y=+String(v).slice(0,4); return y>=2000&&y<=2100; }
 function badRange(s,e){ return !!(s&&e&&s>e); }
 
-const views=['needConfig','loginView','s-expense','s-projects','s-detail','s-finance','s-schedule','s-orders'];
+const views=['needConfig','offlineView','loginView','s-expense','s-projects','s-detail','s-finance','s-schedule','s-orders'];
 function showOnly(id){views.forEach(v=>document.getElementById(v).classList.add('hidden'));
-  document.getElementById(id).classList.remove('hidden');}
+  document.getElementById(id).classList.remove('hidden');
+  document.getElementById('splash')?.classList.add('hidden');   // 何らかの画面が決まったら起動スプラッシュを隠す（P4-9）
+}
 function nav(name,fromPop){
   if(name==='finance' && !isAccounting()){toast('経理ユーザーのみ閲覧できます');name='projects';}
   const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail',finance:'s-finance',orders:'s-orders'};
@@ -677,6 +727,7 @@ function nav(name,fromPop){
     else history.pushState(null,'','#'+name);
   }
   showOnly(map[name]);
+  markBadgeSeen(name);
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.s===name));
   if(name==='projects'){
     loadProjects();
@@ -893,6 +944,14 @@ async function loadProjectOptions(){
   const sel=document.getElementById('proj');
   sel.innerHTML = projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')
                   || `<option value="">案件がありません</option>`;
+  syncExpenseGuide();
+}
+// 初回利用: 案件ゼロで経費フォームだけ出しても記録できないため、案件作成へ誘導する（P4-11）
+function syncExpenseGuide(){
+  const empty=!projects.length;
+  document.getElementById('expenseGuide').classList.toggle('hidden',!empty);
+  document.getElementById('proj').disabled=empty;
+  document.getElementById('recBtn').disabled=empty;
 }
 async function loadPeople(){
   const {data}=await sb.from('profiles').select('id,name,email,role,department_id').order('name');
@@ -1075,7 +1134,7 @@ async function openDetail(id,fromPop){
   if(!keepScroll)body.innerHTML=`<div class="empty">読み込み中…</div>`;
   const [{data:p},{data:pmeta},{data:exps},tasks,{data:members},{data:logs},{data:ords}]=await Promise.all([
     sb.from('project_costs').select('*').eq('id',id).single(),
-    sb.from('projects').select('delivery_date,start_date,client,leader_id').eq('id',id).single(),
+    sb.from('projects').select('delivery_date,start_date,client,leader_id,owner_id').eq('id',id).single(),
     sb.from('expenses').select('id,amount,note,spent_at,status,kind,user_id,receipt_url,vendor:vendor_id(name,kind),author:user_id(name,email)')
       .eq('project_id',id).order('spent_at',{ascending:false}),
     fetchTasks(id),
@@ -1090,14 +1149,17 @@ async function openDetail(id,fromPop){
   curProjMeta=pmeta||{};   // updProjの日付逆転チェック用（相手側フィールドの現在値）
   document.getElementById('dName').textContent=(p?.code?p.code+'　':'')+(p?.name||'—');
 
-  // 経費
+  // 経費（経理/管理者はスマホからも承認/差戻できる。P4-1）
   const expRows=(exps||[]).map(e=>{
     const who=e.author?.name||e.author?.email||'—';
     const tag=e.kind==='外注'?`<span class="st st-wait">外注${e.vendor?'・'+e.vendor.name:''}</span>`:'';
     const rcpt=e.receipt_url?` <span style="color:var(--accent);font-weight:600;cursor:pointer;white-space:nowrap" onclick="viewReceipt('${esc(e.receipt_url)}')">📎レシート</span>`:'';
+    const statusUI = isManager()
+      ? `<select class="control mini" style="margin-left:6px" onclick="event.stopPropagation()" onchange="saveExpStatus('${e.id}',this.value)">${EXP_STATUS.map(s=>`<option ${s===e.status?'selected':''}>${s}</option>`).join('')}</select>`
+      : `<span class="st ${e.status==='承認'?'st-ok':'st-wait'}">${e.status}</span>`;
     return `<div class="exp-row" onpointerdown="lpStart(event,()=>expSheet('${e.id}'))"><div><div class="n">${e.note?esc(e.note):'（メモなし）'}${tag}${rcpt}</div>
       <div class="d">${new Date(e.spent_at).toLocaleDateString('ja-JP')}・${who}</div></div>
-      <div class="a">${yen(e.amount)}<span class="st ${e.status==='承認'?'st-ok':'st-wait'}">${e.status}</span></div></div>`;
+      <div class="a">${yen(e.amount)}${statusUI}</div></div>`;
   }).join('') || `<div class="empty">経費はまだありません</div>`;
 
   // タスク（ガント＋一覧＋アサイン）
@@ -1115,8 +1177,9 @@ async function openDetail(id,fromPop){
       <div class="a">${yen(o.amount)}</div></div>`;
   }).join('') || `<div class="empty">発注はまだありません</div>`;
 
-  // メンバー
-  const memChips=(members||[]).map(m=>`<span class="chip">${personName(m.user_id)}</span>`).join('')||'<span class="task-meta">まだメンバーがいません</span>';
+  // メンバー（案件オーナーor経理/管理者はスマホからも外せる。P4-2）
+  const canManageMembers = me?.id===pmeta?.owner_id || isManager();
+  const memChips=(members||[]).map(m=>`<span class="chip">${personName(m.user_id)}${canManageMembers?`<span class="x" onclick="removeMember('${m.user_id}')">×</span>`:''}</span>`).join('')||'<span class="task-meta">まだメンバーがいません</span>';
 
   // 変更履歴（クリックでDIFF展開）
   const logRows=(logs||[]).map(l=>`<details class="log-d"><summary class="log-row">
@@ -1276,6 +1339,14 @@ async function addMember(){
   const {error}=await sb.from('project_members').insert({project_id:curDetail,user_id:uid});
   if(error){toast(error.message.includes('duplicate')?'すでにメンバー':'エラー: '+error.message);return;}
   toast(personName(uid)+' をメンバーに追加');
+  openDetail(curDetail);
+}
+// 案件メンバーを外す（P4-2）。RLS pm_cud for all（is_managerまたは案件owner）は削除も許可済み。
+async function removeMember(uid){
+  const n=personName(uid);
+  const {error}=await sb.from('project_members').delete().match({project_id:curDetail,user_id:uid});
+  if(error){toast('エラー: '+error.message);return;}
+  toast(n+' を外しました');
   openDetail(curDetail);
 }
 
@@ -1512,6 +1583,13 @@ async function deleteExpenseUI(id,amount){
   toast('経費を削除しました');
   if(curDetail)openDetail(curDetail);
 }
+// 経費の承認/差戻（P4-1）。RLS expenses_update = 本人 or is_manager() なので経理側の更新が通る。
+async function saveExpStatus(id,status){
+  const {error}=await sb.from('expenses').update({status}).eq('id',id);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('経費を「'+status+'」にしました');
+  if(curDetail)openDetail(curDetail);
+}
 // 長押しアクションシート: 状態変更・削除（P0-B #15。発注行にも同型で配線）
 async function orderSheet(id){
   const {data:o}=await sb.from('orders').select('id,title,amount,status,from_user').eq('id',id).single();
@@ -1679,7 +1757,7 @@ function bcard(t,pmeta){
   const m=pmeta[t.project_id]||{};
   const who=(t.task_assignees||[]).map(a=>personName(a.user_id)).join('、');
   return `<div class="bcard" data-tid="${t.id}" onpointerdown="boardPointerDown(event,'${t.id}')" onclick="boardCardClick(event,'${t.id}')">
-    <div class="bpc">${m.code||''}${m.name?' '+m.name:''}</div>
+    <div class="bcard-h" style="display:flex;gap:6px;align-items:center">${statusSelectMini(t)}<div class="bpc">${m.code||''}${m.name?' '+m.name:''}</div></div>
     <div class="bt">${esc(t.title)}</div>
     <div class="tk-sub">${dateText(t)}${who?'<br>担当：'+who:''}</div></div>`;
 }
@@ -2008,7 +2086,20 @@ async function record(){
 // SW は「アプリシェルのみキャッシュ」方針（詳細は sw.js 冒頭コメント）。Supabase のデータはキャッシュしない。
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW登録失敗:',e));
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      // 新しいSWが有効化されたら更新を告知（P4-5）。スタンドアロンPWAは開きっぱなしになりがちで、
+      // 裏でskipWaiting+clients.claimされても画面側は旧JSのまま気付けないため。
+      reg.addEventListener('updatefound',()=>{
+        const nw=reg.installing; if(!nw)return;
+        nw.addEventListener('statechange',()=>{
+          if(nw.state==='activated' && navigator.serviceWorker.controller){
+            showUpdateToast();
+          }
+        });
+      });
+      // 復帰時に更新チェック（タブ復帰では再fetchされないため）
+      document.addEventListener('visibilitychange',()=>{ if(!document.hidden)reg.update(); });
+    }).catch(e=>console.warn('SW登録失敗:',e));
   });
 }
 let pwaPrompt=null;
@@ -2039,16 +2130,53 @@ window.addEventListener('appinstalled',()=>{
   document.getElementById('pwaBanner').classList.remove('show');
 });
 
+// ---- 通知バッジ（P4-8）: 自分宛て内注(依頼中)・自分の差戻経費の件数 ----
+// count は head:true で件数のみ取得（全行フェッチしない）。既読化はlocalStorageの最終閲覧時刻と
+// created_at を比較し、閲覧後に増えた分だけを「未読」として数える。
+function badgeSeenAt(key){ try{return localStorage.getItem('oc_seen_'+key);}catch(e){return null;} }
+function badgeMarkSeenAt(key){ try{localStorage.setItem('oc_seen_'+key,new Date().toISOString());}catch(e){} }
+function paintBadge(id,n){
+  const b=document.getElementById(id); if(!b)return;
+  if(!n){b.classList.add('hidden');b.textContent='';return;}
+  b.textContent=n>99?'99+':n; b.classList.remove('hidden');
+}
+async function loadBadgeCounts(){
+  if(!me)return;
+  const deptList=(myDepts&&myDepts.length)?myDepts:(myDept?[myDept]:[]);
+  const orFilter=[`to_user_id.eq.${me.id}`,...deptList.map(d=>`to_dept_id.eq.${d}`)].join(',');
+  const seenO=badgeSeenAt('orders');
+  let qO=sb.from('orders').select('id',{count:'exact',head:true}).or(orFilter).eq('status','依頼中');
+  if(seenO)qO=qO.gt('created_at',seenO);
+  // 差戻は既存行のstatus更新でcreated_atが変わらず「未読」判定が成立しないため、
+  // 解消（status変更）されるまで件数をそのまま出し続ける（P4-8修正）。
+  const qE=sb.from('expenses').select('id',{count:'exact',head:true}).eq('user_id',me.id).eq('status','差戻');
+  const [{count:co},{count:ce}]=await Promise.all([qO,qE]);
+  paintBadge('badgeOrders',co||0);
+  paintBadge('badgeExpense',ce||0);
+}
+// タブを開いたら既読化（P4-8）。差戻経費は「見た」では解消しないため対象外。
+function markBadgeSeen(name){
+  if(name!=='orders')return;
+  badgeMarkSeenAt('orders');
+  paintBadge('badgeOrders',0);
+}
+
 // ---- 起動 ----
 (async function init(){
   applyTheme();
   if(!configured){showOnly('needConfig');return;}
-  sb=supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
-  const {data:{session}}=await sb.auth.getSession();
-  if(!session){showOnly('loginView');
-    sb.auth.onAuthStateChange((_e,s)=>{if(s)boot();});
-    return;}
-  boot();
+  try{
+    if(typeof supabase==='undefined')throw new Error('オフライン: supabase-jsを読み込めませんでした');
+    sb=supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session){showOnly('loginView');
+      sb.auth.onAuthStateChange((_e,s)=>{if(s)boot();});
+      return;}
+    boot();
+  }catch(e){
+    console.error('[app] init失敗',e);
+    showOnly('offlineView');
+  }
 })();
 let booted=false;
 async function boot(){
@@ -2059,6 +2187,7 @@ async function boot(){
   await loadProjectOptions();
   await loadVendors();
   document.getElementById('acctBtn').classList.add('show');
+  await loadBadgeCounts();
   applyHash();   // リロード時は直前のタブ/案件詳細へ復元。ハッシュが無ければ経費タブへ着地（M-6）
 }
 </script>
