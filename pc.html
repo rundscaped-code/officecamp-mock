@@ -248,6 +248,23 @@
   .impbar{display:none;margin:14px 28px 0;padding:10px 12px;border:2px solid #111;background:#fff;color:#111;align-items:center;gap:10px;font-size:13px;font-weight:800}
   .impbar.show{display:flex}
   .impbar .sub{font-weight:600;color:#555}
+  /* ===== レスポンシブ ===== */
+  /* 1024px前後: サイドバーを詰めて.mdの最小幅を下げ、横スクロールを防ぐ */
+  @media (max-width:1024px){
+    .side{width:190px;padding:18px 8px}
+    .side-foot .me{overflow:hidden}
+    .side-foot .me b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .md{grid-template-columns:minmax(390px,1.1fr) minmax(330px,1fr)}
+  }
+  /* 768px前後: 1カラム化。テーブルはcard-b内でoverflow-x:autoに逃がす */
+  @media (max-width:768px){
+    .side{width:150px}
+    .brand{font-size:13px}
+    .md{grid-template-columns:1fr}
+    .grid2{grid-template-columns:1fr}
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .card-b{overflow-x:auto}
+  }
 </style>
 </head>
 <body>
