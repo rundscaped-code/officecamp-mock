@@ -236,7 +236,7 @@
     overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
   .tl-head{background:var(--accent-soft)}
   .tl-head .tl-name{background:var(--accent-soft);z-index:3;font-weight:700}
-  .tl-cells{position:relative;flex:none}
+  .tl-cells{position:relative;flex:none;overflow:hidden}
   .tl-day{width:40px;flex:none;text-align:center;font-size:10px;color:var(--sub);padding:4px 0;line-height:1.2}
   .tl-day small{display:block;font-size:10px;opacity:.9}
   .tl-day.we{background:var(--bg)}
@@ -635,6 +635,7 @@
 const cfg = window.OC_CONFIG || {};
 const configured = cfg.SUPABASE_URL && !cfg.SUPABASE_URL.includes("YOUR-PROJECT");
 let sb=null, projects=[], vendors=[], people=[], peopleById={}, peopleDepts={}, departments=[], myDept=null, myDepts=[], me=null, myRole=null, receiptPath=null, curDetail=null;
+let curProjMeta=null, curTaskCache=null, curSubsCache=[];   // インライン編集の日付逆転チェック(badRange)用に、直近に開いた詳細の相手側フィールドを保持
 const TASK_STATUS=['未着手','進行','完了','保留'];
 const isAccounting = ()=> myRole==='経理' || myRole==='管理者';
 const isManager = ()=> myRole==='経理' || myRole==='管理者';
@@ -656,10 +657,17 @@ function badRange(s,e){ return !!(s&&e&&s>e); }
 const views=['needConfig','loginView','s-expense','s-projects','s-detail','s-finance','s-schedule','s-orders'];
 function showOnly(id){views.forEach(v=>document.getElementById(v).classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');}
-function nav(name){
+function nav(name,fromPop){
   if(name==='finance' && !isAccounting()){toast('経理ユーザーのみ閲覧できます');name='projects';}
-  document.getElementById('tabbar').classList.remove('hidden');
   const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail',finance:'s-finance',orders:'s-orders'};
+  if(!map[name])name='expense';   // 不正・未知のハッシュは経費タブへフォールバック
+  document.getElementById('tabbar').classList.remove('hidden');
+  // リロードで直前のタブへ戻れるようにhistoryへ同期（同一タブへの連続pushは抑止）。
+  // popstate起点(fromPop)はpushStateすると再入ループになるためreplaceStateに留める。
+  if(location.hash!=='#'+name){
+    if(fromPop)history.replaceState(null,'','#'+name);
+    else history.pushState(null,'','#'+name);
+  }
   showOnly(map[name]);
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.s===name));
   if(name==='projects'){
@@ -674,17 +682,30 @@ function nav(name){
   if(name==='finance')loadFinance();
   if(name==='orders')loadOrders();
 }
+// URLハッシュから画面を復元する（起動時・ブラウザ戻る/進む共通）。#detail/<id> は一覧タブを開いてから詳細を開く。
+function applyHash(){
+  const h=(location.hash||'').slice(1);
+  if(h.indexOf('detail/')===0){
+    const id=h.slice(7);
+    nav('projects',true);
+    if(id)openDetail(id,true);
+    return;
+  }
+  const valid=['expense','projects','schedule','finance','orders'];
+  nav(valid.includes(h)?h:'expense',true);
+}
+window.addEventListener('popstate',applyHash);
 
 // ---- 認証 ----
 async function signIn(){
   const email=document.getElementById('loginEmail').value.trim();
   const password=document.getElementById('loginPass').value;
   const msg=document.getElementById('loginMsg');
-  if(!email||!password){msg.textContent="メールとパスワードを入力してください。";return;}
-  msg.textContent="ログイン中…";
+  if(!email||!password){msg.style.color='var(--st-lost)';msg.textContent="メールとパスワードを入力してください。";return;}
+  msg.style.color='var(--accent)';msg.textContent="ログイン中…";
   const {error}=await sb.auth.signInWithPassword({email,password});
   // 成功時は onAuthStateChange が boot() を呼ぶ
-  if(error)msg.textContent="ログインできません: "+(error.message==='Invalid login credentials'?'メールかパスワードが違います':error.message);
+  if(error){msg.style.color='var(--st-lost)';msg.textContent="ログインできません: "+(error.message==='Invalid login credentials'?'メールかパスワードが違います':error.message);}
 }
 let loginMode='password';
 function toggleMagic(){
@@ -707,9 +728,11 @@ function toggleMagic(){
 }
 async function sendMagicLink(){
   const email=document.getElementById('loginEmail').value.trim();
-  if(!email){document.getElementById('loginMsg').textContent="メールを入力してください。";return;}
+  const msg=document.getElementById('loginMsg');
+  if(!email){msg.style.color='var(--st-lost)';msg.textContent="メールを入力してください。";return;}
   const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.href}});
-  document.getElementById('loginMsg').textContent =
+  msg.style.color=error?'var(--st-lost)':'var(--accent)';
+  msg.textContent =
     error ? ("エラー: "+error.message) : "メールを確認してください。リンクから戻るとログインできます。";
 }
 function togglePwEdit(){document.getElementById('pwEdit').classList.toggle('hidden');}
@@ -764,10 +787,17 @@ function renderDeptAdmin(){
 async function saveDepts(pid){
   const picks=[0,1,2].map(i=>document.getElementById('da_'+pid+'_'+i).value).filter(Boolean);
   const uniq=[...new Set(picks)];
-  await sb.from('profile_departments').delete().eq('profile_id',pid);
-  if(uniq.length){
-    const {error}=await sb.from('profile_departments').insert(uniq.map(d=>({profile_id:pid,department_id:d})));
-    if(error){toast('保存エラー: '+error.message);return;}
+  // delete→insertの非トランザクション実行だとinsert失敗時に所属が全消えするため、差分だけ適用する
+  const cur=peopleDepts[pid]||[];
+  const del=cur.filter(d=>!uniq.includes(d));
+  const add=uniq.filter(d=>!cur.includes(d));
+  if(del.length){
+    const {error}=await sb.from('profile_departments').delete().eq('profile_id',pid).in('department_id',del);
+    if(error){toast('保存エラー: '+error.message);await loadPeople();renderDeptAdmin();return;}
+  }
+  if(add.length){
+    const {error}=await sb.from('profile_departments').insert(add.map(d=>({profile_id:pid,department_id:d})));
+    if(error){toast('保存エラー: '+error.message);await loadPeople();renderDeptAdmin();return;}
   }
   if(pid===me.id){ await sb.from('profiles').update({department_id:uniq[0]||null}).eq('id',pid); myDept=uniq[0]||null; }
   await loadPeople(); renderDeptAdmin();
@@ -1006,14 +1036,20 @@ async function addProject(){
     const {error}=await sb.from('projects').insert({name,client,amount,delivery_date,start_date,parent_id,owner_id:me.id,leader_id,status:'進行'});
     if(error){toast('追加エラー: '+error.message);return;}
     toast('案件「'+name+'」を追加');
-    document.getElementById('npName').value='';document.getElementById('npClient').value='';document.getElementById('npAmt').value='';document.getElementById('npDeliv').value='';
+    document.getElementById('npName').value='';document.getElementById('npClient').value='';document.getElementById('npAmt').value='';document.getElementById('npDeliv').value='';document.getElementById('npStart').value='';
     toggleProjForm(false);
     await loadProjectOptions(); await loadProjects();
   }catch(e){toast('例外: '+e.message);}
   finally{btn.disabled=false;}
 }
-async function openDetail(id){
+async function openDetail(id,fromPop){
+  const keepScroll=(curDetail===id);   // 同一案件の再描画ならスクロール位置を保つ（状態変更のたびに先頭へ戻るのを防ぐ）
   curDetail=id;
+  // Androidの戻るジェスチャで一覧に戻れるよう#detail/<id>をhistoryへ積む（同一detailへの連続pushは抑止）
+  if(location.hash!=='#detail/'+id){
+    if(fromPop)history.replaceState(null,'','#detail/'+id);
+    else history.pushState(null,'','#detail/'+id);
+  }
   if(isDesktop()){
     // 二段ペイン: 一覧を残したまま右に詳細を出す
     ['s-expense','s-schedule','s-orders','s-finance','needConfig','loginView'].forEach(v=>document.getElementById(v).classList.add('hidden'));
@@ -1027,7 +1063,8 @@ async function openDetail(id){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelector('.tab[data-s="projects"]').classList.add('on');
   const body=document.getElementById('detailBody');
-  body.innerHTML=`<div class="empty">読み込み中…</div>`;
+  const savedScrollTop=keepScroll?body.scrollTop:0;
+  if(!keepScroll)body.innerHTML=`<div class="empty">読み込み中…</div>`;
   const [{data:p},{data:pmeta},{data:exps},tasks,{data:members},{data:logs},{data:ords}]=await Promise.all([
     sb.from('project_costs').select('*').eq('id',id).single(),
     sb.from('projects').select('delivery_date,start_date,client,leader_id').eq('id',id).single(),
@@ -1042,6 +1079,7 @@ async function openDetail(id){
   ]);
   if(curDetail!==id)return;   // 高速タップ時：後着レスポンスで別案件の詳細を上書きしない（見えている案件と書込先のズレ防止）
   if(!p){ body.innerHTML=`<div class="empty">この案件は表示できません（削除済み、または閲覧権限がありません）</div>`; return; }
+  curProjMeta=pmeta||{};   // updProjの日付逆転チェック用（相手側フィールドの現在値）
   document.getElementById('dName').textContent=(p?.code?p.code+'　':'')+(p?.name||'—');
 
   // 経費
@@ -1147,6 +1185,7 @@ async function openDetail(id){
       <div class="card">${logRows}</div>
     </div>`;
   detSub(curSub);
+  if(keepScroll)body.scrollTop=savedScrollTop;
 }
 let curSub='tasks';
 function detSub(n){
@@ -1301,7 +1340,7 @@ const ORDER_SELECT='id,project_id,kind,amount,title,status,from_user,to_user_id,
 const ORDER_STATUS=['依頼中','進行','完了','取消'];
 async function updOrderStatus(id,status){
   const {error}=await sb.from('orders').update({status}).eq('id',id);
-  if(error){toast('状態の保存エラー: '+error.message);return;}
+  if(error){toast('状態の保存エラー: '+error.message);loadOrders();return;}
   toast('発注を「'+status+'」にしました');
   loadOrders();
 }
@@ -1324,10 +1363,17 @@ async function loadOrders(){
   fillOrderSelects();
   const deptList = (myDepts&&myDepts.length)?myDepts:(myDept?[myDept]:[]);
   const inFilter = [`to_user_id.eq.${me.id}`,...deptList.map(d=>`to_dept_id.eq.${d}`)].join(',');
-  const [{data:out},{data:inb}]=await Promise.all([
+  const [{data:out,error:e1},{data:inb,error:e2}]=await Promise.all([
     sb.from('orders').select(ORDER_SELECT).eq('from_user',me.id).order('created_at',{ascending:false}),
     sb.from('orders').select(ORDER_SELECT).or(inFilter).order('created_at',{ascending:false}),
   ]);
+  if(e1||e2){
+    const msg=`<div class="empty">取得エラー: ${esc((e1||e2).message)}<br>
+      <button class="btn btn-ghost mini" style="margin-top:10px" onclick="loadOrders()">↻ 再読み込み</button></div>`;
+    document.getElementById('ordersOut').innerHTML=msg;
+    document.getElementById('ordersIn').innerHTML=msg;
+    return;
+  }
   document.getElementById('ordersOut').innerHTML =
     (out&&out.length)?out.map(o=>orderCard(o,false)).join(''):`<div class="empty">まだ発注はありません</div>`;
   document.getElementById('ordersIn').innerHTML =
@@ -1491,6 +1537,7 @@ async function openTask(id){
     sb.from('tasks').select('id,title,status,start_date,end_date,task_assignees(user_id)').eq('parent_task_id',id).order('created_at'),
   ]);
   if(!t)return;
+  curTaskCache=t; curSubsCache=subs||[];   // updTask/updSubの日付逆転チェック用（相手側フィールドの現在値）
   // 案件名はproject_task_labels経由（メンバー外の担当者にも安全に返る。金額/客先は含まない・v17）
   if(t.project_id){
     const {data:pl}=await sb.from('project_task_labels').select('name,code').eq('id',t.project_id).single();
@@ -1565,9 +1612,15 @@ async function addSubtask(parentId,projectId){
 }
 async function updSub(subId,field,value,parentId){
   if((field==='start_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');openTask(parentId);return;}
+  const s=curSubsCache.find(x=>x.id===subId);
+  if((field==='start_date'||field==='end_date')&&value&&s){
+    const otherVal=field==='start_date'?s.end_date:s.start_date;
+    const bad=field==='start_date'?badRange(value,otherVal):badRange(otherVal,value);
+    if(otherVal&&bad){toast(field==='start_date'?'開始日は終了日以前にしてください':'終了日は開始日以降にしてください');openTask(parentId);return;}
+  }
   let v=value; if((field==='start_date'||field==='end_date')&&!value)v=null;
   const {error}=await sb.from('tasks').update({[field]:v}).eq('id',subId);
-  if(error){toast('保存エラー: '+error.message);return;}
+  if(error){toast('保存エラー: '+error.message);openTask(parentId);return;}
   toast('保存しました'); openTask(parentId);
 }
 async function assignSub(subId,parentId){
@@ -1583,9 +1636,14 @@ async function unassignSub(subId,uid,parentId){
 }
 async function updTask(id,field,value){
   if((field==='start_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');refreshTasks();return;}
+  if((field==='start_date'||field==='end_date')&&value&&curTaskCache&&curTaskCache.id===id){
+    const otherVal=field==='start_date'?curTaskCache.end_date:curTaskCache.start_date;
+    const bad=field==='start_date'?badRange(value,otherVal):badRange(otherVal,value);
+    if(otherVal&&bad){toast(field==='start_date'?'開始日は終了日以前にしてください':'終了日は開始日以降にしてください');refreshTasks();return;}
+  }
   let v=value; if((field==='start_date'||field==='end_date')&&!value)v=null;
   const {error}=await sb.from('tasks').update({[field]:v}).eq('id',id);
-  if(error){toast('保存エラー: '+error.message);return;}
+  if(error){toast('保存エラー: '+error.message);refreshTasks();return;}
   toast('保存しました'); refreshTasks();
 }
 async function updTaskNum(id,field,value){
@@ -1692,7 +1750,8 @@ function timelineHTML(tasks,pmeta){
     if(isFinite(ps)){const l=(ps-lo)*DAYPX, w=(pe-ps+1)*DAYPX;
       span=`<div class="tl-pspan" style="left:${l}px;width:${w}px"></div>
         <div class="tl-pcap" style="left:${l}px"></div><div class="tl-pcap" style="left:${l+w-3}px"></div>`;}
-    const deliv=m.delivery_date?`<div class="tl-deliv" title="納品 ${fmtDate(m.delivery_date)}" style="left:${(dnum(m.delivery_date)-lo)*DAYPX}px"></div>`:'';
+    const delivNum=m.delivery_date?dnum(m.delivery_date):null;
+    const deliv=(delivNum!=null&&delivNum>=lo&&delivNum<=hi)?`<div class="tl-deliv" title="納品 ${fmtDate(m.delivery_date)}" style="left:${(delivNum-lo)*DAYPX}px"></div>`:'';
     rows+=`<div class="tl-row tl-proj"><div class="tl-name" onclick="openDetail('${pid}')">${esc(m.code)} ${esc(m.name||'案件')}</div><div class="tl-cells" style="${grid}">${todayLine}${span}${deliv}</div></div>`;
     byProj[pid].forEach(t=>{
       const s=dnum(t.start_date),e=dnum(t.end_date);
@@ -1722,10 +1781,14 @@ async function loadGantt(){
   const body=document.getElementById('ganttBody');
   const prevSc=body.querySelector('.tl-scroll');
   const keepScroll=prevSc?prevSc.scrollLeft:null;
-  const tasks=await fetchTasks(null);
+  const prevBoard=document.getElementById('board');
+  const keepBoardScroll=prevBoard?prevBoard.scrollLeft:null;
+  const {data:tasks,error:tErr}=await sb.from('tasks').select(TASK_SELECT).is('parent_task_id',null).order('start_date',{nullsFirst:false});
   const bar=`<div class="viewbar">
     ${[['board','ボード'],['timeline','タイムライン'],['list','リスト']].map(([v,l])=>
       `<button type="button" class="vbtn ${curTaskView===v?'on':''}" onclick="setTaskView('${v}')">${l}</button>`).join('')}</div>`;
+  if(tErr){body.innerHTML=bar+`<div class="empty">取得エラー: ${esc(tErr.message)}<br>
+    <button class="btn btn-ghost mini" style="margin-top:10px" onclick="loadGantt()">↻ 再読み込み</button></div>`;return;}
   if(!tasks.length){body.innerHTML=bar+`<div class="empty">タスクがまだありません。<br>案件の詳細画面「タスク」から追加できます。</div>`;return;}
   const pmeta={};
   // project_task_labels: メンバー外のタスク担当者にも案件名/日付だけを安全に返すビュー（金額/客先は含まない・v17）
@@ -1740,6 +1803,8 @@ async function loadGantt(){
     if(keepScroll!=null){sc.scrollLeft=keepScroll;}
     else{const td=sc.querySelector('.tl-day.td');if(td)sc.scrollLeft=Math.max(0,td.offsetLeft-160);}
   }
+  const b=document.getElementById('board');
+  if(b&&keepBoardScroll!=null)b.scrollLeft=keepBoardScroll;
 }
 
 // ---- 経理（網羅一覧・ソート・クリックで詳細） ----
@@ -1767,9 +1832,13 @@ async function updProj(id,field,value){
   let v=(value==null?'':value).toString().trim();
   if(field==='name'&&!v){toast('案件名は空にできません');loadFinance();return;}
   if((field==='delivery_date'||field==='start_date')&&v&&!saneDate(v)){toast('日付の年を確認してください（2000〜2100）');loadFinance();return;}
+  if(id===curDetail&&curProjMeta){
+    if(field==='start_date'&&v&&curProjMeta.delivery_date&&badRange(v,curProjMeta.delivery_date)){toast('開始日は納品日以前にしてください');loadFinance();return;}
+    if(field==='delivery_date'&&v&&curProjMeta.start_date&&badRange(curProjMeta.start_date,v)){toast('納品日は開始日以降にしてください');loadFinance();return;}
+  }
   if((field==='delivery_date'||field==='start_date')&&!v) v=null;   // 空欄は未設定
   const {error}=await sb.from('projects').update({[field]:v}).eq('id',id);
-  if(error){toast('保存エラー: '+error.message);return;}
+  if(error){toast('保存エラー: '+error.message);loadFinance();return;}
   toast('保存しました');
   const row=finRows.find(r=>r.id===id); if(row)row[field]=v;
   const fin=document.getElementById('s-finance');
@@ -1780,7 +1849,7 @@ async function updProjNum(id,field,value){
   const n=parseInt((value||'0').toString().replace(/[,，]/g,''),10)||0;
   if(n<0){toast('金額は0以上で入力してください');loadFinance();return;}
   const {error}=await sb.from('projects').update({[field]:n}).eq('id',id);
-  if(error){toast('保存エラー: '+error.message);return;}
+  if(error){toast('保存エラー: '+error.message);loadFinance();return;}
   toast('保存しました');
   await loadFinance(); // 粗利を再計算
 }
@@ -1975,7 +2044,7 @@ async function boot(){
   await loadProjectOptions();
   await loadVendors();
   document.getElementById('acctBtn').classList.add('show');
-  nav('expense');   // 現場スタッフの主用途「その場で経費を記録」に着地（M-6）
+  applyHash();   // リロード時は直前のタブ/案件詳細へ復元。ハッシュが無ければ経費タブへ着地（M-6）
 }
 </script>
 </body>

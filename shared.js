@@ -200,10 +200,11 @@
   // ---- 案件 ----
   OC.loadProjects = async function () {
     await OC._ensureVisible();
-    const [{ data: costs }, { data: meta }] = await Promise.all([
+    const [{ data: costs, error: e1 }, { data: meta, error: e2 }] = await Promise.all([
       OC.sb.from('project_costs').select('*').order('profit', { ascending: false }),
       OC.sb.from('projects').select('id,status,client,delivery_date,start_date,leader_id'),
     ]);
+    if (e1 || e2) throw (e1 || e2);
     const m = Object.fromEntries((meta || []).map((x) => [x.id, x]));
     let rows = (costs || []).map((p) => ({ ...p, ...(m[p.id] || {}) }));
     if (OC._visIds) rows = rows.filter((p) => OC._visIds.has(p.id));
@@ -244,7 +245,8 @@
       .select('id,amount,note,spent_at,status,kind,project_id,user_id,receipt_url,proj:project_id(name,code),author:user_id(name,email),vendor:vendor_id(name)')
       .order('spent_at', { ascending: false });
     if (limit && !OC._visIds) q = q.limit(limit);
-    const { data } = await q;
+    const { data, error } = await q;
+    if (error) throw error;
     let rows = data || [];
     if (OC._visIds) { rows = rows.filter((e) => OC._visIds.has(e.project_id)); if (limit) rows = rows.slice(0, limit); }
     return rows;
@@ -266,7 +268,7 @@
     const { data, error } = await OC.sb.from('tasks')
       .select('id,project_id,title,start_date,end_date,status,progress,leader_id,parent_task_id,task_assignees(user_id)')
       .order('start_date', { ascending: true });
-    if (error) console.error('[OC] loadAllTasks 失敗', error);
+    if (error) throw error;
     let rows = data || [];
     if (OC._visIds) rows = rows.filter((t) => OC._visIds.has(t.project_id));
     // 案件名/日付は project_task_labels 経由（メンバー外のタスク担当者にも安全に返る。金額/客先は含まない・v17）。
