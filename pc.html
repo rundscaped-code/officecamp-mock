@@ -635,8 +635,8 @@ function leaderOptions(cur){return '<option value="">—</option>'+OC.people.map
 async function saveProjField(id,field,value){
   let v=value;
   if(field==='amount')v=parseInt(String(value).replace(/[,，]/g,''),10)||0;
-  if(field==='amount'&&v<0){toast('金額は0以上で入力してください');await OC.loadProjects();if(curView==='projects')selectProject(id);return;}
-  if((field==='start_date'||field==='delivery_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');if(curView==='projects')selectProject(id);return;}
+  if(field==='amount'&&v<0){toast('金額は0以上で入力してください');await OC.loadProjects();if(curView==='projects')selectProject(id);if(curView==='tasks')paintTasks();return;}
+  if((field==='start_date'||field==='delivery_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');if(curView==='projects')selectProject(id);if(curView==='tasks')paintTasks();return;}
   if((field==='client'||field==='start_date'||field==='delivery_date'||field==='leader_id')&&v==='')v=null;
   const patch={};patch[field]=v;
   const {error}=await OC.updateProject(id,patch);
@@ -645,6 +645,7 @@ async function saveProjField(id,field,value){
   await OC.loadProjects();
   if(curView==='finance')paintFinance();
   if(curView==='projects'){paintProjTable();selectProject(id);}
+  if(curView==='tasks')paintTasks();
 }
 function openProjModal(preset){
   preset=preset||{};
@@ -1097,6 +1098,21 @@ function openBarPop(ev,id){
   pop.classList.add('show');
 }
 function closeBarPop(){const p=document.getElementById('barPop');if(p)p.classList.remove('show');}
+// タイムライン案件行のクリック用ポップオーバー（openBarPopと同型・#barPop/.bpop共用）: 状態・開始/納品日・タスク追加・詳細
+function openProjPop(ev,pid){
+  ev.stopPropagation();
+  const p=OC.projects.find(x=>x.id===pid);if(!p)return;
+  const pop=document.getElementById('barPop');
+  pop.innerHTML=PSTATUS.map(s=>`<div class="bp-row" onclick="saveProjField('${pid}','status','${s}');closeBarPop()"><i class="dot s-${s}"></i>${s===p.status?'✓ ':''}${s}</div>`).join('')
+    +`<div class="bp-sep"></div>`
+    +`<div class="bp-dates"><input type="date" class="einput" value="${p.start_date||''}" onchange="saveProjField('${pid}','start_date',this.value)"><input type="date" class="einput" value="${p.delivery_date||''}" onchange="saveProjField('${pid}','delivery_date',this.value)"></div>`
+    +`<div class="bp-sep"></div>`
+    +`<div class="bp-link" onclick="closeBarPop();openTaskAddModal('${pid}')">＋ タスクを追加</div>`
+    +`<div class="bp-link" onclick="closeBarPop();go('projects');setTimeout(()=>selectProject('${pid}'),40)">詳細を開く</div>`;
+  pop.style.left=Math.min(ev.clientX,window.innerWidth-210)+'px';
+  pop.style.top=Math.min(ev.clientY,window.innerHeight-260)+'px';
+  pop.classList.add('show');
+}
 function asgHTML(t){
   const chips=(t.task_assignees||[]).map(a=>`<span class="achip">${esc(OC.personName(a.user_id))}<b onclick="removeAsg('${t.id}','${a.user_id}')">×</b></span>`).join('');
   const taken=(t.task_assignees||[]).map(a=>a.user_id);
@@ -1256,7 +1272,7 @@ function paintTaskTimeline(body){
       projMarks+=`<div class="gdead" style="left:${dDiff(minD,proj.delivery_date)*W+W/2}px" title="納品期限 ${esc(proj.delivery_date)}">◆</div>`;
     }
     const deadMeta=proj.delivery_date?`<span class="gnmeta" title="納品期限 ${esc(proj.delivery_date)}">◆納品 ${mmdd(proj.delivery_date)}</span>`:'';
-    const projRow=`<div class="grow gproj"><div class="gname"><span class="gnttl">${pid?`<span class="tasklink" onclick="go('projects');setTimeout(()=>selectProject('${pid}'),40)">${projName}</span>`:projName}</span>${deadMeta}${pid?`<button class="gaddbtn" title="タスクを追加" onclick="openTaskAddModal('${pid}')">＋</button>`:''}</div><div class="gcells" style="width:${totalW}px">${projMarks}</div></div>`;
+    const projRow=`<div class="grow gproj"><div class="gname"><span class="gnttl">${pid?`<span class="tasklink" onclick="openProjPop(event,'${pid}')">${projName}</span>`:projName}</span>${deadMeta}${pid?`<button class="gaddbtn" title="タスクを追加" onclick="openTaskAddModal('${pid}')">＋</button>`:''}</div><div class="gcells" style="width:${totalW}px">${projMarks}</div></div>`;
     const taskRow=(t,sub)=>{const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
       return `<div class="grow"><div class="gname" style="${sub?'padding-left:20px':''}">${statusSelMini(t)}<span class="gnttl"><span class="tasklink" onclick="openTaskModal('${t.id}')">${sub?'↳ ':''}${esc(t.title)}</span></span>${who?'<span class="gnasg">'+who+'</span>':''}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;};
     return projRow+tops.map(t=>taskRow(t,false)+subs(t).map(s=>taskRow(s,true)).join('')).join('');
