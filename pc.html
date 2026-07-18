@@ -294,10 +294,10 @@
       <button type="button" data-v="home"     onclick="go('home')"><span class="ic">▦</span> ホーム</button>
       <button type="button" data-v="projects" onclick="go('projects')"><span class="ic">▤</span> 案件</button>
       <button type="button" data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費</button>
-      <div class="navsec">管理</div>
-      <button type="button" data-v="finance" id="financeNav" class="hidden" onclick="go('finance')"><span class="ic">▣</span> 経理</button>
       <button type="button" data-v="tasks"    onclick="go('tasks')"><span class="ic">☷</span> タスク</button>
       <button type="button" data-v="orders"   onclick="go('orders')"><span class="ic">⇄</span> 発注</button>
+      <div class="navsec hidden" id="adminSec">管理</div>
+      <button type="button" data-v="finance" id="financeNav" class="hidden" onclick="go('finance')"><span class="ic">▣</span> 経理</button>
       <button type="button" data-v="members" id="membersNav" class="hidden" onclick="go('members')"><span class="ic">👥</span> メンバー</button>
     </nav>
     <div class="side-foot">
@@ -413,11 +413,17 @@ function updateImpersonationBar(){
     <button class="btn ghost sm" onclick="stopImpersonation()">代理操作を終了</button>`;
   bar.classList.add('show');
 }
+// 管理セクション見出し: 中身（経理/メンバー）が両方 hidden なら見出しごと隠す
+function syncAdminSec(){
+  const hidden=id=>document.getElementById(id).classList.contains('hidden');
+  document.getElementById('adminSec').classList.toggle('hidden',hidden('financeNav')&&hidden('membersNav'));
+}
 function refreshShell(){
   document.getElementById('meName').textContent=OC.meName||'—';
   document.getElementById('meRole').textContent=OC.myRole||'—';
   document.getElementById('financeNav').classList.toggle('hidden',!OC.isAccounting());
   document.getElementById('membersNav').classList.toggle('hidden',!OC.isActualAdmin()||!!OC.impersonatingUser);
+  syncAdminSec();
   updateImpersonationBar();
 }
 function startImpersonation(userId){
@@ -1358,6 +1364,7 @@ async function saveMemberEdit(userId){
     document.getElementById('meRole').textContent=OC.myRole||'—';
     document.getElementById('financeNav').classList.toggle('hidden',!OC.isAccounting());
     document.getElementById('membersNav').classList.toggle('hidden',OC.myRole!=='管理者');
+    syncAdminSec();
   }catch(e){
     toast('更新エラー: '+e.message);
     document.getElementById('emSave').disabled=false;
