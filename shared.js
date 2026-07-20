@@ -158,7 +158,28 @@
   };
   OC.projectVisible = (pid) => !OC._visIds || OC._visIds.has(pid);
   // 代理操作の切替時に呼ぶ：案件キャッシュと可視集合を破棄して再取得させる。
-  OC.resetScope = function () { OC._visKey = undefined; OC._visIds = null; OC.projects = []; OC.projOpts = []; };
+  OC.resetScope = function () { OC._visKey = undefined; OC._visIds = null; OC.projects = []; OC.projOpts = []; OC.myProjIds = null; };
+
+  // ---- 案件タブの自己スコープ（経理・管理者向け） ----
+  // 「自分の案件」＝owner_id/leader_id が自分、project_members に自分がいる、
+  // いずれかのタスクの task_assignees に自分がいる、のいずれか。
+  OC.myProjIds = null;
+  OC.loadMyProjectIds = async function () {
+    const uid = OC.effectiveUserId();
+    const [{ data: owned }, { data: led }, { data: mem }, { data: ta }] = await Promise.all([
+      OC.sb.from('projects').select('id').eq('owner_id', uid),
+      OC.sb.from('projects').select('id').eq('leader_id', uid),
+      OC.sb.from('project_members').select('project_id').eq('user_id', uid),
+      OC.sb.from('task_assignees').select('task:task_id(project_id)').eq('user_id', uid),
+    ]);
+    const s = new Set();
+    (owned || []).forEach((r) => s.add(r.id));
+    (led || []).forEach((r) => s.add(r.id));
+    (mem || []).forEach((r) => s.add(r.project_id));
+    (ta || []).forEach((r) => { const pid = r.task && r.task.project_id; if (pid) s.add(pid); });
+    OC.myProjIds = s;
+    return s;
+  };
 
   // ---- ユーザー/マスタ ----
   OC.loadMe = async function () {

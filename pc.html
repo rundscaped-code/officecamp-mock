@@ -361,7 +361,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=19"></script>
+<script src="shared.js?v=20"></script>
 <script>
 let curView='home', curProject=null, projSort={key:'profit',dir:-1};
 
@@ -628,6 +628,7 @@ async function renderProjects(c){
       <div class="card list-card"><div id="projTable"></div></div>
       <div class="card detail-card"><div class="card-b" id="projDetail"><div class="empty">← 左の一覧から案件を選んでください</div></div></div>
     </div>`;
+  if(OC.isManager()){try{await OC.loadMyProjectIds();}catch(e){}}
   paintProjTable();
   if(curProject)selectProject(curProject);
 }
@@ -635,6 +636,7 @@ function projFiltered(){
   const q=(document.getElementById('pSearch')?.value||'').trim().toLowerCase();
   const st=document.getElementById('pStatus')?.value||'';
   return OC.projects.filter(p=>{
+    if(OC.isManager()&&OC.myProjIds&&!OC.myProjIds.has(p.id))return false;
     if(st&&p.status!==st)return false;
     if(q&&!`${p.code||''} ${p.name||''} ${p.client||''}`.toLowerCase().includes(q))return false;
     return true;
@@ -821,6 +823,7 @@ async function duplicateProjectUI(id){
     const okCount=Object.keys(idMap).length;
     toast(failCount?'案件「'+newName+'」を複製しました（タスク'+okCount+'件・失敗'+failCount+'件）':'案件「'+newName+'」を複製しました（タスク'+okCount+'件）');
     try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
+    if(OC.isManager()){try{await OC.loadMyProjectIds();}catch(e){}}
     if(curView==='projects'){paintProjTable();selectProject(newProj.id);}
   }catch(e){toast('複製エラー: '+(e.message||e));}
 }
@@ -857,6 +860,7 @@ async function saveProj(){
   if(error){toast('追加エラー: '+error.message);document.getElementById('mSave').disabled=false;return;}
   closeModal();toast('案件「'+name+'」を追加');
   try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
+  if(OC.isManager()){try{await OC.loadMyProjectIds();}catch(e){}}
   if(curView==='projects')paintProjTable();
   else if(curView==='finance')renderFinance(document.getElementById('content'));
 }

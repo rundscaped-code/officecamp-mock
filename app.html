@@ -995,6 +995,22 @@ async function loadProjects(){
     <button class="btn btn-ghost mini" style="margin-top:10px" onclick="loadProjects()">↻ 再読み込み</button></div>`;return;}
   const m=Object.fromEntries((meta||[]).map(x=>[x.id,x]));
   projRows=(data||[]).map(p=>({...p,...(m[p.id]||{})}));
+  if(isManager()){
+    try{
+      const [{data:owned},{data:led},{data:mem},{data:ta}]=await Promise.all([
+        sb.from('projects').select('id').eq('owner_id',me.id),
+        sb.from('projects').select('id').eq('leader_id',me.id),
+        sb.from('project_members').select('project_id').eq('user_id',me.id),
+        sb.from('task_assignees').select('task:task_id(project_id)').eq('user_id',me.id),
+      ]);
+      const s=new Set();
+      (owned||[]).forEach(r=>s.add(r.id));
+      (led||[]).forEach(r=>s.add(r.id));
+      (mem||[]).forEach(r=>s.add(r.project_id));
+      (ta||[]).forEach(r=>{const pid=r.task&&r.task.project_id;if(pid)s.add(pid);});
+      projRows=projRows.filter(p=>s.has(p.id));
+    }catch(e){}
+  }
   renderProjects();
 }
 function renderProjects(){
