@@ -858,6 +858,7 @@ async function saveProj(){
   closeModal();toast('案件「'+name+'」を追加');
   try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
   if(curView==='projects')paintProjTable();
+  else if(curView==='finance')renderFinance(document.getElementById('content'));
 }
 
 // ---- 経費 ----
@@ -1145,6 +1146,7 @@ let finSort={key:'profit',dir:-1};
 function ym(d){return d?String(d).slice(0,7):'';}
 async function renderFinance(c){
   if(!OC.isManager()){c.innerHTML='<div class="card"><div class="card-b empty">経理ユーザー（経理／管理者）のみ閲覧できます。</div></div>';return;}
+  document.getElementById('topActions').innerHTML='<button class="btn" onclick="openProjModal()">＋ 案件を追加</button>';
   if(!OC.projects.length){
     try{ await OC.loadProjects(); }
     catch(e){
