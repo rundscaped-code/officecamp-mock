@@ -242,6 +242,34 @@
     rows.forEach((p) => { p.parent_name = p.parent_id ? (nameById[p.parent_id] || null) : null; });
     OC.projOpts = rows; return OC.projOpts;
   };
+  // 自分の担当案件: 自分（effectiveUser）が担当（leader_id=自分）の子行一覧。
+  // 名前・状態・期間・親名は projects、金額列は project_costs から取り重ねる。
+  // 金額未確定（amount null）の行は revenue / profit が null で返る。
+  // 表示分岐（v == null ? '—' : OC.yen(v)）は呼び出し側で行う。
+  OC.loadMyAnkens = async function () {
+    const uid = OC.effectiveUserId();
+    const [{ data: kids, error: e1 }, { data: costs, error: e2 }] = await Promise.all([
+      OC.sb.from('projects')
+        .select('id,name,code,status,parent_id,start_date,end_date,parent:parent_id(name)')
+        .eq('leader_id', uid).not('parent_id', 'is', null)
+        .order('created_at', { ascending: false }),
+      OC.sb.from('project_costs')
+        .select('id,revenue,cost,client_billed,profit')
+        .eq('leader_id', uid).not('parent_id', 'is', null),
+    ]);
+    if (e1 || e2) throw (e1 || e2);
+    const costById = Object.fromEntries((costs || []).map((c) => [c.id, c]));
+    return (kids || []).map((k) => {
+      const c = costById[k.id] || {};
+      return {
+        id: k.id, name: k.name, code: k.code, status: k.status,
+        parent_id: k.parent_id, parent_name: k.parent ? k.parent.name : null,
+        revenue: c.revenue ?? null, cost: c.cost ?? null,
+        client_billed: c.client_billed ?? null, profit: c.profit ?? null,
+        start_date: k.start_date, end_date: k.end_date,
+      };
+    });
+  };
   // プロジェクト詳細: p = 親行、ankens = 子行（projects で全可視分＋project_costs の
   // 金額列を重ねる。金額列は担当本人・親の owner/leader・経理のみビューが返す）、
   // expenses / tasks = ツリー全体、members = project_members（導出結果の表示用）。

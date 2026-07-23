@@ -473,6 +473,34 @@
     <div class="sheet-card" id="actSheetBody"></div>
   </div>
 
+  <!-- 経費編集シート（金額・メモ・申請先の3項目のみ。本人or経理から長押しで開く） -->
+  <div id="expEdit" class="sheet hidden" onclick="if(event.target===this)closeExpEdit()">
+    <div class="sheet-card">
+      <div class="sheet-h">経費を編集</div>
+      <div class="amount-row"><span class="yen">¥</span><input class="amount" id="eeAmt" inputmode="numeric" placeholder="0" aria-label="金額（円）"></div>
+      <div class="field"><label for="eeMemo">メモ（何を買ったか）</label>
+        <input class="control" id="eeMemo" placeholder="木材・ビス など"></div>
+      <div class="field"><label for="eeCharge">申請先</label>
+        <select class="control" id="eeCharge"></select></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" style="flex:1" onclick="saveExpEdit()">保存</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="closeExpEdit()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 案件金額編集シート（プロジェクト詳細の案件一覧・長押しから開く。空欄確定でnull） -->
+  <div id="akAmtEdit" class="sheet hidden" onclick="if(event.target===this)closeAkAmtEdit()">
+    <div class="sheet-card">
+      <div class="sheet-h" id="akAmtEditTitle">金額を編集</div>
+      <div class="amount-row"><span class="yen">¥</span><input class="amount" id="akAmtEditInput" inputmode="numeric" placeholder="未確定なら空欄" aria-label="金額（円）"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" style="flex:1" onclick="saveAkAmtEdit()">保存</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="closeAkAmtEdit()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 設定未投入バナー -->
   <div id="needConfig" class="login hidden">
     <h1>オフィスキャンプ プロジェクト管理</h1>
@@ -517,8 +545,10 @@
       <div class="card pad">
         <form onsubmit="event.preventDefault();record()">
         <div class="amount-row"><span class="yen">¥</span><input class="amount" id="amt" inputmode="numeric" enterkeyhint="done" placeholder="0" aria-label="金額（円）"></div>
-        <div class="field"><label for="proj">紐づくプロジェクト・案件</label>
-          <select class="control" id="proj"></select></div>
+        <div class="field"><label for="proj">紐づくプロジェクト</label>
+          <select class="control" id="proj" onchange="rebuildAnkenSelect()"></select></div>
+        <div class="field"><label for="projAnken">案件（任意）</label>
+          <select class="control" id="projAnken"></select></div>
         <div class="field"><label for="expCharge">申請先</label>
           <select class="control" id="expCharge"><option value="self">自分</option></select></div>
         <div class="field"><label for="memo">メモ（何を買ったか）</label>
@@ -542,7 +572,7 @@
         <form onsubmit="event.preventDefault();addProject()">
         <div class="field"><label for="npName">プロジェクト名</label><input class="control" id="npName" placeholder="○○ビル改修"></div>
         <div class="field"><label for="npClient">受注元（任意）</label><input class="control" id="npClient" placeholder="◇◇建設"></div>
-        <div class="field"><label for="npAmt">プロジェクト金額（円・任意）</label><input class="control" id="npAmt" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label for="npAmt">プロジェクト金額（円・任意）</label><input class="control" id="npAmt" inputmode="numeric" placeholder="未確定なら空欄"></div>
         <div class="row-inline" style="margin-bottom:12px">
           <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700" for="npStart">開始日（任意）</label>
             <input class="control" id="npStart" type="date"></div>
@@ -562,6 +592,15 @@
           <option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option></select>
       </div>
       <div id="projList"><div class="empty">読み込み中…</div></div>
+    </div>
+  </section>
+
+  <!-- 案件一覧（自分の担当分のみ） -->
+  <section id="s-ankens" class="hidden" style="display:flex;flex-direction:column;flex:1">
+    <div class="head"><h1>案件</h1><div class="date">自分の担当分</div></div>
+    <div class="screen">
+      <div class="kpis" id="ankenKpis" style="margin-bottom:14px"></div>
+      <div id="ankenList"><div class="empty">読み込み中…</div></div>
     </div>
   </section>
 
@@ -599,6 +638,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>経費</button>
     <button type="button" class="tab" data-s="projects" onclick="nav('projects')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>プロジェクト</button>
+    <button type="button" class="tab" data-s="ankens" onclick="nav('ankens')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/></svg>案件</button>
     <button type="button" class="tab" data-s="schedule" onclick="nav('schedule')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h10M3 10h14M3 15h7"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>タスク</button>
     <button type="button" class="tab hidden" data-s="finance" onclick="nav('finance')">
@@ -630,6 +671,9 @@ const yen = n => "¥"+Number(n||0).toLocaleString();
 // 万円表記。1万円未満は円表記へフォールバック（¥4,900が「¥0万」になる誤認防止）。端数は小数1桁。
 const man = n => { n=Number(n||0); if(Math.abs(n)<10000)return yen(n);
   const v=Math.round(n/1000)/10; return "¥"+(Number.isInteger(v)?v:v.toFixed(1))+"万"; };
+// 金額未確定（null）表示: 単一値の表示は '—'、合算は呼び出し側で ||0 して除外する（v17）
+const mv = n => n==null ? '—' : man(n);
+const yv = n => n==null ? '—' : yen(n);
 // エラーは赤背景・5秒・タップで閉じる（M-5）。第2引数省略時は文言から自動判定。
 function toast(m,isError){const t=document.getElementById('toast');
   if(isError===undefined)isError=/エラー|失敗|できません/.test(String(m));
@@ -649,14 +693,14 @@ function showUpdateToast(){
 function saneDate(v){ if(!v)return true; const y=+String(v).slice(0,4); return y>=2000&&y<=2100; }
 function badRange(s,e){ return !!(s&&e&&s>e); }
 
-const views=['needConfig','offlineView','loginView','s-expense','s-projects','s-detail','s-finance','s-schedule'];
+const views=['needConfig','offlineView','loginView','s-expense','s-projects','s-ankens','s-detail','s-finance','s-schedule'];
 function showOnly(id){views.forEach(v=>document.getElementById(v).classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
   document.getElementById('splash')?.classList.add('hidden');   // 何らかの画面が決まったら起動スプラッシュを隠す（P4-9）
 }
 function nav(name,fromPop){
   if(name==='finance' && !isAccounting()){toast('経理ユーザーのみ閲覧できます');name='projects';}
-  const map={expense:'s-expense',projects:'s-projects',schedule:'s-schedule',detail:'s-detail',finance:'s-finance'};
+  const map={expense:'s-expense',projects:'s-projects',ankens:'s-ankens',schedule:'s-schedule',detail:'s-detail',finance:'s-finance'};
   if(!map[name])name='expense';   // 不正・未知のハッシュは経費タブへフォールバック
   document.getElementById('tabbar').classList.remove('hidden');
   // リロードで直前のタブへ戻れるようにhistoryへ同期（同一タブへの連続pushは抑止）。
@@ -675,6 +719,7 @@ function nav(name,fromPop){
       if(curDetail){ openDetail(curDetail); } else { showDetailPlaceholder(); }
     }
   }
+  if(name==='ankens')loadAnkens();
   if(name==='schedule')loadGantt();
   if(name==='finance')loadFinance();
 }
@@ -687,7 +732,7 @@ function applyHash(){
     if(id)openDetail(id,true);
     return;
   }
-  const valid=['expense','projects','schedule','finance'];
+  const valid=['expense','projects','ankens','schedule','finance'];
   nav(valid.includes(h)?h:'expense',true);
 }
 window.addEventListener('popstate',applyHash);
@@ -877,20 +922,29 @@ function applyRole(){
 }
 async function loadProjectOptions(){
   const {data}=await sb.from('projects').select('id,name,parent_id').neq('status','失注').order('created_at',{ascending:false});
-  const rows=data||[];
-  const nameById={}; rows.forEach(r=>nameById[r.id]=r.name);
-  // 案件選択肢は親子とも。子は「親名 › 案件名」表記（プロジェクトと案件の区別をひと目で）
-  projects=rows.map(r=>({...r,label:r.parent_id?(nameById[r.parent_id]||'—')+' › '+r.name:r.name}));
+  projects=data||[];
+  // 1段目=プロジェクト（親のみ）。2段目=選択プロジェクト配下の案件（rebuildAnkenSelectで構築）
+  const parents=projects.filter(p=>!p.parent_id);
   const sel=document.getElementById('proj');
-  sel.innerHTML = projects.map(p=>`<option value="${p.id}">${esc(p.label)}</option>`).join('')
+  sel.innerHTML = parents.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')
                   || `<option value="">プロジェクトがありません</option>`;
+  rebuildAnkenSelect();
   syncExpenseGuide();
+}
+// 経費フォーム2段目: 先頭「プロジェクト直下」+選択中プロジェクトの案件のみ
+function rebuildAnkenSelect(){
+  const pid=document.getElementById('proj').value;
+  const kids=projects.filter(p=>p.parent_id===pid);
+  const sel=document.getElementById('projAnken');
+  sel.innerHTML = `<option value="">プロジェクト直下</option>`+
+    kids.map(k=>`<option value="${k.id}">${esc(k.name)}</option>`).join('');
 }
 // 初回利用: プロジェクトゼロで経費フォームだけ出しても記録できないため、プロジェクト作成へ誘導する（P4-11）
 function syncExpenseGuide(){
   const empty=!projects.length;
   document.getElementById('expenseGuide').classList.toggle('hidden',!empty);
   document.getElementById('proj').disabled=empty;
+  document.getElementById('projAnken').disabled=empty;
   document.getElementById('recBtn').disabled=empty;
 }
 async function loadPeople(){
@@ -963,8 +1017,8 @@ function renderProjects(){
       <div class="card"><div class="pad proj" data-pid="${p.id}" onpointerdown="lpStart(event,()=>projSheet('${p.id}'))" onclick="lpGuard()&&openDetail('${p.id}')">
         <div class="proj-top"><span class="dot s-${p.status}" style="width:9px;height:9px;border-radius:50%"></span>
           <span class="proj-name">${p.code?esc(p.code)+' ':''}${esc(p.name)}</span>
-          <div class="profit"><div class="v">粗利 ${man(p.profit)}</div><div class="r">${p.profit_rate}%</div></div></div>
-        <div class="proj-meta">${p.client?esc(p.client)+'・':''}金額 ${man(p.revenue)}・案件${p.anken_count||0}件・<b>${esc(p.status)}</b></div>
+          <div class="profit"><div class="v">粗利 ${mv(p.profit)}</div><div class="r">${p.profit_rate==null?'—':p.profit_rate+'%'}</div></div></div>
+        <div class="proj-meta">${p.client?esc(p.client)+'・':''}金額 ${mv(p.revenue)}・案件${p.anken_count||0}件・<b>${esc(p.status)}</b></div>
       </div></div>`).join('');
   }
   if(isDesktop()&&curDetail)markSelectedProject(curDetail);
@@ -995,9 +1049,9 @@ function renderProjTable(rows){
   const body=sorted.map(p=>`<tr data-pid="${p.id}" onclick="openDetail('${p.id}')">
     <td class="l"><div class="pj-nm">${p.code?'<span class="pj-cd">'+esc(p.code)+'</span> ':''}${esc(p.name)}</div>${p.client?'<div class="pj-cl">'+esc(p.client)+'</div>':''}</td>
     <td>${p.anken_count||0}</td>
-    <td>${man(p.revenue)}</td>
-    <td class="${(p.profit||0)<0?'neg':''}">${man(p.profit)}</td>
-    <td>${p.profit_rate}%</td>
+    <td>${mv(p.revenue)}</td>
+    <td class="${(p.profit||0)<0?'neg':''}">${mv(p.profit)}</td>
+    <td>${p.profit_rate==null?'—':p.profit_rate+'%'}</td>
     <td class="l"><span class="pj-st s-${p.status}"><i class="dot s-${p.status}"></i>${p.status||''}</span></td>
   </tr>`).join('');
   document.getElementById('projList').innerHTML=head+body+'</tbody></table>';
@@ -1010,13 +1064,49 @@ function showDetailPlaceholder(){
   if(b)b.innerHTML='<div class="detail-empty">← 左の一覧からプロジェクトを選んでください</div>';
   document.getElementById('dName').textContent='プロジェクト詳細';
 }
+// ---- 案件タブ（自分が担当=leader_id の子行のみ。KPI + カード一覧） ----
+let ankenPageRows=[];
+async function loadAnkens(){
+  const list=document.getElementById('ankenList');
+  const {data,error}=await sb.from('project_costs').select('*').eq('leader_id',me.id).not('parent_id','is',null);
+  if(error){list.innerHTML=`<div class="empty">取得エラー: ${esc(error.message)}<br>
+    <button class="btn btn-ghost mini" style="margin-top:10px" onclick="loadAnkens()">↻ 再読み込み</button></div>`;return;}
+  const rows=data||[];
+  const parentIds=[...new Set(rows.map(r=>r.parent_id).filter(Boolean))];
+  let parentNames={};
+  if(parentIds.length){
+    const {data:parents}=await sb.from('projects').select('id,name').in('id',parentIds);
+    (parents||[]).forEach(p=>parentNames[p.id]=p.name);
+  }
+  ankenPageRows=rows.map(r=>({...r,parent_name:parentNames[r.parent_id]||'—'}))
+    .sort((a,b)=>(b.profit??-Infinity)-(a.profit??-Infinity));
+  renderAnkens();
+}
+function renderAnkens(){
+  const kpi=document.getElementById('ankenKpis');
+  const profitSum=ankenPageRows.reduce((s,r)=>s+(r.profit||0),0);
+  const costSum=ankenPageRows.reduce((s,r)=>s+(r.cost||0),0);
+  kpi.innerHTML=`
+    <div class="kpi"><div class="l">担当案件数</div><div class="n">${ankenPageRows.length}</div></div>
+    <div class="kpi pf"><div class="l">粗利計</div><div class="n">${man(profitSum)}</div></div>
+    <div class="kpi"><div class="l">経費計</div><div class="n">${man(costSum)}</div></div>`;
+  const list=document.getElementById('ankenList');
+  if(!ankenPageRows.length){list.innerHTML='<div class="empty">担当している案件はまだありません</div>';return;}
+  list.innerHTML=ankenPageRows.map(a=>`
+    <div class="card"><div class="pad proj" data-pid="${a.id}" onclick="openDetail('${a.id}')">
+      <div class="proj-top"><span class="dot s-${a.status}" style="width:9px;height:9px;border-radius:50%"></span>
+        <span class="proj-name">${a.code?esc(a.code)+' ':''}${esc(a.name)}</span>
+        <div class="profit"><div class="v">粗利 ${mv(a.profit)}</div></div></div>
+      <div class="proj-meta">${esc(a.parent_name)}・金額 ${mv(a.revenue)}・経費 ${man(a.cost)}・<b>${esc(a.status)}</b></div>
+    </div></div>`).join('');
+}
 // 長押しアクションシート: 経費のプリセット付き追加・状態変更（P0-B #13）
 function projSheet(pid){
   const p=projRows.find(x=>x.id===pid); if(!p)return;
   openActSheet(p.name||'プロジェクト',[
     {label:'詳細を開く',fn:()=>openDetail(pid)},
     {sep:true},
-    {label:'＋経費を足す',fn:()=>{nav('expense');const s=document.getElementById('proj');if(s)s.value=pid;}},
+    {label:'＋経費を足す',fn:()=>{nav('expense');const s=document.getElementById('proj');if(s){s.value=pid;rebuildAnkenSelect();}}},
     {sep:true},
     ...['見込','進行','完了','失注'].map(s=>({label:'状態: '+s+' にする',checked:p.status===s,fn:()=>updProj(pid,'status',s)})),
   ]);
@@ -1039,8 +1129,9 @@ function toggleProjForm(show){
 async function addProject(){
   const name=document.getElementById('npName').value.trim();
   if(!name){toast('プロジェクト名を入れてください');return;}
-  const amount=parseInt((document.getElementById('npAmt').value||'0').replace(/[,，]/g,''),10)||0;
-  if(amount<0){toast('プロジェクト金額は0以上で入力してください');return;}
+  const npAmtRaw=(document.getElementById('npAmt').value||'').replace(/[,，]/g,'').trim();
+  const amount = npAmtRaw===''?null:parseInt(npAmtRaw,10);
+  if(amount!==null&&(isNaN(amount)||amount<0)){toast('プロジェクト金額は0以上で入力してください');return;}
   const delivery_date=document.getElementById('npDeliv').value||null;
   const start_date=document.getElementById('npStart').value||null;
   if(!saneDate(start_date)||!saneDate(delivery_date)){toast('日付の年を確認してください（2000〜2100）');return;}
@@ -1071,7 +1162,7 @@ async function openDetail(id,fromPop){
   }
   if(isDesktop()){
     // 二段ペイン: 一覧を残したまま右に詳細を出す
-    ['s-expense','s-schedule','s-finance','needConfig','loginView'].forEach(v=>document.getElementById(v).classList.add('hidden'));
+    ['s-expense','s-ankens','s-schedule','s-finance','needConfig','loginView'].forEach(v=>document.getElementById(v).classList.add('hidden'));
     document.getElementById('s-projects').classList.remove('hidden');
     document.getElementById('s-detail').classList.remove('hidden');
     if(!projRows||!projRows.length){await loadProjects();}
@@ -1131,7 +1222,7 @@ async function renderProjectDetail(id,body,keepScroll,savedScrollTop){
     <div class="exp-row" style="cursor:pointer" onpointerdown="lpStart(event,()=>ankenSheet('${a.id}'))" onclick="lpGuard()&&openDetail('${a.id}')">
       <div><div class="n"><span class="dot s-${a.status}" style="display:inline-block;margin-right:6px;vertical-align:middle"></span>${a.code?esc(a.code)+' ':''}${esc(a.name)}</div>
         <div class="d">${a.leader_id?personName(a.leader_id):'担当者未設定'}・${esc(a.status)}</div></div>
-      <div class="a">${a.revenue===undefined?'—':man(a.revenue)}</div>
+      <div class="a">${mv(a.revenue)}</div>
     </div>`).join('') || `<div class="empty">案件はまだありません</div>`;
 
   // 経費（ツリー全体。申請先つき）
@@ -1176,10 +1267,10 @@ async function renderProjectDetail(id,body,keepScroll,savedScrollTop){
   body.innerHTML=`
     <div class="card pad">
       <div class="kpis">
-        <div class="kpi"><div class="l">金額</div><div class="n">${man(p.revenue)}</div></div>
+        <div class="kpi"><div class="l">金額</div><div class="n">${mv(p.revenue)}</div></div>
         <div class="kpi"><div class="l">発注計</div><div class="n">${man(p.anken_sum)}</div></div>
         <div class="kpi"><div class="l">経費計</div><div class="n">${man(p.tree_cost)}</div></div>
-        <div class="kpi pf"><div class="l">粗利</div><div class="n">${man(p.profit)}</div></div>
+        <div class="kpi pf"><div class="l">粗利</div><div class="n">${mv(p.profit)}</div></div>
       </div>
     </div>
 
@@ -1195,7 +1286,7 @@ async function renderProjectDetail(id,body,keepScroll,savedScrollTop){
       <div id="ankenForm" class="card pad hidden" style="margin-top:10px">
         <div class="field"><label for="akName">案件名</label><input class="control" id="akName" placeholder="基礎工事 など"></div>
         <div class="field"><label for="akLeader">担当者</label><select class="control" id="akLeader">${peopleOptions('—選択—')}</select></div>
-        <div class="field"><label for="akAmt">案件金額（円）</label><input class="control" id="akAmt" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label for="akAmt">案件金額（円・任意）</label><input class="control" id="akAmt" inputmode="numeric" placeholder="未確定なら空欄"></div>
         <div class="row-inline" style="margin-bottom:12px">
           <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700" for="akStart">開始日</label>
             <input class="control" id="akStart" type="date"></div>
@@ -1252,9 +1343,9 @@ async function renderAnkenDetail(id,body,keepScroll,savedScrollTop){
   const kpiBlock = c ? `
     <div class="card pad">
       <div class="kpis">
-        <div class="kpi"><div class="l">案件金額</div><div class="n">${man(c.revenue)}</div></div>
+        <div class="kpi"><div class="l">案件金額</div><div class="n">${mv(c.revenue)}</div></div>
         <div class="kpi"><div class="l">経費</div><div class="n">${man(c.cost)}</div></div>
-        <div class="kpi pf"><div class="l">粗利</div><div class="n">${man(c.profit)}</div></div>
+        <div class="kpi pf"><div class="l">粗利</div><div class="n">${mv(c.profit)}</div></div>
       </div>
     </div>` : `<div class="card pad"><div class="task-meta">金額は担当者本人・プロジェクトリーダー・経理のみ閲覧できます</div></div>`;
 
@@ -1396,8 +1487,9 @@ async function addAnken(btn){
   const name=document.getElementById('akName').value.trim();
   if(!name){toast('案件名を入れてください');return;}
   const leader_id=document.getElementById('akLeader').value||null;
-  const amount=parseInt((document.getElementById('akAmt').value||'0').replace(/[,，]/g,''),10)||0;
-  if(amount<0){toast('案件金額は0以上で入力してください');return;}
+  const akAmtRaw=(document.getElementById('akAmt').value||'').replace(/[,，]/g,'').trim();
+  const amount = akAmtRaw===''?null:parseInt(akAmtRaw,10);
+  if(amount!==null&&(isNaN(amount)||amount<0)){toast('案件金額は0以上で入力してください');return;}
   const start_date=document.getElementById('akStart').value||null;
   const end_date=document.getElementById('akEnd').value||null;
   if(!saneDate(start_date)||!saneDate(end_date)){toast('日付の年を確認してください（2000〜2100）');return;}
@@ -1417,12 +1509,35 @@ function ankenSheet(id){
   const items=[{label:'詳細を開く',fn:()=>openDetail(id)}];
   if(canManage){
     items.push({sep:true});
+    items.push({label:'金額を編集',fn:()=>openAkAmtEdit(id,a.name,a.revenue)});
+    items.push({sep:true});
     ['見込','進行','完了','失注'].forEach(s=>items.push({label:'状態: '+s+' にする',checked:a.status===s,
       fn:()=>updProj(id,'status',s).then(()=>{ if(curDetail)openDetail(curDetail); })}));
     items.push({sep:true});
     items.push({label:'削除…',danger:true,fn:()=>deleteAnkenUI(id,a.name)});
   }
   openActSheet(a.name||'案件',items);
+}
+// 案件金額の編集（spec: anken-page-and-edit-ux #4。空欄確定でnull保存）
+let editingAkId=null;
+function openAkAmtEdit(id,name,curAmt){
+  editingAkId=id;
+  document.getElementById('akAmtEditTitle').textContent=(name||'案件')+' の金額を編集';
+  document.getElementById('akAmtEditInput').value = curAmt==null ? '' : curAmt;
+  document.getElementById('akAmtEdit').classList.remove('hidden');
+}
+function closeAkAmtEdit(){ document.getElementById('akAmtEdit').classList.add('hidden'); editingAkId=null; }
+async function saveAkAmtEdit(){
+  if(!editingAkId)return;
+  const raw=(document.getElementById('akAmtEditInput').value||'').replace(/[,，]/g,'').trim();
+  const amount = raw===''?null:parseInt(raw,10);
+  if(amount!==null&&(isNaN(amount)||amount<0)){toast('金額は0以上で入力してください');return;}
+  const {error}=await sb.from('projects').update({amount}).eq('id',editingAkId);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('金額を更新しました');
+  closeAkAmtEdit();
+  if(curDetail)openDetail(curDetail);
+  const ankensOn=document.getElementById('s-ankens'); if(ankensOn&&!ankensOn.classList.contains('hidden'))loadAnkens();
 }
 async function deleteAnkenUI(id,name){
   const {count}=await sb.from('expenses').select('id',{count:'exact',head:true}).eq('project_id',id);
@@ -1553,7 +1668,7 @@ async function deleteTaskUI(id,title){
   toast('タスクを削除しました');
   refreshTasks();
 }
-// 長押しアクションシート: レシート表示・削除（P0-B #15。本人or経理のみ削除できる）
+// 長押しアクションシート: レシート表示・編集・削除（P0-B #15。編集/削除は本人or経理のみ）
 async function expSheet(id){
   const {data:e}=await sb.from('expenses').select('id,amount,user_id,receipt_url').eq('id',id).single();
   if(!e){toast('経費が見つかりません');return;}
@@ -1561,6 +1676,7 @@ async function expSheet(id){
   if(e.receipt_url)items.push({label:'レシートを開く',fn:()=>viewReceipt(e.receipt_url)});
   if(e.user_id===me.id||isManager()){
     if(items.length)items.push({sep:true});
+    items.push({label:'編集',fn:()=>openExpEdit(id)});
     items.push({label:'削除…',danger:true,fn:()=>deleteExpenseUI(id,e.amount)});
   }
   if(!items.length){toast('操作できる項目がありません');return;}
@@ -1572,6 +1688,43 @@ async function deleteExpenseUI(id,amount){
   if(error){toast('削除エラー: '+error.message);return;}
   toast('経費を削除しました');
   if(curDetail)openDetail(curDetail);
+  const ankensOn=document.getElementById('s-ankens'); if(ankensOn&&!ankensOn.classList.contains('hidden'))loadAnkens();
+}
+// ---- 経費編集（金額・メモ・申請先の3項目のみ。spec: anken-page-and-edit-ux #3） ----
+let editingExpId=null, editingExpSubmitterId=null;
+// 編集モーダルの申請先selectは経費フォームと同じ構成。「自分」= 申請者本人（=このexpenseのuser_id）負担を指すため、
+// 編集者(me)ではなく申請者を除いた人だけをメンバー選択肢に出す
+function chargeOptionsForEdit(submitterId,sel){
+  return `<option value="self" ${sel==='self'?'selected':''}>自分</option>`+
+    `<option value="client" ${sel==='client'?'selected':''}>先方クライアント（請求）</option>`+
+    people.filter(p=>p.id!==submitterId).map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name||p.email)}</option>`).join('');
+}
+async function openExpEdit(id){
+  const {data:e}=await sb.from('expenses').select('id,amount,note,charge_to,charged_user_id,user_id').eq('id',id).single();
+  if(!e){toast('経費が見つかりません');return;}
+  editingExpId=id; editingExpSubmitterId=e.user_id;
+  document.getElementById('eeAmt').value=e.amount||'';
+  document.getElementById('eeMemo').value=e.note||'';
+  const sel = e.charge_to==='client'?'client' : e.charge_to==='self'?'self' : (e.charged_user_id||'self');
+  document.getElementById('eeCharge').innerHTML=chargeOptionsForEdit(e.user_id,sel);
+  document.getElementById('expEdit').classList.remove('hidden');
+}
+function closeExpEdit(){ document.getElementById('expEdit').classList.add('hidden'); editingExpId=null; editingExpSubmitterId=null; }
+async function saveExpEdit(){
+  if(!editingExpId)return;
+  const amount=parseInt((document.getElementById('eeAmt').value||'0').replace(/[,，]/g,''),10);
+  if(!(amount>0)){toast('金額は正の数で入力してください');return;}
+  const note=document.getElementById('eeMemo').value.trim();
+  const chargeVal=document.getElementById('eeCharge').value;
+  let charge_to='self', charged_user_id=editingExpSubmitterId||me.id;
+  if(chargeVal==='client'){charge_to='client';charged_user_id=null;}
+  else if(chargeVal&&chargeVal!=='self'){charge_to='member';charged_user_id=chargeVal;}
+  const {error}=await sb.from('expenses').update({amount,note,charge_to,charged_user_id}).eq('id',editingExpId);
+  if(error){toast('保存エラー: '+error.message);return;}
+  toast('経費を更新しました');
+  closeExpEdit();
+  if(curDetail)openDetail(curDetail);
+  const ankensOn=document.getElementById('s-ankens'); if(ankensOn&&!ankensOn.classList.contains('hidden'))loadAnkens();
 }
 // ---- タスク詳細モーダル（概要・メモ・担当） ----
 async function openTask(id){
@@ -1811,11 +1964,11 @@ const FIN_COLS=[
   {key:'client', label:'受注元', l:true, ed:true, fmt:r=>`<input class="fin-edit l" value="${esc(r.client)}" placeholder="—" onclick="event.stopPropagation()" onchange="updProj('${r.id}','client',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`},
   {key:'status', label:'状態',   l:true, ed:true, fmt:r=>`<select class="st-sel ps-${r.status}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','status',this.value);this.className='st-sel ps-'+this.value">${statusOptions(r.status)}</select>`},
   {key:'leader_id',label:'担当', l:true, fmt:r=>`<span class="fin-code">${r.leader_id?personName(r.leader_id):'—'}</span>`},
-  {key:'revenue',label:'プロジェクト金額', ed:true, fmt:r=>`<input class="fin-edit" inputmode="numeric" value="${r.revenue||0}" onclick="event.stopPropagation()" onchange="updProjNum('${r.id}','amount',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`},
+  {key:'revenue',label:'プロジェクト金額', ed:true, fmt:r=>`<input class="fin-edit" inputmode="numeric" placeholder="未確定" value="${r.revenue==null?'':r.revenue}" onclick="event.stopPropagation()" onchange="updProjNum('${r.id}','amount',this.value)" onkeydown="if(event.key==='Enter')this.blur()">`},
   {key:'anken_sum',label:'発注計', fmt:r=>yen(r.anken_sum)},
   {key:'tree_cost',label:'経費計', fmt:r=>yen(r.tree_cost)},
-  {key:'profit', label:'粗利',   fmt:r=>`<span class="${r.profit<0?'neg':''}">${yen(r.profit)}</span>`},
-  {key:'profit_rate',label:'粗利率',fmt:r=>`<span class="${r.profit<0?'neg':''}">${r.profit_rate}%</span>`},
+  {key:'profit', label:'粗利',   fmt:r=>`<span class="${(r.profit||0)<0?'neg':''}">${yv(r.profit)}</span>`},
+  {key:'profit_rate',label:'粗利率',fmt:r=>`<span class="${(r.profit||0)<0?'neg':''}">${r.profit_rate==null?'—':r.profit_rate+'%'}</span>`},
   {key:'delivery_date',label:'納品', ed:true, fmt:r=>`<input class="fin-edit ${deadlineInfo(r.delivery_date,r.status==='完了'?'完了':'').cls}" type="date" value="${r.delivery_date||''}" onclick="event.stopPropagation()" onchange="updProj('${r.id}','delivery_date',this.value)">`},
   {key:'created_at',label:'登録', fmt:r=>r.created_at?new Date(r.created_at).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'}):'—'},
 ];
@@ -1840,8 +1993,9 @@ async function updProj(id,field,value){
   loadProjectOptions();
 }
 async function updProjNum(id,field,value){
-  const n=parseInt((value||'0').toString().replace(/[,，]/g,''),10)||0;
-  if(n<0){toast('金額は0以上で入力してください');loadFinance();return;}
+  const raw=(value||'').toString().replace(/[,，]/g,'').trim();
+  const n = raw===''?null:parseInt(raw,10);
+  if(n!==null&&(isNaN(n)||n<0)){toast('金額は0以上で入力してください');loadFinance();return;}
   const {error}=await sb.from('projects').update({[field]:n}).eq('id',id);
   if(error){toast('保存エラー: '+error.message);loadFinance();return;}
   toast('保存しました');
@@ -1989,7 +2143,8 @@ async function onReceipt(ev){
 // ---- 記録 ----
 async function record(){
   const amount=parseInt((document.getElementById('amt').value||'0').replace(/,/g,''),10);
-  const project_id=document.getElementById('proj').value;
+  // project_idは2段目準拠: 案件が選ばれていればその案件、未選択（プロジェクト直下）なら1段目の親プロジェクト
+  const project_id=document.getElementById('projAnken').value||document.getElementById('proj').value;
   const note=document.getElementById('memo').value.trim();
   const chargeVal=document.getElementById('expCharge').value;
   if(!(amount>0)||!project_id){toast('金額（正の数）とプロジェクトを入れてください');return;}

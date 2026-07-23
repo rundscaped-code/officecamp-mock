@@ -329,6 +329,7 @@
     <div class="brand"><span class="logo">⛺</span> OFFICE CAMP</div>
     <nav class="nav" id="nav">
       <button type="button" data-v="projects" onclick="go('projects')"><span class="ic">▤</span> プロジェクト</button>
+      <button type="button" data-v="ankens" onclick="go('ankens')"><span class="ic">▥</span> 案件</button>
       <button type="button" data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費</button>
       <button type="button" data-v="tasks"    onclick="go('tasks')"><span class="ic">☷</span> タスク</button>
       <div class="navsec hidden" id="adminSec">管理</div>
@@ -405,7 +406,7 @@ document.addEventListener('keydown',e=>{
     return;
   }
   if(e.target.closest('input,select,textarea')||document.querySelector('.ov'))return;
-  const viewByKey={'1':'projects','2':'expenses','3':'tasks','4':'finance'};
+  const viewByKey={'1':'projects','2':'ankens','3':'expenses','4':'tasks','5':'finance'};
   if(viewByKey[e.key]){go(viewByKey[e.key]);return;}
   if(e.key==='/'){
     const searchId={projects:'pSearch',expenses:'xSearch',finance:'fSearch',tasks:'tfQ'}[curView];
@@ -455,7 +456,7 @@ async function savePw(){
 }
 
 // ---- ルーティング ----
-const TITLES={projects:'プロジェクト',expenses:'経費',finance:'経理',tasks:'タスク',members:'メンバー'};
+const TITLES={projects:'プロジェクト',ankens:'案件',expenses:'経費',finance:'経理',tasks:'タスク',members:'メンバー'};
 function go(v,fromPop){
   if(!TITLES[v])v='projects';   // 不正・未知のハッシュはプロジェクトへフォールバック
   if(v==='finance' && !OC.isAccounting()){
@@ -478,6 +479,7 @@ function go(v,fromPop){
   document.getElementById('topActions').innerHTML='';
   const c=document.getElementById('content');
   if(v==='projects')return renderProjects(c);
+  if(v==='ankens')return renderAnkens(c);
   if(v==='expenses')return renderExpenses(c);
   if(v==='finance')return renderFinance(c);
   if(v==='tasks')return renderTasks(c);
@@ -601,9 +603,9 @@ function paintProjTable(){
     </tr></thead><tbody>${rows.map(p=>`<tr data-pid="${p.id}" onclick="selectProject('${p.id}')" oncontextmenu="projCtx(event,'${p.id}')">
       <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
       <td>${p.anken_count||0}</td>
-      <td>${OC.yen(p.revenue)}</td>
+      <td>${p.revenue==null?'—':OC.yen(p.revenue)}</td>
       <td>${OC.yen(p.anken_sum)}</td>
-      <td class="${(p.profit||0)<0?'neg':''}">${OC.yen(p.profit)}</td>
+      <td class="${(p.profit||0)<0?'neg':''}">${p.profit==null?'—':OC.yen(p.profit)}</td>
       <td class="l"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td>
       <td class="l">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
     </tr>`).join('')||'<tr><td class="empty" colspan="7">該当するプロジェクトがありません</td></tr>'}</tbody></table>`;
@@ -628,7 +630,7 @@ async function selectProject(id){
   if(!box)return;
   box.innerHTML='<div class="empty">読み込み中…</div>';
   const [{p,ankens,expenses,members},logs]=await Promise.all([OC.loadProjectDetail(id),OC.loadAuditLog(id)]);
-  curAnkens=ankens||[];curProjMeta=p;
+  curAnkens=ankens||[];curProjMeta=p;detailExpCache=expenses||[];
   const memberProfits=(OC.isManager()||p.leader_id===OC.effectiveUserId())?computeMemberProfits(p,curAnkens,expenses):null;
   box.innerHTML=`
     <div class="dh"><div><div class="nm">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name||'—')}</div>
@@ -637,25 +639,20 @@ async function selectProject(id){
         <button class="btn ghost sm" onclick="openAnkenModal('${id}')">＋ 案件</button>
         <button class="btn ghost sm" onclick="openExpModal('${id}')">＋ 経費</button></div></div>
     <div class="kpis" style="grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0 4px">
-      <div class="kpi"><div class="l">金額</div><div class="n" style="font-size:20px">${OC.yen(p.revenue)}</div></div>
+      <div class="kpi"><div class="l">金額</div><div class="n" style="font-size:20px">${p.revenue==null?'—':OC.yen(p.revenue)}</div></div>
       <div class="kpi"><div class="l">発注計</div><div class="n" style="font-size:20px">${OC.yen(p.anken_sum)}</div></div>
       <div class="kpi"><div class="l">経費計</div><div class="n" style="font-size:20px">${OC.yen(p.tree_cost)}</div></div>
-      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${OC.yen(p.profit)}</div></div>
+      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${p.profit==null?'—':OC.yen(p.profit)}</div></div>
     </div>
     <div class="seclabel" style="display:flex;align-items:center">案件（${curAnkens.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openAnkenModal('${id}')">＋ 案件</button></div>
-    ${curAnkens.length?curAnkens.map(a=>`<div class="ln" style="cursor:pointer" onclick="selectAnken('${id}','${a.id}')" oncontextmenu="ankenCtx(event,'${id}','${a.id}')"><div>
-      <b>${esc(a.name||'—')}</b>
-      <div class="muted" style="font-size:12px">${esc(a.leader_id?OC.personName(a.leader_id):'—')}</div></div>
-      <div class="a">${a.revenue!==undefined?OC.yen(a.revenue):'—'} <span class="pill" style="margin-left:6px"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">案件はまだありません</div>'}
+    ${curAnkens.length?curAnkens.map(a=>ankenRowHTML(id,a,p)).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">案件はまだありません</div>'}
     ${memberProfits?`<div class="seclabel">メンバー別粗利</div>
     ${memberProfits.length?memberProfits.map(m=>`<div class="ln"><div>${esc(m.name)}</div><div class="a ${m.profit<0?'neg':''}">${OC.yen(m.profit)}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">対象者がいません</div>'}`:''}
     <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
-    ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>${receiptLink(e)}
-      <div class="muted" style="font-size:12px">${e.proj&&e.proj.parent_id?esc(e.proj.name||''):'（プロジェクト直下）'}・${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}</div></div>
-      <div class="a">${OC.yen(e.amount)} <span class="muted" style="font-size:11px">${chargeLabel(e)}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
+    ${expenses.length?expenses.map(e=>expenseLineHTML(e,true)).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
     <div class="seclabel">プロジェクト情報（その場で編集）</div>
     <div class="drow"><span class="k">状態</span><select class="einput" onchange="saveProjField('${id}','status',this.value)">${pstatusOptions(p.status)}</select></div>
-    <div class="drow"><span class="k">金額</span><input class="einput" type="number" value="${p.revenue||0}" onchange="saveProjField('${id}','amount',this.value)"></div>
+    <div class="drow"><span class="k">金額</span><input class="einput" type="number" value="${p.revenue==null?'':p.revenue}" onchange="saveProjField('${id}','amount',this.value)"></div>
     <div class="drow"><span class="k">受注元</span><input class="einput" value="${esc(p.client||'')}" placeholder="—" onchange="saveProjField('${id}','client',this.value)"></div>
     <div class="drow"><span class="k">担当（リーダー）</span><select class="einput" onchange="saveProjField('${id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></div>
     <div class="drow"><span class="k">開始日</span><input class="einput" type="date" value="${p.start_date||''}" onchange="saveProjField('${id}','start_date',this.value)"></div>
@@ -679,6 +676,7 @@ async function selectAnken(pid,id){
   box.innerHTML='<div class="empty">読み込み中…</div>';
   const {p,tasks,expenses}=await OC.loadAnkenDetail(id);
   if(!curAnkens.some(x=>x.id===id))curAnkens=[{id,...p}];
+  detailExpCache=expenses||[];
   box.innerHTML=`
     <div class="dh" oncontextmenu="ankenCtx(event,'${pid}','${id}')"><div>
       <div class="muted" style="margin-bottom:4px"><span class="link" onclick="selectProject('${pid}')">← プロジェクトへ戻る</span></div>
@@ -689,9 +687,9 @@ async function selectAnken(pid,id){
         <button class="btn ghost sm" onclick="openExpModal('${id}')">＋ 経費</button></div></div>
     ${p.revenue===undefined?'<div class="muted" style="margin:14px 0 4px">金額は担当者本人・プロジェクトリーダー・経理のみ閲覧できます</div>':`
     <div class="kpis" style="grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 4px">
-      <div class="kpi"><div class="l">案件金額</div><div class="n" style="font-size:20px">${OC.yen(p.revenue)}</div></div>
+      <div class="kpi"><div class="l">案件金額</div><div class="n" style="font-size:20px">${p.revenue==null?'—':OC.yen(p.revenue)}</div></div>
       <div class="kpi"><div class="l">経費</div><div class="n" style="font-size:20px">${OC.yen(p.cost)}</div></div>
-      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${OC.yen(p.profit)}</div></div>
+      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${p.profit==null?'—':OC.yen(p.profit)}</div></div>
     </div>`}
     <div class="seclabel" style="display:flex;align-items:center">タスク（${(tasks||[]).length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openTaskAddModal('${id}')">＋ タスク</button></div>
     ${(tasks||[]).length?(tasks||[]).map(t=>`<div class="ln"><div>
@@ -699,12 +697,10 @@ async function selectAnken(pid,id){
       <div class="muted" style="font-size:12px"><span class="pill" style="background:transparent;padding:0"><i class="dot s-${t.status||'未着手'}"></i>${esc(t.status||'未着手')}</span>　${t.start_date?OC.fmtDate(t.start_date):'—'} → ${t.end_date?OC.fmtDate(t.end_date):'—'}</div></div>
       <div class="a" style="font-weight:400">${(t.task_assignees||[]).map(a=>'<span class="achip">'+esc(OC.personName(a.user_id))+'</span>').join(' ')}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">タスクはありません</div>'}
     <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
-    ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>${receiptLink(e)}
-      <div class="muted" style="font-size:12px">${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}</div></div>
-      <div class="a">${OC.yen(e.amount)} <span class="muted" style="font-size:11px">${chargeLabel(e)}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
+    ${expenses.length?expenses.map(e=>expenseLineHTML(e,false)).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
     <div class="seclabel">案件情報（その場で編集）</div>
     <div class="drow"><span class="k">状態</span><select class="einput" onchange="saveProjField('${id}','status',this.value)">${pstatusOptions(p.status)}</select></div>
-    ${p.revenue===undefined?'':`<div class="drow"><span class="k">案件金額</span><input class="einput" type="number" value="${p.revenue||0}" onchange="saveProjField('${id}','amount',this.value)"></div>`}
+    ${p.revenue===undefined?'':`<div class="drow"><span class="k">案件金額</span><input class="einput" type="number" value="${p.revenue==null?'':p.revenue}" onchange="saveProjField('${id}','amount',this.value)"></div>`}
     <div class="drow"><span class="k">担当</span><select class="einput" onchange="saveProjField('${id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></div>
     <div class="drow"><span class="k">開始日</span><input class="einput" type="date" value="${p.start_date||''}" onchange="saveProjField('${id}','start_date',this.value)"></div>
     <div class="drow"><span class="k">終了日</span><input class="einput" type="date" value="${p.end_date||''}" onchange="saveProjField('${id}','end_date',this.value)"></div>
@@ -713,13 +709,20 @@ async function selectAnken(pid,id){
 const PSTATUS=['見込','進行','完了','失注'];
 function pstatusOptions(cur){return PSTATUS.map(s=>`<option ${s===cur?'selected':''}>${s}</option>`).join('');}
 function leaderOptions(cur){return '<option value="">—</option>'+OC.people.map(p=>`<option value="${p.id}" ${p.id===cur?'selected':''}>${esc(p.name||p.email)}</option>`).join('');}
+// 金額の空欄確定はnull保存（未確定）。parseIntがNaNになる値もnullに寄せる。
+function parseAmountOrNull(value){
+  const s=String(value==null?'':value).trim().replace(/[,，]/g,'');
+  if(s==='')return null;
+  const n=parseInt(s,10);
+  return isNaN(n)?null:n;
+}
 async function saveProjField(id,field,value){
   let v=value;
-  if(field==='amount')v=parseInt(String(value).replace(/[,，]/g,''),10)||0;
+  if(field==='amount')v=parseAmountOrNull(value);
   const isAnken=curAnken===id;
   const p=isAnken?(curAnkens.find(x=>x.id===id)||{}):(OC.projects.find(x=>x.id===id)||{});
   const refresh=()=>{ if(curView==='finance')paintFinance(); if(curView==='projects'){paintProjTable(); isAnken?selectAnken(curProject,id):selectProject(id);} if(curView==='tasks')paintTasks(); };
-  if(field==='amount'&&v<0){toast('金額は0以上で入力してください');try{await OC.loadProjects();}catch(e){}refresh();return;}
+  if(field==='amount'&&v!=null&&v<0){toast('金額は0以上で入力してください');try{await OC.loadProjects();}catch(e){}refresh();return;}
   if((field==='start_date'||field==='delivery_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');refresh();return;}
   if(field==='start_date'&&value&&p.delivery_date&&badRange(value,p.delivery_date)){toast('開始日は納品日以前にしてください');refresh();return;}
   if(field==='delivery_date'&&value&&p.start_date&&badRange(p.start_date,value)){toast('納品日は開始日以降にしてください');refresh();return;}
@@ -738,13 +741,63 @@ async function saveProjField(id,field,value){
   try{await OC.loadProjects();}catch(e){}
   refresh();
 }
+// プロジェクト詳細の案件リスト行：金額・状態のその場編集（経理テーブルのfcell方式）。
+// 対象＝担当本人・親リーダー/owner・経理。
+function canEditAnkenRow(a,pm){
+  const uid=OC.effectiveUserId();
+  return !!(OC.isManager()||a.leader_id===uid||(pm&&pm.leader_id===uid)||(pm&&pm.owner_id===uid));
+}
+function ankenRowHTML(pid,a,pm){
+  const editable=a.revenue!==undefined&&canEditAnkenRow(a,pm);
+  const amtLabel=a.revenue!==undefined?(a.revenue==null?'—':OC.yen(a.revenue)):'—';
+  const amtCell=editable
+    ?`<span class="fcell" onclick="event.stopPropagation();ankenRowEdit(this,'${pid}','${a.id}','amount')">${amtLabel}</span>`
+    :`<span>${amtLabel}</span>`;
+  const statusCell=editable
+    ?`<span class="pill fcell" style="margin-left:6px" onclick="event.stopPropagation();ankenRowEdit(this,'${pid}','${a.id}','status')"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span>`
+    :`<span class="pill" style="margin-left:6px"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span>`;
+  return `<div class="ln" style="cursor:pointer" onclick="selectAnken('${pid}','${a.id}')" oncontextmenu="ankenCtx(event,'${pid}','${a.id}')"><div>
+    <b>${esc(a.name||'—')}</b>
+    <div class="muted" style="font-size:12px">${esc(a.leader_id?OC.personName(a.leader_id):'—')}</div></div>
+    <div class="a">${amtCell} ${statusCell}</div></div>`;
+}
+function ankenRowEdit(el,pid,ankenId,field){
+  if(el.querySelector('select,input'))return;
+  const a=curAnkens.find(x=>x.id===ankenId);if(!a)return;
+  const esck="if(event.key==='Escape'){this.dataset.esc='1';this.blur()}";
+  let ctrl;
+  if(field==='amount'){
+    ctrl=`<input class="einput" type="number" style="text-align:right;max-width:110px" value="${a.revenue==null?'':a.revenue}" onblur="if(!this.dataset.esc)saveAnkenRowField('${pid}','${ankenId}','amount',this.value);else selectProject('${pid}')" onkeydown="if(event.key==='Enter')this.blur();${esck}">`;
+  }else{
+    ctrl=`<select class="einput" onchange="saveAnkenRowField('${pid}','${ankenId}','status',this.value)" onblur="if(this.dataset.esc)selectProject('${pid}')" onkeydown="${esck}">${pstatusOptions(a.status)}</select>`;
+  }
+  el.innerHTML=ctrl;
+  const c=el.querySelector('select,input');
+  if(c){c.focus();if(c.tagName==='INPUT')c.select();}
+}
+async function saveAnkenRowField(pid,ankenId,field,value){
+  const patch={};
+  if(field==='amount'){
+    const v=parseAmountOrNull(value);
+    if(v!=null&&v<0){toast('金額は0以上で入力してください');selectProject(pid);return;}
+    patch.amount=v;
+  }else{
+    patch.status=value;
+  }
+  const {error}=await OC.updateProject(ankenId,patch);
+  if(error){toast('保存エラー: '+error.message);selectProject(pid);return;}
+  toast('保存しました');
+  try{await OC.loadProjects();}catch(e){}
+  selectProject(pid);
+  if(curView==='finance')paintFinance();
+}
 function openProjModal(){
   const effectiveId=OC.effectiveUserId();
   const leaderField=OC.isManager()?`<div class="field"><label class="fl" for="mLeader">担当（リーダー）</label><select id="mLeader" class="input">${OC.people.map(p=>`<option value="${p.id}" ${p.id===effectiveId?'selected':''}>${esc(p.name||p.email)}</option>`).join('')}</select></div>`:'';
   modal(`<div class="modal"><div class="modal-h">プロジェクトを追加</div><form onsubmit="event.preventDefault();saveProj()"><div class="modal-b">
     <div class="field"><label class="fl" for="mName">プロジェクト名</label><input id="mName" class="input" placeholder="○○ビル改修"></div>
     <div class="field"><label class="fl" for="mClient">受注元（任意）</label><input id="mClient" class="input" placeholder="◇◇建設"></div>
-    <div class="field"><label class="fl" for="mAmt">金額（円・任意）</label><input id="mAmt" class="input" inputmode="numeric" placeholder="0"></div>
+    <div class="field"><label class="fl" for="mAmt">金額（円・任意）</label><input id="mAmt" class="input" inputmode="numeric" placeholder="未確定なら空欄"></div>
     <div style="display:flex;gap:10px"><div class="field" style="flex:1"><label class="fl" for="mStart">開始日</label><input id="mStart" class="input" type="date"></div>
       <div class="field" style="flex:1"><label class="fl" for="mDeliv">納品日</label><input id="mDeliv" class="input" type="date"></div></div>
     ${leaderField}
@@ -846,8 +899,8 @@ async function deleteAnkenUI(pid,id,name){
 async function saveProj(){
   const name=document.getElementById('mName').value.trim();
   if(!name){toast('プロジェクト名を入れてください');return;}
-  const amount=parseInt((document.getElementById('mAmt').value||'0').replace(/[,，]/g,''),10)||0;
-  if(amount<0){toast('金額は0以上で入力してください');return;}
+  const amount=parseAmountOrNull(document.getElementById('mAmt').value);
+  if(amount!==null&&amount<0){toast('金額は0以上で入力してください');return;}
   const _s=document.getElementById('mStart').value,_d=document.getElementById('mDeliv').value;
   if(!saneDate(_s)||!saneDate(_d)){toast('日付の年を確認してください（2000〜2100）');return;}
   if(badRange(_s,_d)){toast('納品日は開始日以降にしてください');return;}
@@ -868,7 +921,7 @@ function openAnkenModal(parentId){
   modal(`<div class="modal"><div class="modal-h">案件を追加</div><form onsubmit="event.preventDefault();saveAnken('${parentId}')"><div class="modal-b">
     <div class="field"><label class="fl" for="aName">案件名</label><input id="aName" class="input" placeholder="○○工事"></div>
     <div class="field"><label class="fl" for="aLeader">担当者</label><select id="aLeader" class="input">${leaderOptions(OC.effectiveUserId())}</select></div>
-    <div class="field"><label class="fl" for="aAmt">金額（円・任意）</label><input id="aAmt" class="input" inputmode="numeric" placeholder="0"></div>
+    <div class="field"><label class="fl" for="aAmt">金額（円・任意）</label><input id="aAmt" class="input" inputmode="numeric" placeholder="未確定なら空欄"></div>
     <div style="display:flex;gap:10px"><div class="field" style="flex:1"><label class="fl" for="aStart">開始日</label><input id="aStart" class="input" type="date"></div>
       <div class="field" style="flex:1"><label class="fl" for="aEnd">終了日</label><input id="aEnd" class="input" type="date"></div></div>
     </div><div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="aSave">追加</button></div></form></div>`);
@@ -879,8 +932,8 @@ async function saveAnken(parentId){
   if(!name){toast('案件名を入れてください');return;}
   const leader_id=document.getElementById('aLeader').value||null;
   if(!leader_id){toast('担当者を選んでください');return;}
-  const amount=parseInt((document.getElementById('aAmt').value||'0').replace(/[,，]/g,''),10)||0;
-  if(amount<0){toast('金額は0以上で入力してください');return;}
+  const amount=parseAmountOrNull(document.getElementById('aAmt').value);
+  if(amount!==null&&amount<0){toast('金額は0以上で入力してください');return;}
   const _s=document.getElementById('aStart').value,_e=document.getElementById('aEnd').value;
   if(!saneDate(_s)||!saneDate(_e)){toast('日付の年を確認してください（2000〜2100）');return;}
   if(badRange(_s,_e)){toast('終了日は開始日以降にしてください');return;}
@@ -911,6 +964,105 @@ function chargeLabel(e){
   if(e.charge_to==='client')return 'クライアント請求';
   if(e.charge_to==='member')return esc(e.charged?.name||OC.personName(e.charged_user_id));
   return '自分';
+}
+// プロジェクト/案件詳細の経費一覧：経費ビューと同じインライン編集＋申請先select＋右クリック削除。
+// 一覧全体を差し替えるため（detailExpCtx・deleteDetailExpenseUI・detail*Cellが参照）ここに保持する。
+let detailExpCache=[];
+function detailExpAmtCell(e){
+  if(!canEditExp(e))return `<b>${OC.yen(e.amount)}</b>`;
+  return `<input class="einput" type="number" style="text-align:right;max-width:110px" value="${e.amount}" onchange="saveDetailExpField('${e.id}','amount',this.value)">`;
+}
+function detailExpNoteCell(e){
+  const extra=(e.kind==='外注'&&e.vendor?' <span class="pill">外注'+esc(e.vendor.name)+'</span>':'')+receiptLink(e);
+  if(!canEditExp(e))return esc(e.note||'（メモなし）')+extra;
+  return `<input class="einput" value="${esc(e.note||'')}" placeholder="（メモなし）" onchange="saveDetailExpField('${e.id}','note',this.value)">`+extra;
+}
+function detailExpChargeCell(e){
+  if(!canEditExp(e))return `<span class="muted" style="font-size:11px">${chargeLabel(e)}</span>`;
+  const cur=e.charge_to==='client'?'client':e.charge_to==='member'?e.charged_user_id:'self';
+  return `<select class="einput" style="max-width:150px;font-size:11.5px" onchange="saveDetailExpCharge('${e.id}',this.value)">${chargeOptions(cur)}</select>`;
+}
+function expenseLineHTML(e,showProj){
+  return `<div class="ln" oncontextmenu="detailExpCtx(event,'${e.id}')">
+    <div style="flex:1;min-width:0">
+      <div>${detailExpNoteCell(e)}</div>
+      <div class="muted" style="font-size:12px">${showProj?(e.proj&&e.proj.parent_id?esc(e.proj.name||''):'（プロジェクト直下）')+'・':''}${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex:none">${detailExpAmtCell(e)}${detailExpChargeCell(e)}</div>
+  </div>`;
+}
+async function saveDetailExpField(id,field,value){
+  let v=value;
+  if(field==='amount'){v=parseInt(String(value).replace(/[,，]/g,''),10)||0;if(v<=0){toast('金額は1円以上で入力してください');refreshProjectDetailIfOpen();return;}}
+  if(field==='note')v=String(value).trim();
+  const patch={};patch[field]=v;
+  const {error}=await OC.updateExpense(id,patch);
+  if(error){toast('保存エラー: '+error.message);refreshProjectDetailIfOpen();return;}
+  toast('保存しました');
+  refreshProjectDetailIfOpen();
+}
+async function saveDetailExpCharge(id,value){
+  const charge_to=value==='self'?'self':value==='client'?'client':'member';
+  const charged_user_id=value==='self'?OC.effectiveUserId():value==='client'?null:value;
+  const {error}=await OC.updateExpense(id,{charge_to,charged_user_id});
+  if(error){toast('保存エラー: '+error.message);refreshProjectDetailIfOpen();return;}
+  toast('保存しました');
+  refreshProjectDetailIfOpen();
+}
+function detailExpCtx(ev,id){
+  const e=detailExpCache.find(x=>x.id===id);
+  if(!e){ev.preventDefault();return;}
+  const items=[];
+  if(e.receipt_url)items.push({label:'レシートを開く',fn:()=>viewReceipt(e.receipt_url)});
+  if(canEditExp(e)){
+    if(items.length)items.push({sep:true});
+    items.push({label:'削除…',danger:true,fn:()=>deleteDetailExpenseUI(id,e.amount)});
+  }
+  if(!items.length){ev.preventDefault();return;}
+  ctxMenu(ev,items);
+}
+async function deleteDetailExpenseUI(id,amount){
+  if(!confirm(OC.yen(amount)+' の経費を削除します。'))return;
+  const {error}=await OC.deleteExpense(id);
+  if(error){toast('削除エラー: '+error.message);return;}
+  toast('経費を削除しました');
+  refreshProjectDetailIfOpen();
+}
+
+// ---- 案件（自分の担当一覧） ----
+let ankenCache=[];
+async function renderAnkens(c){
+  document.getElementById('topActions').innerHTML='';
+  c.innerHTML='<div class="empty">読み込み中…</div>';
+  try{ ankenCache=await OC.loadMyAnkens(); }
+  catch(e){
+    c.innerHTML='<div class="card"><div class="card-b empty">案件の読み込みに失敗しました：'+esc(e.message||e)+
+      '<br><button class="btn ghost sm" style="margin-top:10px" onclick="renderAnkens(document.getElementById(\'content\'))">↻ 再読み込み</button></div></div>';
+    return;
+  }
+  const profitSum=ankenCache.reduce((s,a)=>a.profit==null?s:s+a.profit,0);
+  const costSum=ankenCache.reduce((s,a)=>s+(a.cost||0),0);
+  c.innerHTML=`
+    <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi"><div class="l">担当案件数</div><div class="n">${ankenCache.length}</div></div>
+      <div class="kpi"><div class="l">粗利計</div><div class="n ${profitSum<0?'neg':''}">${OC.yen(profitSum)}</div></div>
+      <div class="kpi"><div class="l">経費計</div><div class="n">${OC.yen(costSum)}</div></div>
+    </div>
+    <div class="card"><div class="card-b" style="padding:0" id="ankenTable"></div></div>`;
+  paintAnkenTable();
+}
+function paintAnkenTable(){
+  document.getElementById('ankenTable').innerHTML=`<table class="tbl"><thead><tr>
+    <th class="l">案件</th><th class="l">プロジェクト</th><th class="l">状態</th><th>金額</th><th>経費</th><th>粗利</th><th class="l">期間</th>
+  </tr></thead><tbody>${ankenCache.map(a=>`<tr onclick="go('projects');setTimeout(()=>selectAnken('${a.parent_id}','${a.id}'),40)">
+    <td class="l"><b>${a.code?'<span class="code">'+esc(a.code)+'</span> ':''}${esc(a.name||'—')}</b></td>
+    <td class="l">${esc(a.parent_name||'—')}</td>
+    <td class="l"><span class="pill"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span></td>
+    <td>${a.revenue==null?'—':OC.yen(a.revenue)}</td>
+    <td>${OC.yen(a.cost)}</td>
+    <td class="${(a.profit||0)<0?'neg':''}">${a.profit==null?'—':OC.yen(a.profit)}</td>
+    <td class="l">${a.start_date?OC.fmtDate(a.start_date):'—'} → ${a.end_date?OC.fmtDate(a.end_date):'—'}</td>
+  </tr>`).join('')||'<tr><td class="empty" colspan="7">担当している案件がありません</td></tr>'}</tbody></table>`;
 }
 
 // ---- 経費 ----
@@ -1126,23 +1278,50 @@ async function saveNewTask(pid){
   if(curView==='tasks')paintTasks();
   refreshProjectDetailIfOpen();
 }
-function chargeOptions(){
-  return '<option value="self">自分</option><option value="client">先方クライアント（請求）</option>'
-    +OC.people.map(p=>`<option value="${p.id}">${esc(p.name||p.email)}</option>`).join('');
+function chargeOptions(cur){
+  return `<option value="self" ${!cur||cur==='self'?'selected':''}>自分</option><option value="client" ${cur==='client'?'selected':''}>先方クライアント（請求）</option>`
+    +OC.people.map(p=>`<option value="${p.id}" ${p.id===cur?'selected':''}>${esc(p.name||p.email)}</option>`).join('');
+}
+// 紐づけ先の2段目（プロジェクト直下＋そのプロジェクトの案件のみ）
+function expAnkenOptions(parentId){
+  const kids=(OC.projOpts||[]).filter(p=>p.parent_id===parentId);
+  return `<option value="${parentId}">（プロジェクト直下）</option>`+kids.map(p=>`<option value="${p.id}">${esc(p.name||'')}</option>`).join('');
+}
+function onExpProjChange(){
+  const parentId=document.getElementById('eProj').value;
+  const sel=document.getElementById('eAnken');
+  if(sel)sel.innerHTML=expAnkenOptions(parentId);
+}
+// 引数（既存の呼び出し元が渡すプロジェクト/案件どちらのid）から1段目・2段目の初期選択を割り出す
+function resolveExpProjSelection(projectId){
+  const opts=OC.projOpts||[];
+  if(!projectId){
+    const firstParent=opts.find(p=>!p.parent_id);
+    return {parentId:firstParent?firstParent.id:'',childId:firstParent?firstParent.id:''};
+  }
+  const row=opts.find(p=>p.id===projectId);
+  if(!row)return {parentId:'',childId:''};
+  return row.parent_id?{parentId:row.parent_id,childId:row.id}:{parentId:row.id,childId:row.id};
 }
 function openExpModal(projectId){
-  const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${esc(projOptLabel(p))}</option>`).join('');
+  const parents=(OC.projOpts||[]).filter(p=>!p.parent_id);
+  const {parentId,childId}=resolveExpProjSelection(projectId);
+  const parentOpts=parents.map(p=>`<option value="${p.id}" ${p.id===parentId?'selected':''}>${esc(p.name||'')}</option>`).join('')||'<option value="">プロジェクトなし</option>';
   modal(`<div class="modal"><div class="modal-h">経費を記録</div><form onsubmit="event.preventDefault();saveExp()"><div class="modal-b">
     <div class="field"><label class="fl" for="eAmt">金額（円）</label><input id="eAmt" class="input" inputmode="numeric" placeholder="0"></div>
-    <div class="field"><label class="fl" for="eProj">紐づくプロジェクト</label><select id="eProj" class="input">${opts}</select></div>
+    <div class="field"><label class="fl" for="eProj">紐づくプロジェクト</label><select id="eProj" class="input" onchange="onExpProjChange()">${parentOpts}</select></div>
+    <div class="field"><label class="fl" for="eAnken">紐づく案件</label><select id="eAnken" class="input">${expAnkenOptions(parentId)}</select></div>
     <div class="field"><label class="fl" for="eMemo">メモ（何を買ったか）</label><input id="eMemo" class="input" placeholder="木材・ビス など"></div>
     <div class="field"><label class="fl" for="eCharge">申請先</label><select id="eCharge" class="input">${chargeOptions()}</select></div>
     </div><div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="eSave">記録する</button></div></form></div>`);
-  setTimeout(()=>{const e=document.getElementById('eAmt');if(e)e.focus();},30);
+  setTimeout(()=>{
+    const e=document.getElementById('eAmt');if(e)e.focus();
+    const sel=document.getElementById('eAnken');if(sel&&childId)sel.value=childId;
+  },30);
 }
 async function saveExp(){
   const amount=parseInt((document.getElementById('eAmt').value||'0').replace(/[,，]/g,''),10)||0;
-  const project_id=document.getElementById('eProj').value;
+  const project_id=document.getElementById('eAnken').value;
   const note=document.getElementById('eMemo').value.trim();
   if(!(amount>0)||!project_id){toast('金額（正の数）とプロジェクトを入れてください');return;}
   const chargeVal=document.getElementById('eCharge').value;
@@ -1202,7 +1381,7 @@ function exportFinanceCSV(){
   const head=['番号','プロジェクト名','受注元','状態','担当','金額','発注計','経費計','クライアント請求','粗利','納品日'];
   const q=s=>{s=String(s==null?'':s);return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
   const lines=[head.join(',')].concat(rows.map(p=>[p.code||'',p.name||'',p.client||'',p.status||'',
-    p.leader_id?OC.personName(p.leader_id):'',p.revenue||0,p.anken_sum||0,p.tree_cost||0,p.tree_client||0,p.profit||0,p.delivery_date||''].map(q).join(',')));
+    p.leader_id?OC.personName(p.leader_id):'',p.revenue==null?'—':p.revenue,p.anken_sum||0,p.tree_cost||0,p.tree_client||0,p.profit==null?'—':p.profit,p.delivery_date||''].map(q).join(',')));
   const csv='﻿'+lines.join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -1236,9 +1415,9 @@ function paintFinance(){
     <td class="l"><b><span class="link" onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','status')"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'—')}</span></td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','leader_id')">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
-    <td class="fcell" onclick="finEdit(this,'${p.id}','amount')">${OC.yen(p.revenue)}</td>
+    <td class="fcell" onclick="finEdit(this,'${p.id}','amount')">${p.revenue==null?'—':OC.yen(p.revenue)}</td>
     <td>${OC.yen(p.anken_sum)}</td><td>${OC.yen(p.tree_cost)}</td><td>${OC.yen(p.tree_client)}</td>
-    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.yen(p.profit)}</b></td>
+    <td class="${(p.profit||0)<0?'neg':''}"><b>${p.profit==null?'—':OC.yen(p.profit)}</b></td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','delivery_date')">${OC.fmtDate(p.delivery_date)}</td>
   </tr>`).join('')||'<tr><td class="empty" colspan="9">該当するプロジェクトがありません</td></tr>'}</tbody></table>`;
 }
@@ -1262,7 +1441,7 @@ function finEdit(td,pid,field){
   const esck="if(event.key==='Escape'){this.dataset.esc='1';this.blur()}";
   if(field==='status')ctrl=`<select class="einput" onchange="saveProjField('${pid}','status',this.value)" onblur="paintFinance()" onkeydown="${esck}">${pstatusOptions(p.status)}</select>`;
   else if(field==='leader_id')ctrl=`<select class="einput" onchange="saveProjField('${pid}','leader_id',this.value)" onblur="paintFinance()" onkeydown="${esck}">${leaderOptions(p.leader_id)}</select>`;
-  else if(field==='amount')ctrl=`<input class="einput" type="number" style="text-align:right" value="${p.revenue||0}" onblur="if(!this.dataset.esc)saveProjField('${pid}','amount',this.value);paintFinance()" onkeydown="if(event.key==='Enter')this.blur();${esck}">`;
+  else if(field==='amount')ctrl=`<input class="einput" type="number" style="text-align:right" value="${p.revenue==null?'':p.revenue}" onblur="if(!this.dataset.esc)saveProjField('${pid}','amount',this.value);paintFinance()" onkeydown="if(event.key==='Enter')this.blur();${esck}">`;
   else ctrl=`<input class="einput" type="date" value="${p.delivery_date||''}" onblur="if(!this.dataset.esc)saveProjField('${pid}','delivery_date',this.value);paintFinance()" onkeydown="if(event.key==='Enter')this.blur();${esck}">`;
   td.innerHTML=ctrl;const el=td.querySelector('select,input');if(el)el.focus();
 }
