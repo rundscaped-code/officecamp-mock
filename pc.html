@@ -360,7 +360,7 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=21"></script>
+<script src="shared.js?v=22"></script>
 <script>
 let curView='projects', curProject=null, curAnken=null, curAnkens=[], curProjMeta=null, projSort={key:'profit',dir:-1};
 // 経理ページ内モーダル（プロジェクト詳細のその場編集）・案件ページ内モーダル（案件詳細のその場編集）の状態。
@@ -431,7 +431,7 @@ document.addEventListener('keydown',e=>{
   const viewByKey={'1':'ankens','2':'projects','3':'expenses','4':'tasks','5':'finance'};
   if(viewByKey[e.key]){go(viewByKey[e.key]);return;}
   if(e.key==='/'){
-    const searchId={projects:'pSearch',expenses:'xSearch',finance:'fSearch',tasks:'tfQ'}[curView];
+    const searchId={projects:'pSearch',finance:'fSearch',tasks:'tfQ'}[curView];
     if(searchId){e.preventDefault();document.getElementById(searchId)?.focus();}
     return;
   }
@@ -567,6 +567,7 @@ function refreshProjectDetailIfOpen(){
   if(curView==='projects'&&curProject){ if(curAnken)selectAnken(curProject,curAnken);else selectProject(curProject); }
   if(finModalId)paintFinanceModal();
   if(ankModalId)paintAnkenModal();
+  if(curView==='expenses')refreshExpensesView();
 }
 // ---- プロジェクト（master-detail） ----
 function projActions(){
@@ -584,19 +585,28 @@ async function renderProjects(c){
     }
   }
   c.innerHTML=`
-    <div class="toolbar">
-      <input id="pSearch" class="input search" placeholder="🔍 プロジェクト名・番号・受注元" oninput="paintProjTable()">
-      <select id="pStatus" class="input" onchange="paintProjTable()">
-        <option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option>
-      </select>
+    <div id="projListWrap">
+      <div class="toolbar">
+        <input id="pSearch" class="input search" placeholder="🔍 プロジェクト名・番号・受注元" oninput="paintProjTable()">
+        <select id="pStatus" class="input" onchange="paintProjTable()">
+          <option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option>
+        </select>
+      </div>
+      <div class="card"><div id="projTable"></div></div>
     </div>
-    <div class="md">
-      <div class="card list-card"><div id="projTable"></div></div>
-      <div class="card detail-card"><div class="card-b" id="projDetail"><div class="empty">← 左の一覧からプロジェクトを選んでください</div></div></div>
+    <div id="projDetailWrap" class="hidden">
+      <div class="card"><div class="card-b" id="projDetail"></div></div>
     </div>`;
   if(OC.isManager()){try{await OC.loadMyProjectIds();}catch(e){}}
   paintProjTable();
-  if(curProject)selectProject(curProject);
+  if(curProject){ if(curAnken)await selectAnken(curProject,curAnken); else await selectProject(curProject); }
+}
+// 一覧⇄詳細の全幅切替（P8）。詳細表示中は一覧（検索/状態フィルタ含む）を隠す。
+function backToProjectList(){
+  curProject=null;curAnken=null;curProjMeta=null;
+  document.getElementById('projDetailWrap')?.classList.add('hidden');
+  document.getElementById('projListWrap')?.classList.remove('hidden');
+  paintProjTable();
 }
 function projFiltered(){
   const q=(document.getElementById('pSearch')?.value||'').trim().toLowerCase();
@@ -636,8 +646,8 @@ function paintProjTable(){
   // 選択中のプロジェクトが検索/状態フィルタで一覧から消えたら、右の詳細ペインの残留も消す
   if(curProject&&!rows.some(p=>p.id===curProject)){
     curProject=null;curAnken=null;curProjMeta=null;
-    const box=document.getElementById('projDetail');
-    if(box)box.innerHTML='<div class="empty">← 左の一覧からプロジェクトを選んでください</div>';
+    document.getElementById('projDetailWrap')?.classList.add('hidden');
+    document.getElementById('projListWrap')?.classList.remove('hidden');
   }
 }
 // プロジェクト/案件セレクトの表示ラベル（子は「親名 › 案件名」）
@@ -648,6 +658,8 @@ function projOptLabel(p){
 }
 async function selectProject(id){
   curProject=id;curAnken=null;
+  document.getElementById('projListWrap')?.classList.add('hidden');
+  document.getElementById('projDetailWrap')?.classList.remove('hidden');
   document.querySelectorAll('#projTable tr[data-pid]').forEach(tr=>tr.classList.toggle('sel',tr.dataset.pid===id));
   const box=document.getElementById('projDetail');
   if(!box)return;
@@ -656,19 +668,25 @@ async function selectProject(id){
   curAnkens=ankens||[];curProjMeta=p;detailExpCache=expenses||[];
   const memberProfits=(OC.isManager()||p.leader_id===OC.effectiveUserId())?computeMemberProfits(p,curAnkens,expenses):null;
   box.innerHTML=`
-    <div class="dh"><div><div class="nm">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name||'—')}</div>
-      <div class="muted" style="margin-top:4px"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></div></div>
+    <div class="muted" style="margin-bottom:10px"><span class="link" onclick="backToProjectList()">← 一覧へ</span></div>
+    <div class="dh"><div>
+      <div class="nm" style="font-size:26px">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name||'—')}</div>
+      <div class="muted" style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13.5px">
+        <span class="pill" style="font-size:12.5px;padding:3px 11px"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span>
+        <span>${esc(p.leader_id?OC.personName(p.leader_id):'—')}</span>
+        <span>${p.start_date?OC.fmtDate(p.start_date):'—'} → ${p.delivery_date?OC.fmtDate(p.delivery_date):'—'}</span>
+      </div></div>
       <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn ghost sm" onclick="openAnkenModal('${id}')">＋ 案件</button>
         <button class="btn ghost sm" onclick="openExpModal('${id}')">＋ 経費</button></div></div>
-    <div class="kpis" style="grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0 4px">
-      <div class="kpi"><div class="l">金額</div><div class="n" style="font-size:20px">${p.revenue==null?'—':OC.yen(p.revenue)}</div></div>
-      <div class="kpi"><div class="l">発注計</div><div class="n" style="font-size:20px">${OC.yen(p.anken_sum)}</div></div>
-      <div class="kpi"><div class="l">経費計</div><div class="n" style="font-size:20px">${OC.yen(p.tree_cost)}</div></div>
-      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${p.profit==null?'—':OC.yen(p.profit)}</div></div>
+    <div class="kpis" style="margin:20px 0 22px">
+      <div class="kpi"><div class="l">金額</div><div class="n">${p.revenue==null?'—':OC.yen(p.revenue)}</div></div>
+      <div class="kpi"><div class="l">発注計</div><div class="n">${OC.yen(p.anken_sum)}</div></div>
+      <div class="kpi"><div class="l">経費計</div><div class="n">${OC.yen(p.tree_cost)}</div></div>
+      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}">${p.profit==null?'—':OC.yen(p.profit)}</div></div>
     </div>
-    <div class="seclabel" style="display:flex;align-items:center">案件（${curAnkens.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openAnkenModal('${id}')">＋ 案件</button></div>
-    ${curAnkens.length?curAnkens.map(a=>ankenRowHTML(id,a,p)).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">案件はまだありません</div>'}
+    <div class="seclabel" style="display:flex;align-items:center">案件の割り振り（${curAnkens.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openAnkenModal('${id}')">＋ 案件</button></div>
+    <div class="card" style="margin-bottom:20px"><div style="overflow-x:auto">${curAnkens.length?ankenAllocTableHTML(id,curAnkens,p):'<div class="empty">案件はまだありません</div>'}</div></div>
     ${memberProfits?`<div class="seclabel">メンバー別粗利</div>
     ${memberProfits.length?memberProfits.map(m=>`<div class="ln"><div>${esc(m.name)}</div><div class="a ${m.profit<0?'neg':''}">${OC.yen(m.profit)}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">対象者がいません</div>'}`:''}
     <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
@@ -693,6 +711,8 @@ async function selectProject(id){
 // 案件（子）詳細。selectProjectの分岐として同じ#projDetailへ描画する。
 async function selectAnken(pid,id){
   curProject=pid;curAnken=id;
+  document.getElementById('projListWrap')?.classList.add('hidden');
+  document.getElementById('projDetailWrap')?.classList.remove('hidden');
   document.querySelectorAll('#projTable tr[data-pid]').forEach(tr=>tr.classList.toggle('sel',tr.dataset.pid===pid));
   const box=document.getElementById('projDetail');
   if(!box)return;
@@ -702,7 +722,7 @@ async function selectAnken(pid,id){
   detailExpCache=expenses||[];
   box.innerHTML=`
     <div class="dh" oncontextmenu="ankenCtx(event,'${pid}','${id}')"><div>
-      <div class="muted" style="margin-bottom:4px"><span class="link" onclick="selectProject('${pid}')">← プロジェクトへ戻る</span></div>
+      <div class="muted" style="margin-bottom:4px"><span class="link" onclick="backToProjectList()">← 一覧へ</span>　<span class="link" onclick="selectProject('${pid}')">← プロジェクトへ戻る</span></div>
       <div class="nm">${esc(p.name||'—')}</div>
       <div class="muted" style="margin-top:4px"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></div></div>
       <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
@@ -794,6 +814,31 @@ function ankenRowHTML(pid,a,pm,ctx){
     <b>${esc(a.name||'—')}</b>
     <div class="muted" style="font-size:12px">${esc(a.leader_id?OC.personName(a.leader_id):'—')}</div></div>
     <div class="a">${amtCell} ${statusCell}</div></div>`;
+}
+// プロジェクト詳細の「案件の割り振り」表（担当者・案件名・金額・経費・粗利・状態を1行で。spec 8）。
+// 金額・状態のその場編集は ankenRowHTML と同じ ankenRowEdit/saveAnkenRowField を流用する。
+function ankenAllocTableHTML(pid,ankens,pm){
+  return `<table class="tbl"><thead><tr>
+    <th class="l">担当者</th><th class="l">案件名</th><th>金額</th><th>経費</th><th>粗利</th><th class="l">状態</th>
+  </tr></thead><tbody>${ankens.map(a=>ankenAllocRowHTML(pid,a,pm)).join('')}</tbody></table>`;
+}
+function ankenAllocRowHTML(pid,a,pm){
+  const editable=a.revenue!==undefined&&canEditAnkenRow(a,pm);
+  const amtLabel=a.revenue!==undefined?(a.revenue==null?'—':OC.yen(a.revenue)):'—';
+  const amtCell=editable
+    ?`<span class="fcell" onclick="event.stopPropagation();ankenRowEdit(this,'${pid}','${a.id}','amount')">${amtLabel}</span>`
+    :amtLabel;
+  const statusCell=editable
+    ?`<span class="pill fcell" onclick="event.stopPropagation();ankenRowEdit(this,'${pid}','${a.id}','status')"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span>`
+    :`<span class="pill"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span>`;
+  return `<tr onclick="selectAnken('${pid}','${a.id}')" oncontextmenu="ankenCtx(event,'${pid}','${a.id}')">
+    <td class="l">${esc(a.leader_id?OC.personName(a.leader_id):'—')}</td>
+    <td class="l"><b>${esc(a.name||'—')}</b></td>
+    <td class="ed">${amtCell}</td>
+    <td>${a.cost===undefined?'—':OC.yen(a.cost)}</td>
+    <td class="${(a.profit||0)<0?'neg':''}">${a.profit==null?'—':OC.yen(a.profit)}</td>
+    <td class="l">${statusCell}</td>
+  </tr>`;
 }
 function ankenRowEdit(el,pid,ankenId,field){
   if(el.querySelector('select,input'))return;
@@ -914,9 +959,9 @@ async function deleteProjectUI(id,name){
   if(error){toast('削除エラー: '+error.message);return;}
   toast('プロジェクトを削除しました');
   if(curProject===id){
-    curProject=null;curAnken=null;
-    const box=document.getElementById('projDetail');
-    if(box)box.innerHTML='<div class="empty">← 左の一覧からプロジェクトを選んでください</div>';
+    curProject=null;curAnken=null;curProjMeta=null;
+    document.getElementById('projDetailWrap')?.classList.add('hidden');
+    document.getElementById('projListWrap')?.classList.remove('hidden');
   }
   try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
   if(curView==='projects')paintProjTable();
@@ -1186,133 +1231,98 @@ function receiptLink(e){
 }
 let expCache=[];
 function expActions(){document.getElementById('topActions').innerHTML='<button class="btn" onclick="openExpModal()">＋ 新規経費</button>';}
-let expGroupMode='proj'; // 'proj' | 'flat'
-let expFilter={q:'',month:''};
-let expSort={key:'spent_at',dir:-1};
+let expTreeCache=[]; // OC.loadAllCosts() の可視全行（親子とも）
+let expStatusSeg='active'; // 'active'=見込・進行（既定） / 'done'=完了・失注
+function canEditExp(e){return e.user_id===OC.effectiveUserId()||OC.isManager();}
 async function renderExpenses(c){
   expActions();
   c.innerHTML='<div class="empty">読み込み中…</div>';
-  try{ expCache=await OC.loadExpenses(500); }
+  try{ [expTreeCache,expCache]=await Promise.all([OC.loadAllCosts(),OC.loadExpenses(500)]); }
   catch(e){
     c.innerHTML='<div class="card"><div class="card-b empty">経費の読み込みに失敗しました：'+esc(e.message||e)+
       '<br><button class="btn ghost sm" style="margin-top:10px" onclick="renderExpenses(document.getElementById(\'content\'))">↻ 再読み込み</button></div></div>';
     return;
   }
-  const months=[...new Set(expCache.map(e=>(e.spent_at||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  detailExpCache=expCache;
   const guide=!OC.projects.length?`<div class="card" style="margin-bottom:16px;background:var(--accent-soft)"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
     <b>まずプロジェクトを1件作成してください</b><button class="btn sm" style="margin-left:auto" onclick="go('projects');openProjModal()">＋ プロジェクトを追加</button>
   </div></div>`:'';
   c.innerHTML=`${guide}<div class="toolbar">
-    <input id="xSearch" class="input search" placeholder="🔍 メモ・プロジェクト名・入力者" value="${esc(expFilter.q)}" oninput="setExpQ(this.value)">
-    <select id="xMonth" class="input" onchange="setExpMonthFilter(this.value)"><option value="">月：すべて</option>${months.map(m=>`<option value="${m}" ${m===expFilter.month?'selected':''}>${m}</option>`).join('')}</select>
-    <div class="viewbar" style="margin-left:auto"><button id="egProj" onclick="setExpMode('proj')">プロジェクトごと</button><button id="egFlat" onclick="setExpMode('flat')">一覧</button></div>
+    <div class="viewbar" id="expSeg"><button id="segActive" onclick="setExpStatusSeg('active')">進行前・進行中</button><button id="segDone" onclick="setExpStatusSeg('done')">完了</button></div>
+    <div class="muted" id="expSummary" style="margin-left:auto"></div>
   </div>
-  <div class="muted" id="expSummary" style="margin-bottom:10px"></div>
   <div id="expBody"></div>`;
   paintExpenses();
 }
-function setExpQ(v){expFilter.q=v;paintExpenses();}
-function setExpMonthFilter(v){expFilter.month=v;paintExpenses();}
-function setExpMode(m){expGroupMode=m;paintExpenses();}
-function expFiltered(){
-  const q=(expFilter.q||'').trim().toLowerCase();
-  return expCache.filter(e=>{
-    if(expFilter.month&&(e.spent_at||'').slice(0,7)!==expFilter.month)return false;
-    if(q&&!`${e.note||''} ${e.proj?.name||''} ${e.author?.name||e.author?.email||''}`.toLowerCase().includes(q))return false;
-    return true;
+function setExpStatusSeg(seg){expStatusSeg=seg;paintExpenses();}
+// タスク/経費追加・削除後の再描画（データを取り直してから再描画する。refreshProjectDetailIfOpen経由）。
+async function refreshExpensesView(){
+  try{ [expTreeCache,expCache]=await Promise.all([OC.loadAllCosts(),OC.loadExpenses(500)]); }catch(e){ return; }
+  detailExpCache=expCache;
+  paintExpenses();
+}
+// プロジェクト→案件のグループ台帳（spec: expense-ledger-and-project-detail §1-3）。
+// 表示スコープ: 経理/管理者=全プロジェクト。プロジェクトリーダー(leader_id/owner_id=自分)=そのプロジェクト全体。
+// それ以外=自分がleader_idの案件グループのみ（該当なしのプロジェクトは出さない。親見出しは文脈のみ）。
+function expGroups(){
+  const uid=OC.effectiveUserId(),manager=OC.isManager();
+  const parents={};
+  (expTreeCache||[]).forEach(row=>{ if(!row.parent_id)parents[row.id]={parent:row,children:[]}; });
+  (expTreeCache||[]).forEach(row=>{ if(row.parent_id&&parents[row.parent_id])parents[row.parent_id].children.push(row); });
+  const groups=[];
+  Object.values(parents).forEach(g=>{
+    const bucket=(g.parent.status==='見込'||g.parent.status==='進行')?'active':'done';
+    if(bucket!==expStatusSeg)return;
+    const full=manager||g.parent.leader_id===uid||g.parent.owner_id===uid;
+    const children=(full?g.children:g.children.filter(a=>a.leader_id===uid)).slice()
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ja'));
+    if(!full&&!children.length)return;
+    groups.push({parent:g.parent,children,full});
   });
-}
-function sortExp(key){if(expSort.key===key)expSort.dir*=-1;else expSort={key,dir:-1};paintExpenses();}
-function canEditExp(e){return e.user_id===OC.effectiveUserId()||OC.isManager();}
-// 金額・メモのその場編集（P3 #3）: 本人 or 経理のみ入力欄になる。
-function expAmtCell(e){
-  if(!canEditExp(e))return `<b>${OC.yen(e.amount)}</b>`;
-  return `<input class="einput" type="number" style="text-align:right;max-width:110px" value="${e.amount}" onchange="saveExpField('${e.id}','amount',this.value)">`;
-}
-function expNoteCell(e){
-  const extra=(e.kind==='外注'&&e.vendor?' <span class="pill">外注'+esc(e.vendor.name)+'</span>':'')+receiptLink(e);
-  if(!canEditExp(e))return esc(e.note||'（メモなし）')+extra;
-  return `<input class="einput" value="${esc(e.note||'')}" placeholder="（メモなし）" onchange="saveExpField('${e.id}','note',this.value)">`+extra;
-}
-async function saveExpField(id,field,value){
-  let v=value;
-  if(field==='amount'){v=parseInt(String(value).replace(/[,，]/g,''),10)||0;if(v<=0){toast('金額は1円以上で入力してください');paintExpenses();return;}}
-  if(field==='note')v=String(value).trim();
-  const patch={};patch[field]=v;
-  const {error}=await OC.updateExpense(id,patch);
-  if(error){toast('保存エラー: '+error.message);paintExpenses();return;}
-  const row=expCache.find(x=>x.id===id);if(row)row[field]=v;
-  toast('保存しました');
-  paintExpenses();
-  refreshProjectDetailIfOpen();
-}
-function expRowsHTML(list){
-  return list.map(e=>`<tr style="cursor:default" oncontextmenu="expCtx(event,'${e.id}')">
-    <td class="l">${OC.fmtDate(e.spent_at)}</td>
-    <td class="l">${expNoteCell(e)}</td>
-    <td class="l">${esc(e.author?.name||e.author?.email||'—')}</td>
-    <td>${expAmtCell(e)}</td>
-    <td class="l">${chargeLabel(e)}</td>
-  </tr>`).join('');
-}
-// 右クリックメニュー: レシート・削除（本人or経理）
-function expCtx(ev,id){
-  const e=expCache.find(x=>x.id===id);
-  if(!e){ev.preventDefault();return;}
-  const items=[];
-  if(e.receipt_url)items.push({label:'レシートを開く',fn:()=>viewReceipt(e.receipt_url)});
-  if(e.user_id===OC.effectiveUserId()||OC.isManager()){
-    if(items.length)items.push({sep:true});
-    items.push({label:'削除…',danger:true,fn:()=>deleteExpenseUI(id,e.amount)});
-  }
-  if(!items.length){ev.preventDefault();return;}
-  ctxMenu(ev,items);
-}
-async function deleteExpenseUI(id,amount){
-  if(!confirm(OC.yen(amount)+' の経費を削除します。'))return;
-  const {error}=await OC.deleteExpense(id);
-  if(error){toast('削除エラー: '+error.message);return;}
-  expCache=expCache.filter(x=>x.id!==id);
-  toast('経費を削除しました');
-  paintExpenses();
-  refreshProjectDetailIfOpen();
+  return groups.sort((a,b)=>String(a.parent.name||'').localeCompare(String(b.parent.name||''),'ja'));
 }
 function paintExpenses(){
-  document.getElementById('egProj').classList.toggle('on',expGroupMode==='proj');
-  document.getElementById('egFlat').classList.toggle('on',expGroupMode==='flat');
-  const filtered=expFiltered();
-  const total=filtered.reduce((s,e)=>s+(e.amount||0),0);
-  const capped=expCache.length>=500;   // 500件上限に達したら合計は過少（全社の正はp/l=経理タブ）
-  document.getElementById('expSummary').innerHTML=`合計 <b style="color:var(--ink);font-size:15px">${OC.yen(total)}</b>・${filtered.length}件${capped?'<span style="color:#c0392b">（表示は直近500件・全件合計は経理タブ参照）</span>':''}`;
+  document.getElementById('segActive')?.classList.toggle('on',expStatusSeg==='active');
+  document.getElementById('segDone')?.classList.toggle('on',expStatusSeg==='done');
+  const groups=expGroups();
+  const total=groups.reduce((s,g)=>s+(g.full?(g.parent.tree_cost||0):g.children.reduce((s2,a)=>s2+(a.cost||0),0)),0);
+  const capped=expCache.length>=500;   // 500件上限に達したら経費行は過少（全社の正は経理タブ）
+  const summary=document.getElementById('expSummary');
+  if(summary)summary.innerHTML=`経費計 <b style="color:var(--ink);font-size:15px">${OC.yen(total)}</b>${capped?'<span style="color:#c0392b">（経費一覧は直近500件・全件合計は経理タブ参照）</span>':''}`;
   const body=document.getElementById('expBody');
-  if(!filtered.length){body.innerHTML='<div class="card"><div class="card-b empty">条件に合う経費がありません</div></div>';return;}
-  if(expGroupMode==='flat'){
-    const rows=[...filtered];
-    const {key,dir}=expSort;
-    rows.sort((a,b)=>{let x=a[key],y=b[key];if(typeof x==='string'||typeof y==='string')return String(x||'').localeCompare(String(y||''))*dir;return((x||0)-(y||0))*dir;});
-    const ar=k=>expSort.key===k?(expSort.dir<0?' ▾':' ▴'):'';
-    body.innerHTML=`<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
-      <th class="l sortable" onclick="sortExp('spent_at')">日付${ar('spent_at')}</th><th class="l">プロジェクト / メモ</th><th class="l">入力者</th><th class="sortable" onclick="sortExp('amount')">金額${ar('amount')}</th><th class="l">申請先</th>
-    </tr></thead><tbody>${rows.map(e=>`<tr style="cursor:default" oncontextmenu="expCtx(event,'${e.id}')">
-      <td class="l">${OC.fmtDate(e.spent_at)}</td>
-      <td class="l">${e.proj?.code?'<span class="code">'+esc(e.proj.code)+'</span> ':''}${esc(e.proj?.name||'—')}<div class="muted" style="font-size:12px">${expNoteCell(e)}</div></td>
-      <td class="l">${esc(e.author?.name||e.author?.email||'—')}</td>
-      <td>${expAmtCell(e)}</td>
-      <td class="l">${chargeLabel(e)}</td>
-    </tr>`).join('')}</tbody></table></div></div>`;
-    return;
-  }
-  // プロジェクトごと
-  const groups={};
-  filtered.forEach(e=>{const k=e.project_id||'_none';(groups[k]=groups[k]||{proj:e.proj,items:[]}).items.push(e);});
-  const arr=Object.values(groups).map(g=>({...g,total:g.items.reduce((s,e)=>s+(e.amount||0),0)}))
-    .sort((a,b)=>b.total-a.total);
-  body.innerHTML=arr.map(g=>`<div class="card" style="margin-bottom:16px">
-    <div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'プロジェクトなし')}
-      <span class="muted" style="margin-left:auto;font-weight:700">${g.items.length}件・<span style="color:var(--ink)">${OC.yen(g.total)}</span></span></div>
-    <div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
-      <th class="l">日付</th><th class="l">メモ</th><th class="l">入力者</th><th>金額</th><th class="l">申請先</th>
-    </tr></thead><tbody>${expRowsHTML(g.items)}</tbody></table></div></div>`).join('');
+  if(!body)return;
+  if(!groups.length){body.innerHTML='<div class="card"><div class="card-b empty">'+(expStatusSeg==='active'?'進行前・進行中の':'完了の')+'プロジェクトがありません</div></div>';return;}
+  const expByProj={};
+  (expCache||[]).forEach(e=>{(expByProj[e.project_id]=expByProj[e.project_id]||[]).push(e);});
+  body.innerHTML=groups.map(g=>{
+    const p=g.parent;
+    const directExp=g.full?(expByProj[p.id]||[]):[];
+    return `<div class="card" style="margin-bottom:16px">
+      <div class="card-h" style="align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name||'—')}</div>
+          <div class="muted" style="font-size:11.5px;font-weight:600;margin-top:3px">${esc(p.leader_id?OC.personName(p.leader_id):'—')}　金額 ${p.revenue==null?'—':OC.yen(p.revenue)}　発注計 ${OC.yen(p.anken_sum)}　経費計 ${OC.yen(p.tree_cost)}</div>
+        </div>
+        ${g.full?`<button class="btn ghost sm" onclick="openExpModal('${p.id}')">＋ 経費</button>`:''}
+      </div>
+      <div class="card-b" style="padding:8px 16px 14px">
+        ${directExp.length?directExp.map(e=>expenseLineHTML(e,false)).join(''):(g.full?'<div class="muted" style="font-size:12.5px;padding:6px 0">プロジェクト直下の経費はありません</div>':'')}
+        ${g.children.length?g.children.map(a=>ankenExpGroupHTML(p,a,expByProj[a.id]||[])).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">案件がありません</div>'}
+      </div>
+    </div>`;
+  }).join('');
+}
+// 案件サブ見出し＋その案件の経費行（spec §2）。
+function ankenExpGroupHTML(p,a,items){
+  return `<div style="border-top:1px solid var(--line);padding:10px 0 2px;margin-top:6px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <b>${esc(a.name||'—')}</b>
+      <span class="muted" style="font-size:12px">${esc(a.leader_id?OC.personName(a.leader_id):'—')}</span>
+      <span class="muted" style="font-size:12px">金額 ${a.revenue==null?'—':OC.yen(a.revenue)}／経費 ${OC.yen(a.cost)}／差引 ${a.profit==null?'—':OC.yen(a.profit)}</span>
+      <button class="btn ghost sm" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${a.id}')">＋ 経費</button>
+    </div>
+    <div style="margin-top:2px">${items.length?items.map(e=>expenseLineHTML(e,false)).join(''):'<div class="muted" style="font-size:12.5px;padding:4px 0">経費はまだありません</div>'}</div>
+  </div>`;
 }
 function openTaskAddModal(pid,preset){
   preset=preset||{};
@@ -1438,7 +1448,6 @@ async function saveExp(){
   const {error}=await OC.addExpense(project_id,amount,note,charge_to,charged_user_id);
   if(error){toast('記録エラー: '+error.message);document.getElementById('eSave').disabled=false;return;}
   closeModal();toast(OC.yen(amount)+' を記録しました');
-  if(curView==='expenses')renderExpenses(document.getElementById('content'));
   refreshProjectDetailIfOpen();
 }
 

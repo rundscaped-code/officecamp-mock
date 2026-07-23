@@ -230,6 +230,18 @@
     OC.projects = rows;
     return OC.projects;
   };
+  // 台帳用: project_costs の可視全行（親子とも）に projects メタを重ねて返す。
+  // 経費ページのグループ表示（プロジェクト→案件）で使用。行の可視範囲は
+  // ビューの行フィルタに任せる（非担当メンバーには他人の案件行が返らない）。
+  OC.loadAllCosts = async function () {
+    const [{ data: costs, error: e1 }, { data: meta, error: e2 }] = await Promise.all([
+      OC.sb.from('project_costs').select('*'),
+      OC.sb.from('projects').select('id,name,parent_id,leader_id,owner_id,status,start_date,delivery_date,client'),
+    ]);
+    if (e1 || e2) throw (e1 || e2);
+    const m = Object.fromEntries((meta || []).map((x) => [x.id, x]));
+    return (costs || []).map((c) => ({ ...(m[c.id] || {}), ...c }));
+  };
   // 選択肢は親子とも返す。各行に parent_id と parent_name（親行名。親自身は null）を
   // 付け、呼び出し側が「親名 › 案件名」を組めるようにする。
   OC.projectOptions = async function () {
