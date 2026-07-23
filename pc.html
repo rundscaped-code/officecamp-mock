@@ -328,8 +328,8 @@
   <aside class="side">
     <div class="brand"><span class="logo">⛺</span> OFFICE CAMP</div>
     <nav class="nav" id="nav">
-      <button type="button" data-v="projects" onclick="go('projects')"><span class="ic">▤</span> プロジェクト</button>
       <button type="button" data-v="ankens" onclick="go('ankens')"><span class="ic">▥</span> 案件</button>
+      <button type="button" data-v="projects" onclick="go('projects')"><span class="ic">▤</span> プロジェクト</button>
       <button type="button" data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費</button>
       <button type="button" data-v="tasks"    onclick="go('tasks')"><span class="ic">☷</span> タスク</button>
       <div class="navsec hidden" id="adminSec">管理</div>
@@ -363,6 +363,10 @@
 <script src="shared.js?v=21"></script>
 <script>
 let curView='projects', curProject=null, curAnken=null, curAnkens=[], curProjMeta=null, projSort={key:'profit',dir:-1};
+// 経理ページ内モーダル（プロジェクト詳細のその場編集）・案件ページ内モーダル（案件詳細のその場編集）の状態。
+// #projDetail とは描画先を分ける（id重複回避）。モーダルを閉じるとcloseModal()が両方ともnullに戻す。
+let finModalId=null, finModalProj=null, finModalAnkens=[];
+let ankModalId=null, amRecord=null;
 
 // ---- 共通UI ----
 // エラーは赤背景・5秒・タップで閉じる（M-5）。第2引数省略時は文言から自動判定。
@@ -375,7 +379,25 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 function applyTheme(){let t=null;try{t=localStorage.getItem('oc_theme');}catch(e){}if(!t)t=(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.dataset.theme=t;}
 function toggleTheme(){const c=document.documentElement.dataset.theme==='dark'?'dark':'light';const n=c==='dark'?'light':'dark';document.documentElement.dataset.theme=n;try{localStorage.setItem('oc_theme',n);}catch(e){}}
 function modal(html){document.getElementById('modalRoot').innerHTML='<div class="ov" onclick="if(event.target===this)closeModal()">'+html+'</div>';}
-function closeModal(){document.getElementById('modalRoot').innerHTML='';}
+// 経理/案件モーダルが「今まさに表示中」の時だけ閉じたと判定してid状態を戻す（M-close）。
+// タスク追加等の一時フォームがモーダルを上書きしている間はid状態を保持し、保存後に元のモーダルへ復帰させる。
+function closeModal(){
+  const root=document.getElementById('modalRoot');
+  const hasFin=!!root.querySelector('#finDetailModal'), hasAnk=!!root.querySelector('#ankDetailModal');
+  if(hasFin)finModalId=null;
+  if(hasAnk)ankModalId=null;
+  // 経理/案件モーダルの上に開いた一時フォーム（＋タスク等）を Escape/オーバーレイで
+  // 閉じた場合は全消しせず親モーダルへ戻す（cancelNestedModal と同挙動。状態残留の防止）。
+  if(!hasFin&&!hasAnk&&(finModalId||ankModalId)&&root.innerHTML!==''){cancelNestedModal();return;}
+  root.innerHTML='';
+}
+// ＋案件/＋タスク/＋経費フォームの「キャンセル」用。経理/案件モーダルの中から開いた一時フォームなら
+// 全部閉じずに親モーダルへ戻す。単独で開いた場合（経費ビュー等）は通常どおり閉じる。
+function cancelNestedModal(){
+  if(finModalId){paintFinanceModal();return;}
+  if(ankModalId){paintAnkenModal();return;}
+  closeModal();
+}
 // 共通コンテキストメニュー（右クリック）。.mpop流用・画面端クランプ・既存のグローバルclickリスナーで閉じる。
 // items: [{label,fn,danger,checked,disabled,sep}]
 function ctxMenu(ev,items){
@@ -406,7 +428,7 @@ document.addEventListener('keydown',e=>{
     return;
   }
   if(e.target.closest('input,select,textarea')||document.querySelector('.ov'))return;
-  const viewByKey={'1':'projects','2':'ankens','3':'expenses','4':'tasks','5':'finance'};
+  const viewByKey={'1':'ankens','2':'projects','3':'expenses','4':'tasks','5':'finance'};
   if(viewByKey[e.key]){go(viewByKey[e.key]);return;}
   if(e.key==='/'){
     const searchId={projects:'pSearch',expenses:'xSearch',finance:'fSearch',tasks:'tfQ'}[curView];
@@ -542,8 +564,9 @@ function stopImpersonation(){
 
 // プロジェクト/案件タブを開いたまま経費・タスクを増減した時の再描画（選択中が案件なら案件詳細へ）
 function refreshProjectDetailIfOpen(){
-  if(curView!=='projects'||!curProject)return;
-  if(curAnken)selectAnken(curProject,curAnken);else selectProject(curProject);
+  if(curView==='projects'&&curProject){ if(curAnken)selectAnken(curProject,curAnken);else selectProject(curProject); }
+  if(finModalId)paintFinanceModal();
+  if(ankModalId)paintAnkenModal();
 }
 // ---- プロジェクト（master-detail） ----
 function projActions(){
@@ -720,8 +743,17 @@ async function saveProjField(id,field,value){
   let v=value;
   if(field==='amount')v=parseAmountOrNull(value);
   const isAnken=curAnken===id;
-  const p=isAnken?(curAnkens.find(x=>x.id===id)||{}):(OC.projects.find(x=>x.id===id)||{});
-  const refresh=()=>{ if(curView==='finance')paintFinance(); if(curView==='projects'){paintProjTable(); isAnken?selectAnken(curProject,id):selectProject(id);} if(curView==='tasks')paintTasks(); };
+  // 経理/案件モーダルの対象行はOC.projects（親行のみ）に無いことがあるため、開いているモーダルのキャッシュも見る。
+  const p=isAnken?(curAnkens.find(x=>x.id===id)||{}):(ankModalId===id?(amRecord||{}):(OC.projects.find(x=>x.id===id)||{}));
+  const refresh=()=>{
+    if(curView==='finance')paintFinance();
+    if(curView==='projects'){paintProjTable(); isAnken?selectAnken(curProject,id):selectProject(id);}
+    if(curView==='tasks')paintTasks();
+    if(finModalId===id)paintFinanceModal();
+    if(ankModalId===id)paintAnkenModal();
+    if(curView==='ankens')renderAnkensRefresh();
+  };
+  if(field==='name'&&!String(v||'').trim()){toast('プロジェクト名を入力してください');refresh();return;}
   if(field==='amount'&&v!=null&&v<0){toast('金額は0以上で入力してください');try{await OC.loadProjects();}catch(e){}refresh();return;}
   if((field==='start_date'||field==='delivery_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');refresh();return;}
   if(field==='start_date'&&value&&p.delivery_date&&badRange(value,p.delivery_date)){toast('開始日は納品日以前にしてください');refresh();return;}
@@ -747,7 +779,8 @@ function canEditAnkenRow(a,pm){
   const uid=OC.effectiveUserId();
   return !!(OC.isManager()||a.leader_id===uid||(pm&&pm.leader_id===uid)||(pm&&pm.owner_id===uid));
 }
-function ankenRowHTML(pid,a,pm){
+// ctx='finance'（経理モーダル内）は行クリックでの遷移をせず、右クリックも削除のみに絞る（M-8）。
+function ankenRowHTML(pid,a,pm,ctx){
   const editable=a.revenue!==undefined&&canEditAnkenRow(a,pm);
   const amtLabel=a.revenue!==undefined?(a.revenue==null?'—':OC.yen(a.revenue)):'—';
   const amtCell=editable
@@ -756,20 +789,22 @@ function ankenRowHTML(pid,a,pm){
   const statusCell=editable
     ?`<span class="pill fcell" style="margin-left:6px" onclick="event.stopPropagation();ankenRowEdit(this,'${pid}','${a.id}','status')"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span>`
     :`<span class="pill" style="margin-left:6px"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span>`;
-  return `<div class="ln" style="cursor:pointer" onclick="selectAnken('${pid}','${a.id}')" oncontextmenu="ankenCtx(event,'${pid}','${a.id}')"><div>
+  const rowOpen=ctx==='finance'?'':` onclick="selectAnken('${pid}','${a.id}')"`;
+  return `<div class="ln" style="cursor:${ctx==='finance'?'default':'pointer'}"${rowOpen} oncontextmenu="ankenCtx(event,'${pid}','${a.id}','${ctx||''}')"><div>
     <b>${esc(a.name||'—')}</b>
     <div class="muted" style="font-size:12px">${esc(a.leader_id?OC.personName(a.leader_id):'—')}</div></div>
     <div class="a">${amtCell} ${statusCell}</div></div>`;
 }
 function ankenRowEdit(el,pid,ankenId,field){
   if(el.querySelector('select,input'))return;
-  const a=curAnkens.find(x=>x.id===ankenId);if(!a)return;
+  const a=curAnkens.find(x=>x.id===ankenId)||finModalAnkens.find(x=>x.id===ankenId);if(!a)return;
   const esck="if(event.key==='Escape'){this.dataset.esc='1';this.blur()}";
+  const cancel=`if(curView==='projects')selectProject('${pid}');if(finModalId==='${pid}')paintFinanceModal();`;
   let ctrl;
   if(field==='amount'){
-    ctrl=`<input class="einput" type="number" style="text-align:right;max-width:110px" value="${a.revenue==null?'':a.revenue}" onblur="if(!this.dataset.esc)saveAnkenRowField('${pid}','${ankenId}','amount',this.value);else selectProject('${pid}')" onkeydown="if(event.key==='Enter')this.blur();${esck}">`;
+    ctrl=`<input class="einput" type="number" style="text-align:right;max-width:110px" value="${a.revenue==null?'':a.revenue}" onblur="if(!this.dataset.esc)saveAnkenRowField('${pid}','${ankenId}','amount',this.value);else{${cancel}}" onkeydown="if(event.key==='Enter')this.blur();${esck}">`;
   }else{
-    ctrl=`<select class="einput" onchange="saveAnkenRowField('${pid}','${ankenId}','status',this.value)" onblur="if(this.dataset.esc)selectProject('${pid}')" onkeydown="${esck}">${pstatusOptions(a.status)}</select>`;
+    ctrl=`<select class="einput" onchange="saveAnkenRowField('${pid}','${ankenId}','status',this.value)" onblur="if(this.dataset.esc){${cancel}}" onkeydown="${esck}">${pstatusOptions(a.status)}</select>`;
   }
   el.innerHTML=ctrl;
   const c=el.querySelector('select,input');
@@ -785,11 +820,12 @@ async function saveAnkenRowField(pid,ankenId,field,value){
     patch.status=value;
   }
   const {error}=await OC.updateProject(ankenId,patch);
-  if(error){toast('保存エラー: '+error.message);selectProject(pid);return;}
+  if(error){toast('保存エラー: '+error.message);if(curView==='projects')selectProject(pid);if(finModalId===pid)paintFinanceModal();return;}
   toast('保存しました');
   try{await OC.loadProjects();}catch(e){}
-  selectProject(pid);
+  if(curView==='projects')selectProject(pid);
   if(curView==='finance')paintFinance();
+  if(finModalId===pid)paintFinanceModal();
 }
 function openProjModal(){
   const effectiveId=OC.effectiveUserId();
@@ -818,18 +854,16 @@ function projCtx(ev,id){
     {label:'削除…',danger:true,fn:()=>deleteProjectUI(id,p.name)},
   ]);
 }
-// 右クリックメニュー: 案件を開く・削除（リーダー/経理のみ）
-function ankenCtx(ev,pid,id){
-  const a=curAnkens.find(x=>x.id===id);
+// 右クリックメニュー: 案件を開く・削除（リーダー/経理のみ）。ctx='finance'（経理モーダル内）は削除のみ。
+function ankenCtx(ev,pid,id,ctx){
+  const a=(ctx==='finance'?finModalAnkens:curAnkens).find(x=>x.id===id);
   if(!a){ev.preventDefault();return;}
   const uid=OC.effectiveUserId();
-  const pm=(curProject===pid&&curProjMeta)?curProjMeta:((OC.projects||[]).find(x=>x.id===pid)||{});
+  const pm=ctx==='finance'?(finModalProj||{}):((curProject===pid&&curProjMeta)?curProjMeta:((OC.projects||[]).find(x=>x.id===pid)||{}));
   if(!(OC.isManager()||a.leader_id===uid||pm.leader_id===uid||pm.owner_id===uid)){ev.preventDefault();return;}
-  ctxMenu(ev,[
-    {label:'案件を開く',fn:()=>selectAnken(pid,id)},
-    {sep:true},
-    {label:'削除…',danger:true,fn:()=>deleteAnkenUI(pid,id,a.name)},
-  ]);
+  const items=ctx==='finance'?[]:[{label:'案件を開く',fn:()=>selectAnken(pid,id)},{sep:true}];
+  items.push({label:'削除…',danger:true,fn:()=>deleteAnkenUI(pid,id,a.name)});
+  ctxMenu(ev,items);
 }
 // プロジェクトの複製（P3 #9）: 直下タスクの構造ごと複製する。日付・進捗・状態は引き継がず未着手、
 // 親子構造は旧ID→新IDのマップで復元。経費・案件は複製しない。
@@ -895,6 +929,8 @@ async function deleteAnkenUI(pid,id,name){
   toast('案件を削除しました');
   try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
   if(curView==='projects'){paintProjTable();selectProject(pid);}
+  if(curView==='finance')paintFinance();
+  if(finModalId===pid)paintFinanceModal();
 }
 async function saveProj(){
   const name=document.getElementById('mName').value.trim();
@@ -924,7 +960,7 @@ function openAnkenModal(parentId){
     <div class="field"><label class="fl" for="aAmt">金額（円・任意）</label><input id="aAmt" class="input" inputmode="numeric" placeholder="未確定なら空欄"></div>
     <div style="display:flex;gap:10px"><div class="field" style="flex:1"><label class="fl" for="aStart">開始日</label><input id="aStart" class="input" type="date"></div>
       <div class="field" style="flex:1"><label class="fl" for="aEnd">終了日</label><input id="aEnd" class="input" type="date"></div></div>
-    </div><div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="aSave">追加</button></div></form></div>`);
+    </div><div class="modal-f"><button type="button" class="btn ghost" onclick="cancelNestedModal()">キャンセル</button><button type="submit" class="btn" id="aSave">追加</button></div></form></div>`);
   setTimeout(()=>{const e=document.getElementById('aName');if(e)e.focus();},30);
 }
 async function saveAnken(parentId){
@@ -943,6 +979,7 @@ async function saveAnken(parentId){
   closeModal();toast('案件「'+name+'」を追加');
   try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
   if(curView==='projects')selectProject(parentId);
+  if(finModalId===parentId)paintFinanceModal();
 }
 // メンバー別粗利（リーダー/経理のみ表示）: 子案件の担当分＋プロジェクト直下リーダー分。ビュー化せずフロントで expenses から算出。
 function computeMemberProfits(p,ankens,expenses){
@@ -1031,6 +1068,11 @@ async function deleteDetailExpenseUI(id,amount){
 
 // ---- 案件（自分の担当一覧） ----
 let ankenCache=[];
+// 月ナビ（受注日=start_dateの暦月一致）。初期表示は今月、以後はビューを離れても月選択を保持する。
+function todayYM(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function shiftYM(ym,delta){const[y,m]=ym.split('-').map(Number);const d=new Date(y,m-1+delta,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function ymLabel(ym){const[y,m]=ym.split('-');return y+'年'+parseInt(m,10)+'月';}
+let ankMonth=todayYM();
 async function renderAnkens(c){
   document.getElementById('topActions').innerHTML='';
   c.innerHTML='<div class="empty">読み込み中…</div>';
@@ -1040,21 +1082,45 @@ async function renderAnkens(c){
       '<br><button class="btn ghost sm" style="margin-top:10px" onclick="renderAnkens(document.getElementById(\'content\'))">↻ 再読み込み</button></div></div>';
     return;
   }
-  const profitSum=ankenCache.reduce((s,a)=>a.profit==null?s:s+a.profit,0);
-  const costSum=ankenCache.reduce((s,a)=>s+(a.cost||0),0);
   c.innerHTML=`
-    <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
-      <div class="kpi"><div class="l">担当案件数</div><div class="n">${ankenCache.length}</div></div>
-      <div class="kpi"><div class="l">粗利計</div><div class="n ${profitSum<0?'neg':''}">${OC.yen(profitSum)}</div></div>
-      <div class="kpi"><div class="l">経費計</div><div class="n">${OC.yen(costSum)}</div></div>
+    <div class="toolbar" style="justify-content:center">
+      <button class="btn ghost sm" onclick="navAnkMonth(-1)">←</button>
+      <b style="font-size:15px;min-width:110px;text-align:center" id="ankMonthLabel"></b>
+      <button class="btn ghost sm" onclick="navAnkMonth(1)">→</button>
+      <button class="btn ghost sm" onclick="navAnkMonth(0)">今月</button>
     </div>
-    <div class="card"><div class="card-b" style="padding:0" id="ankenTable"></div></div>`;
-  paintAnkenTable();
+    <div id="ankKpis"></div>
+    <div class="card"><div class="card-b" style="padding:0" id="ankenTable"></div></div>
+    <div class="seclabel" style="margin-top:18px">開始日未設定</div>
+    <div class="card"><div class="card-b" style="padding:0" id="ankenNoDate"></div></div>`;
+  paintAnkensAll();
 }
-function paintAnkenTable(){
-  document.getElementById('ankenTable').innerHTML=`<table class="tbl"><thead><tr>
+function navAnkMonth(delta){ ankMonth=delta?shiftYM(ankMonth,delta):todayYM(); paintAnkensAll(); }
+// 再読み込みなしのデータ再取得（案件モーダルでの編集後に一覧・KPIを合わせる用）
+async function renderAnkensRefresh(){
+  try{ ankenCache=await OC.loadMyAnkens(); }catch(e){return;}
+  if(curView==='ankens')paintAnkensAll();
+}
+function paintAnkensAll(){
+  const lbl=document.getElementById('ankMonthLabel');
+  if(!lbl)return; // ankensビューを離れた後の遅延コールバックは無視
+  lbl.textContent=ymLabel(ankMonth);
+  const scoped=ankenCache.filter(a=>(a.start_date||'').slice(0,7)===ankMonth);
+  const noDate=ankenCache.filter(a=>!a.start_date);
+  const profitSum=scoped.reduce((s,a)=>a.profit==null?s:s+a.profit,0);
+  const costSum=scoped.reduce((s,a)=>s+(a.cost||0),0);
+  document.getElementById('ankKpis').innerHTML=`<div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kpi"><div class="l">担当案件数</div><div class="n">${scoped.length}</div></div>
+    <div class="kpi"><div class="l">粗利計</div><div class="n ${profitSum<0?'neg':''}">${OC.yen(profitSum)}</div></div>
+    <div class="kpi"><div class="l">経費計</div><div class="n">${OC.yen(costSum)}</div></div>
+  </div>`;
+  paintAnkenTable(scoped,'ankenTable','この月に受注した案件がありません');
+  paintAnkenTable(noDate,'ankenNoDate','開始日未設定の案件はありません');
+}
+function paintAnkenTable(list,targetId,emptyMsg){
+  document.getElementById(targetId).innerHTML=`<table class="tbl"><thead><tr>
     <th class="l">案件</th><th class="l">プロジェクト</th><th class="l">状態</th><th>金額</th><th>経費</th><th>粗利</th><th class="l">期間</th>
-  </tr></thead><tbody>${ankenCache.map(a=>`<tr onclick="go('projects');setTimeout(()=>selectAnken('${a.parent_id}','${a.id}'),40)">
+  </tr></thead><tbody>${list.map(a=>`<tr onclick="openAnkenDetail('${a.id}')">
     <td class="l"><b>${a.code?'<span class="code">'+esc(a.code)+'</span> ':''}${esc(a.name||'—')}</b></td>
     <td class="l">${esc(a.parent_name||'—')}</td>
     <td class="l"><span class="pill"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span></td>
@@ -1062,7 +1128,48 @@ function paintAnkenTable(){
     <td>${OC.yen(a.cost)}</td>
     <td class="${(a.profit||0)<0?'neg':''}">${a.profit==null?'—':OC.yen(a.profit)}</td>
     <td class="l">${a.start_date?OC.fmtDate(a.start_date):'—'} → ${a.end_date?OC.fmtDate(a.end_date):'—'}</td>
-  </tr>`).join('')||'<tr><td class="empty" colspan="7">担当している案件がありません</td></tr>'}</tbody></table>`;
+  </tr>`).join('')||'<tr><td class="empty" colspan="7">'+esc(emptyMsg)+'</td></tr>'}</tbody></table>`;
+}
+// 案件詳細モーダル（案件ページ内のその場編集。M-8）。#projDetailとは描画先を分け、ankModalId/amRecordで状態を持つ。
+async function openAnkenDetail(id){
+  ankModalId=id;
+  modal('<div class="modal wide" id="ankDetailModal"><div class="modal-b"><div class="empty">読み込み中…</div></div></div>');
+  await paintAnkenModal();
+}
+async function paintAnkenModal(){
+  if(!ankModalId)return;
+  const id=ankModalId;
+  const {p,tasks,expenses}=await OC.loadAnkenDetail(id);
+  amRecord=p;detailExpCache=expenses||[];
+  const cacheRow=ankenCache.find(x=>x.id===id);
+  modal(`<div class="modal wide" id="ankDetailModal">
+    <div class="modal-h" style="display:flex;align-items:center;gap:10px">
+      <span>${esc(p.name||'—')}</span>
+      <span class="muted" style="font-weight:600;font-size:12px">${esc(cacheRow&&cacheRow.parent_name||'')}</span>
+      <span style="margin-left:auto"></span>
+      <button class="btn ghost sm" onclick="closeModal()">閉じる</button>
+    </div>
+    <div class="modal-b scroll">
+      <div class="kpis" style="grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+        <div class="kpi"><div class="l">案件金額</div><div class="n" style="font-size:20px">${p.revenue==null?'—':OC.yen(p.revenue)}</div></div>
+        <div class="kpi"><div class="l">経費</div><div class="n" style="font-size:20px">${OC.yen(p.cost)}</div></div>
+        <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${p.profit==null?'—':OC.yen(p.profit)}</div></div>
+      </div>
+      <div class="seclabel" style="display:flex;align-items:center">タスク（${(tasks||[]).length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openTaskAddModal('${id}')">＋ タスク</button></div>
+      ${(tasks||[]).length?tasks.map(t=>`<div class="ln">
+        <div><span class="tasklink" onclick="openTaskModal('${t.id}')">${esc(t.title)}</span></div>
+        <div class="a" style="font-weight:400">${statusSel(t)}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">タスクはありません</div>'}
+      <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
+      ${expenses.length?expenses.map(e=>expenseLineHTML(e,false)).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
+      <div class="seclabel">案件情報（その場で編集）</div>
+      <div class="drow"><span class="k">案件名</span><input class="einput" value="${esc(p.name||'')}" onchange="saveProjField('${id}','name',this.value)"></div>
+      <div class="drow"><span class="k">状態</span><select class="einput" onchange="saveProjField('${id}','status',this.value)">${pstatusOptions(p.status)}</select></div>
+      <div class="drow"><span class="k">金額</span><input class="einput" type="number" value="${p.revenue==null?'':p.revenue}" onchange="saveProjField('${id}','amount',this.value)"></div>
+      <div class="drow"><span class="k">担当</span><select class="einput" onchange="saveProjField('${id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></div>
+      <div class="drow"><span class="k">開始日</span><input class="einput" type="date" value="${p.start_date||''}" onchange="saveProjField('${id}','start_date',this.value)"></div>
+      <div class="drow"><span class="k">終了日</span><input class="einput" type="date" value="${p.end_date||''}" onchange="saveProjField('${id}','end_date',this.value)"></div>
+    </div>
+  </div>`);
 }
 
 // ---- 経費 ----
@@ -1220,7 +1327,7 @@ function openTaskAddModal(pid,preset){
       <div class="field"><label class="fl" for="ntStart">開始日</label><input id="ntStart" class="input" type="date" value="${preset.start||''}" onchange="const e=document.getElementById('ntEnd');if(!e.value||e.value<this.value)e.value=this.value"></div>
       <div class="field"><label class="fl" for="ntEnd">終了日</label><input id="ntEnd" class="input" type="date" value="${preset.end||''}"></div>
     </div></div>
-    <div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="ntSave">追加</button></div></form></div>`);
+    <div class="modal-f"><button type="button" class="btn ghost" onclick="cancelNestedModal()">キャンセル</button><button type="submit" class="btn" id="ntSave">追加</button></div></form></div>`);
   setTimeout(()=>{const e=document.getElementById('ntTitle');if(e)e.focus();},30);
 }
 // 右クリックメニュー: 状態変更・複製・削除（P0-B #8。リスト行・ガントバー・ボードカード共通。複製はP3で同一案件への即時複製に置き換え）
@@ -1313,7 +1420,7 @@ function openExpModal(projectId){
     <div class="field"><label class="fl" for="eAnken">紐づく案件</label><select id="eAnken" class="input">${expAnkenOptions(parentId)}</select></div>
     <div class="field"><label class="fl" for="eMemo">メモ（何を買ったか）</label><input id="eMemo" class="input" placeholder="木材・ビス など"></div>
     <div class="field"><label class="fl" for="eCharge">申請先</label><select id="eCharge" class="input">${chargeOptions()}</select></div>
-    </div><div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="eSave">記録する</button></div></form></div>`);
+    </div><div class="modal-f"><button type="button" class="btn ghost" onclick="cancelNestedModal()">キャンセル</button><button type="submit" class="btn" id="eSave">記録する</button></div></form></div>`);
   setTimeout(()=>{
     const e=document.getElementById('eAmt');if(e)e.focus();
     const sel=document.getElementById('eAnken');if(sel&&childId)sel.value=childId;
@@ -1412,7 +1519,7 @@ function paintFinance(){
     <th class="sortable" onclick="sortFin('profit')" title="粗利 ＝ 金額 − 発注計">粗利${ar('profit')}</th>
     <th class="l">納品</th>
   </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:default" oncontextmenu="finCtx(event,'${p.id}')">
-    <td class="l"><b><span class="link" onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
+    <td class="l"><b><span class="link" onclick="openFinanceDetail('${p.id}')">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','status')"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'—')}</span></td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','leader_id')">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
     <td class="fcell" onclick="finEdit(this,'${p.id}','amount')">${p.revenue==null?'—':OC.yen(p.revenue)}</td>
@@ -1420,6 +1527,47 @@ function paintFinance(){
     <td class="${(p.profit||0)<0?'neg':''}"><b>${p.profit==null?'—':OC.yen(p.profit)}</b></td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','delivery_date')">${OC.fmtDate(p.delivery_date)}</td>
   </tr>`).join('')||'<tr><td class="empty" colspan="9">該当するプロジェクトがありません</td></tr>'}</tbody></table>`;
+}
+// 経理ページ内モーダル（プロジェクト詳細のその場編集。M-8）。projectsビューへ遷移せず経理ページ内で完結させる。
+// #projDetailとは描画先を分け、finModalId/finModalProj/finModalAnkensで状態を持つ。
+function openFinanceDetail(id){
+  finModalId=id;
+  modal('<div class="modal wide" id="finDetailModal"><div class="modal-b"><div class="empty">読み込み中…</div></div></div>');
+  paintFinanceModal();
+}
+async function paintFinanceModal(){
+  if(!finModalId)return;
+  const id=finModalId;
+  const {p,ankens,expenses}=await OC.loadProjectDetail(id);
+  finModalProj=p;finModalAnkens=ankens||[];detailExpCache=expenses||[];
+  modal(`<div class="modal wide" id="finDetailModal">
+    <div class="modal-h" style="display:flex;align-items:center;gap:10px">
+      <span>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name||'—')}</span>
+      <span style="margin-left:auto"></span>
+      <button class="btn ghost sm" onclick="closeModal()">閉じる</button>
+    </div>
+    <div class="modal-b scroll">
+      <div class="kpis" style="grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+        <div class="kpi"><div class="l">金額</div><div class="n" style="font-size:20px">${p.revenue==null?'—':OC.yen(p.revenue)}</div></div>
+        <div class="kpi"><div class="l">発注計</div><div class="n" style="font-size:20px">${OC.yen(p.anken_sum)}</div></div>
+        <div class="kpi"><div class="l">経費計</div><div class="n" style="font-size:20px">${OC.yen(p.tree_cost)}</div></div>
+        <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${p.profit==null?'—':OC.yen(p.profit)}</div></div>
+      </div>
+      <div class="seclabel" style="display:flex;align-items:center">案件（${finModalAnkens.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openAnkenModal('${id}')">＋ 案件</button></div>
+      ${finModalAnkens.length?finModalAnkens.map(a=>ankenRowHTML(id,a,p,'finance')).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">案件はまだありません</div>'}
+      <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
+      ${expenses.length?expenses.map(e=>expenseLineHTML(e,true)).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
+      <div class="seclabel">プロジェクト情報（その場で編集）</div>
+      <div class="drow"><span class="k">プロジェクト名</span><input class="einput" value="${esc(p.name||'')}" onchange="saveProjField('${id}','name',this.value)"></div>
+      <div class="drow"><span class="k">受注元</span><input class="einput" value="${esc(p.client||'')}" placeholder="—" onchange="saveProjField('${id}','client',this.value)"></div>
+      <div class="drow"><span class="k">状態</span><select class="einput" onchange="saveProjField('${id}','status',this.value)">${pstatusOptions(p.status)}</select></div>
+      <div class="drow"><span class="k">担当（リーダー）</span><select class="einput" onchange="saveProjField('${id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></div>
+      <div class="drow"><span class="k">金額</span><input class="einput" type="number" value="${p.revenue==null?'':p.revenue}" onchange="saveProjField('${id}','amount',this.value)"></div>
+      <div class="drow"><span class="k">開始日</span><input class="einput" type="date" value="${p.start_date||''}" onchange="saveProjField('${id}','start_date',this.value)"></div>
+      <div class="drow"><span class="k">納品日</span><input class="einput" type="date" value="${p.delivery_date||''}" onchange="saveProjField('${id}','delivery_date',this.value)"></div>
+      <div class="drow" style="display:block"><span class="k" style="display:block;margin-bottom:6px">メモ</span><textarea class="input" rows="2" onchange="saveProjField('${id}','note',this.value)">${esc(p.note||'')}</textarea></div>
+    </div>
+  </div>`);
 }
 
 // 右クリックメニュー: プロジェクトを開く・状態変更・削除（金額・日付は誤爆しやすいので載せない）
@@ -1589,6 +1737,7 @@ async function saveTaskField(id,field,value){
   const {error}=await OC.updateTask(id,{[field]:v});
   if(error){toast('保存エラー: '+error.message);reloadTasks();return;}
   toast('保存しました');reloadTasks();
+  if(ankModalId)paintAnkenModal(); // 案件モーダル内のタスク状態その場編集を反映
 }
 // タスク詳細モーダルの開始日変更用。終了日を繰り上げる場合は個別保存(saveTaskField)だと
 // 終了日の旧値でバリデーションに引っかかり保存されないため、start_date/end_dateをまとめて保存する。
