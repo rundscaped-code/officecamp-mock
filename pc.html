@@ -310,7 +310,7 @@
 <div id="login" class="login-screen hidden">
   <div class="login-card">
     <h1>オフィスキャンプ</h1>
-    <p>案件・経費・予定の管理（PC版）</p>
+    <p>プロジェクト・経費・予定の管理（PC版）</p>
     <!-- form要素で包む: パスワードマネージャの保存/自動入力とEnter送信を成立させる（M-3） -->
     <form onsubmit="event.preventDefault();doLogin()">
       <div class="field"><label class="fl" for="lEmail">メール</label><input id="lEmail" class="input" type="email" autocomplete="username" placeholder="you@officecamp.jp"></div>
@@ -328,11 +328,9 @@
   <aside class="side">
     <div class="brand"><span class="logo">⛺</span> OFFICE CAMP</div>
     <nav class="nav" id="nav">
-      <button type="button" data-v="home"     onclick="go('home')"><span class="ic">▦</span> ホーム</button>
-      <button type="button" data-v="projects" onclick="go('projects')"><span class="ic">▤</span> 案件</button>
-      <button type="button" data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費<span id="badgeExpensesPC" class="navbadge hidden"></span></button>
+      <button type="button" data-v="projects" onclick="go('projects')"><span class="ic">▤</span> プロジェクト</button>
+      <button type="button" data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費</button>
       <button type="button" data-v="tasks"    onclick="go('tasks')"><span class="ic">☷</span> タスク</button>
-      <button type="button" data-v="orders"   onclick="go('orders')"><span class="ic">⇄</span> 発注<span id="badgeOrdersPC" class="navbadge hidden"></span></button>
       <div class="navsec hidden" id="adminSec">管理</div>
       <button type="button" data-v="finance" id="financeNav" class="hidden" onclick="go('finance')"><span class="ic">▣</span> 経理</button>
       <button type="button" data-v="members" id="membersNav" class="hidden" onclick="go('members')"><span class="ic">👥</span> メンバー</button>
@@ -346,7 +344,7 @@
   </aside>
   <main class="main">
     <header class="top">
-      <h1 id="pageTitle">ホーム</h1>
+      <h1 id="pageTitle">プロジェクト</h1>
       <div class="spacer"></div>
       <div id="topActions"></div>
     </header>
@@ -361,9 +359,9 @@
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="shared.js?v=20"></script>
+<script src="shared.js?v=21"></script>
 <script>
-let curView='home', curProject=null, projSort={key:'profit',dir:-1};
+let curView='projects', curProject=null, curAnken=null, curAnkens=[], curProjMeta=null, projSort={key:'profit',dir:-1};
 
 // ---- 共通UI ----
 // エラーは赤背景・5秒・タップで閉じる（M-5）。第2引数省略時は文言から自動判定。
@@ -407,7 +405,7 @@ document.addEventListener('keydown',e=>{
     return;
   }
   if(e.target.closest('input,select,textarea')||document.querySelector('.ov'))return;
-  const viewByKey={'1':'home','2':'projects','3':'expenses','4':'tasks','5':'orders'};
+  const viewByKey={'1':'projects','2':'expenses','3':'tasks','4':'finance'};
   if(viewByKey[e.key]){go(viewByKey[e.key]);return;}
   if(e.key==='/'){
     const searchId={projects:'pSearch',expenses:'xSearch',finance:'fSearch',tasks:'tfQ'}[curView];
@@ -415,7 +413,7 @@ document.addEventListener('keydown',e=>{
     return;
   }
   if(e.key==='n'){
-    const openByView={projects:()=>openProjModal(),expenses:()=>openExpModal(),tasks:()=>openTaskAddModal(),orders:()=>openOrderModal()}[curView];
+    const openByView={projects:()=>openProjModal(),expenses:()=>openExpModal(),tasks:()=>openTaskAddModal()}[curView];
     if(openByView)openByView();
   }
 });
@@ -457,19 +455,18 @@ async function savePw(){
 }
 
 // ---- ルーティング ----
-const TITLES={home:'ホーム',projects:'案件',expenses:'経費',finance:'経理',tasks:'タスク',orders:'発注',members:'メンバー'};
+const TITLES={projects:'プロジェクト',expenses:'経費',finance:'経理',tasks:'タスク',members:'メンバー'};
 function go(v,fromPop){
-  if(!TITLES[v])v='home';   // 不正・未知のハッシュはホームへフォールバック
+  if(!TITLES[v])v='projects';   // 不正・未知のハッシュはプロジェクトへフォールバック
   if(v==='finance' && !OC.isAccounting()){
     toast('経理ユーザーのみ閲覧できます');
     v='projects';
   }
   if(v==='members' && (!OC.isActualAdmin() || OC.impersonatingUser)){
     toast('管理者のみ利用できます');
-    v='home';
+    v='projects';
   }
   curView=v;
-  markBadgeSeenPC(v);
   // リロードで直前のviewへ戻れるようにhistoryへ同期（同一viewへの連続pushは抑止）。
   // popstate起点(fromPop)はpushStateすると再入ループになるためreplaceStateに留める。
   if(location.hash!=='#'+v){
@@ -480,37 +477,17 @@ function go(v,fromPop){
   document.getElementById('pageTitle').textContent=TITLES[v]||'';
   document.getElementById('topActions').innerHTML='';
   const c=document.getElementById('content');
-  if(v==='home')return renderHome(c);
   if(v==='projects')return renderProjects(c);
   if(v==='expenses')return renderExpenses(c);
   if(v==='finance')return renderFinance(c);
   if(v==='tasks')return renderTasks(c);
-  if(v==='orders')return renderOrders(c);
   if(v==='members')return renderMembers(c);
 }
 // リロードで直前のviewに復元、Alt+←等のブラウザ戻る/進むにも追従
 window.addEventListener('popstate',()=>{
   const h=(location.hash||'').slice(1);
-  go(h||'home',true);
+  go(h||'projects',true);
 });
-// ---- 通知バッジ（P4-8） ----
-function paintBadgePC(id,n){
-  const b=document.getElementById(id);if(!b)return;
-  if(!n){b.classList.add('hidden');b.textContent='';return;}
-  b.textContent=n>99?'99+':n;b.classList.remove('hidden');
-}
-async function refreshBadges(){
-  let counts={orders:0,expense:0};
-  try{ counts=await OC.loadBadgeCounts(); }catch(e){ console.warn('[badge] 取得失敗',e); }
-  paintBadgePC('badgeExpensesPC',counts.expense);
-  paintBadgePC('badgeOrdersPC',counts.orders);
-}
-// タブ/ビューを開いたら既読化（P4-8）。差戻経費は「見た」では解消しないため対象外。
-function markBadgeSeenPC(v){
-  if(v!=='orders')return;
-  OC.badgeMarkSeen('orders');
-  paintBadgePC('badgeOrdersPC',0);
-}
 function updateImpersonationBar(){
   const bar=document.getElementById('impersonationBar');
   if(!bar)return;
@@ -546,65 +523,29 @@ function startImpersonation(userId){
   try{
     OC.startImpersonation(userId);
     OC.resetScope();
-    curProject=null;               // 代理切替で案件詳細ペインの残留を消す（権限外の財務が残る事故防止）
+    curProject=null;curAnken=null;curProjMeta=null; // 代理切替でプロジェクト詳細ペインの残留を消す（権限外の財務が残る事故防止）
     toast(label+' を代理操作中');
     refreshShell();
-    go('home');
+    go('projects');
   }catch(e){toast('代理操作エラー: '+e.message);}
 }
 function stopImpersonation(){
   OC.stopImpersonation();
   OC.resetScope();
-  curProject=null;                 // 代理終了でも選択案件を破棄（対象基準の残留を消す）
+  curProject=null;curAnken=null;curProjMeta=null;   // 代理終了でも選択中のプロジェクトを破棄（対象基準の残留を消す）
   toast('代理操作を終了しました');
   refreshShell();
-  go('home');
+  go('projects');
 }
 
-// ---- ホーム（ダッシュボード） ----
-async function renderHome(c){
-  c.innerHTML='<div class="empty">読み込み中…</div>';
-  let ps,exps;
-  try{
-    ps=OC.projects.length?OC.projects:await OC.loadProjects();
-    exps=await OC.loadExpenses(8);
-  }catch(e){
-    c.innerHTML='<div class="card"><div class="card-b empty">読み込みに失敗しました：'+esc(e.message||e)+
-      '<br><button class="btn ghost sm" style="margin-top:10px" onclick="renderHome(document.getElementById(\'content\'))">↻ 再読み込み</button></div></div>';
-    return;
-  }
-  const active=ps.filter(p=>p.status==='進行');
-  // KPIは進行・完了のみ集計（見込・失注を含めると受注/粗利が実態より大きく出るため。P4-10）
-  const counted=ps.filter(p=>p.status==='進行'||p.status==='完了');
-  const rev=counted.reduce((s,p)=>s+(p.revenue||0),0);
-  const prof=counted.reduce((s,p)=>s+(p.profit||0),0);
-  const top=[...counted].sort((a,b)=>(b.profit||0)-(a.profit||0)).slice(0,6);
-  c.innerHTML=`
-    <div class="kpis">
-      <div class="kpi"><div class="l">案件数</div><div class="n">${ps.length}</div><div class="s">進行中 ${active.length}</div></div>
-      <div class="kpi"><div class="l">受注合計</div><div class="n">${OC.yen(rev)}</div><div class="s">進行＋完了のみ</div></div>
-      <div class="kpi"><div class="l">粗利合計</div><div class="n">${OC.yen(prof)}</div><div class="s">粗利率 ${rev?Math.round(prof/rev*100):0}%・進行＋完了のみ</div></div>
-      ${OC.isManager()?`<div class="kpi"><div class="l">登録メンバー</div><div class="n">${OC.people.length}</div></div>`:`<div class="kpi"><div class="l">進行中の案件</div><div class="n">${active.length}</div></div>`}
-    </div>
-    <div class="grid2">
-      <div class="card"><div class="card-h">粗利トップ案件<span class="muted" style="font-weight:600;font-size:11.5px;margin-left:6px">進行＋完了のみ</span></div><div class="card-b" style="padding:0">
-        <table class="tbl"><tbody>${top.map(p=>`<tr onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),50)">
-          <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b></td>
-          <td>${OC.yen(p.revenue)}</td><td class="${(p.profit||0)<0?'neg':'pos'}">${OC.yen(p.profit)}</td>
-          <td><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td></tr>`).join('')||'<tr><td class="empty">案件がありません</td></tr>'}</tbody></table>
-      </div></div>
-      <div class="card"><div class="card-h">最近の経費<span style="margin-left:auto;font-size:12px;color:var(--accent);font-weight:700;cursor:pointer" onclick="go('expenses')">経費タブへ ›</span></div><div class="card-b" style="padding:0">
-        ${exps.length?exps.map(e=>`<div class="ln" style="padding:11px 16px;border-bottom:1px solid var(--line);cursor:pointer" onclick="go('projects');setTimeout(()=>selectProject('${e.project_id}'),50)">
-          <div><div><b>${esc(e.note||'（メモなし）')}</b></div>
-          <div class="muted" style="font-size:12px">${esc(e.proj?.name||'—')}・${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}</div></div>
-          <div class="a">${OC.yen(e.amount)}</div></div>`).join(''):'<div class="empty">経費はまだありません</div>'}
-      </div></div>
-    </div>`;
+// プロジェクト/案件タブを開いたまま経費・タスクを増減した時の再描画（選択中が案件なら案件詳細へ）
+function refreshProjectDetailIfOpen(){
+  if(curView!=='projects'||!curProject)return;
+  if(curAnken)selectAnken(curProject,curAnken);else selectProject(curProject);
 }
-
-// ---- 案件（master-detail） ----
+// ---- プロジェクト（master-detail） ----
 function projActions(){
-  document.getElementById('topActions').innerHTML='<button class="btn" onclick="openProjModal()">＋ 案件を追加</button>';
+  document.getElementById('topActions').innerHTML='<button class="btn" onclick="openProjModal()">＋ プロジェクトを追加</button>';
 }
 async function renderProjects(c){
   projActions();
@@ -612,21 +553,21 @@ async function renderProjects(c){
   if(!OC.projects.length){
     try{ await OC.loadProjects(); }
     catch(e){
-      c.innerHTML='<div class="card"><div class="card-b empty">案件の読み込みに失敗しました：'+esc(e.message||e)+
+      c.innerHTML='<div class="card"><div class="card-b empty">プロジェクトの読み込みに失敗しました：'+esc(e.message||e)+
         '<br><button class="btn ghost sm" style="margin-top:10px" onclick="renderProjects(document.getElementById(\'content\'))">↻ 再読み込み</button></div></div>';
       return;
     }
   }
   c.innerHTML=`
     <div class="toolbar">
-      <input id="pSearch" class="input search" placeholder="🔍 案件名・番号・受注元" oninput="paintProjTable()">
+      <input id="pSearch" class="input search" placeholder="🔍 プロジェクト名・番号・受注元" oninput="paintProjTable()">
       <select id="pStatus" class="input" onchange="paintProjTable()">
         <option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option>
       </select>
     </div>
     <div class="md">
       <div class="card list-card"><div id="projTable"></div></div>
-      <div class="card detail-card"><div class="card-b" id="projDetail"><div class="empty">← 左の一覧から案件を選んでください</div></div></div>
+      <div class="card detail-card"><div class="card-b" id="projDetail"><div class="empty">← 左の一覧からプロジェクトを選んでください</div></div></div>
     </div>`;
   if(OC.isManager()){try{await OC.loadMyProjectIds();}catch(e){}}
   paintProjTable();
@@ -650,77 +591,77 @@ function paintProjTable(){
   const ar=k=>projSort.key===k?(projSort.dir<0?' ▾':' ▴'):'';
   document.getElementById('projTable').innerHTML=
     `<table class="tbl"><thead><tr>
-      <th class="l sortable" onclick="sortProj('name')">案件${ar('name')}</th>
-      <th class="sortable" onclick="sortProj('revenue')">受注${ar('revenue')}</th>
+      <th class="l sortable" onclick="sortProj('name')">プロジェクト${ar('name')}</th>
+      <th class="sortable" onclick="sortProj('anken_count')">案件数${ar('anken_count')}</th>
+      <th class="sortable" onclick="sortProj('revenue')">金額${ar('revenue')}</th>
+      <th class="sortable" onclick="sortProj('anken_sum')">発注計${ar('anken_sum')}</th>
       <th class="sortable" onclick="sortProj('profit')">粗利${ar('profit')}</th>
-      <th class="sortable" onclick="sortProj('profit_rate')">粗利率${ar('profit_rate')}</th>
       <th class="l sortable" onclick="sortProj('status')">状態${ar('status')}</th>
+      <th class="l">担当</th>
     </tr></thead><tbody>${rows.map(p=>`<tr data-pid="${p.id}" onclick="selectProject('${p.id}')" oncontextmenu="projCtx(event,'${p.id}')">
       <td class="l"><b>${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
+      <td>${p.anken_count||0}</td>
       <td>${OC.yen(p.revenue)}</td>
+      <td>${OC.yen(p.anken_sum)}</td>
       <td class="${(p.profit||0)<0?'neg':''}">${OC.yen(p.profit)}</td>
-      <td>${p.profit_rate}%</td>
       <td class="l"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></td>
-    </tr>`).join('')||'<tr><td class="empty">該当する案件がありません</td></tr>'}</tbody></table>`;
+      <td class="l">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
+    </tr>`).join('')||'<tr><td class="empty" colspan="7">該当するプロジェクトがありません</td></tr>'}</tbody></table>`;
   if(curProject)document.querySelectorAll('#projTable tr[data-pid]').forEach(tr=>tr.classList.toggle('sel',tr.dataset.pid===curProject));
-  // 選択中の案件が検索/状態フィルタで一覧から消えたら、右の詳細ペインの残留も消す
+  // 選択中のプロジェクトが検索/状態フィルタで一覧から消えたら、右の詳細ペインの残留も消す
   if(curProject&&!rows.some(p=>p.id===curProject)){
-    curProject=null;
+    curProject=null;curAnken=null;curProjMeta=null;
     const box=document.getElementById('projDetail');
-    if(box)box.innerHTML='<div class="empty">← 左の一覧から案件を選んでください</div>';
+    if(box)box.innerHTML='<div class="empty">← 左の一覧からプロジェクトを選んでください</div>';
   }
 }
+// プロジェクト/案件セレクトの表示ラベル（子は「親名 › 案件名」）
+function projOptLabel(p){
+  if(!p.parent_id)return p.name||'';
+  const parent=(OC.projOpts||[]).find(x=>x.id===p.parent_id)||(OC.projects||[]).find(x=>x.id===p.parent_id);
+  return (parent?parent.name+' › ':'')+(p.name||'');
+}
 async function selectProject(id){
-  curProject=id;
+  curProject=id;curAnken=null;
   document.querySelectorAll('#projTable tr[data-pid]').forEach(tr=>tr.classList.toggle('sel',tr.dataset.pid===id));
   const box=document.getElementById('projDetail');
   if(!box)return;
   box.innerHTML='<div class="empty">読み込み中…</div>';
-  const [{p,expenses,orders,members,tasks},logs]=await Promise.all([OC.loadProjectDetail(id),OC.loadAuditLog(id)]);
-  const leader=p.leader_id?OC.personName(p.leader_id):'—';
+  const [{p,ankens,expenses,members},logs]=await Promise.all([OC.loadProjectDetail(id),OC.loadAuditLog(id)]);
+  curAnkens=ankens||[];curProjMeta=p;
+  const memberProfits=(OC.isManager()||p.leader_id===OC.effectiveUserId())?computeMemberProfits(p,curAnkens,expenses):null;
   box.innerHTML=`
     <div class="dh"><div><div class="nm">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name||'—')}</div>
       <div class="muted" style="margin-top:4px"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></div></div>
       <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn ghost sm" onclick="openTaskAddModal('${id}')">＋ タスク</button>
-        <button class="btn ghost sm" onclick="openOrderModal('${id}')">＋ 発注</button>
+        <button class="btn ghost sm" onclick="openAnkenModal('${id}')">＋ 案件</button>
         <button class="btn ghost sm" onclick="openExpModal('${id}')">＋ 経費</button></div></div>
-    <div class="kpis" style="grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0 4px">
-      <div class="kpi"><div class="l">受注</div><div class="n" style="font-size:20px">${OC.yen(p.revenue)}</div></div>
-      <div class="kpi"><div class="l">原価</div><div class="n" style="font-size:20px">${OC.yen(p.cost)}</div></div>
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0 4px">
+      <div class="kpi"><div class="l">金額</div><div class="n" style="font-size:20px">${OC.yen(p.revenue)}</div></div>
+      <div class="kpi"><div class="l">発注計</div><div class="n" style="font-size:20px">${OC.yen(p.anken_sum)}</div></div>
+      <div class="kpi"><div class="l">経費計</div><div class="n" style="font-size:20px">${OC.yen(p.tree_cost)}</div></div>
       <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${OC.yen(p.profit)}</div></div>
-      <div class="kpi"><div class="l">粗利率</div><div class="n" style="font-size:20px">${p.profit_rate}%</div></div>
     </div>
-    <div class="seclabel">案件情報（その場で編集）</div>
+    <div class="seclabel" style="display:flex;align-items:center">案件（${curAnkens.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openAnkenModal('${id}')">＋ 案件</button></div>
+    ${curAnkens.length?curAnkens.map(a=>`<div class="ln" style="cursor:pointer" onclick="selectAnken('${id}','${a.id}')" oncontextmenu="ankenCtx(event,'${id}','${a.id}')"><div>
+      <b>${esc(a.name||'—')}</b>
+      <div class="muted" style="font-size:12px">${esc(a.leader_id?OC.personName(a.leader_id):'—')}</div></div>
+      <div class="a">${a.revenue!==undefined?OC.yen(a.revenue):'—'} <span class="pill" style="margin-left:6px"><i class="dot s-${a.status}"></i>${esc(a.status||'')}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">案件はまだありません</div>'}
+    ${memberProfits?`<div class="seclabel">メンバー別粗利</div>
+    ${memberProfits.length?memberProfits.map(m=>`<div class="ln"><div>${esc(m.name)}</div><div class="a ${m.profit<0?'neg':''}">${OC.yen(m.profit)}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">対象者がいません</div>'}`:''}
+    <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
+    ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>${receiptLink(e)}
+      <div class="muted" style="font-size:12px">${e.proj&&e.proj.parent_id?esc(e.proj.name||''):'（プロジェクト直下）'}・${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}</div></div>
+      <div class="a">${OC.yen(e.amount)} <span class="muted" style="font-size:11px">${chargeLabel(e)}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
+    <div class="seclabel">プロジェクト情報（その場で編集）</div>
     <div class="drow"><span class="k">状態</span><select class="einput" onchange="saveProjField('${id}','status',this.value)">${pstatusOptions(p.status)}</select></div>
-    <div class="drow"><span class="k">受注金額</span><input class="einput" type="number" value="${p.revenue||0}" onchange="saveProjField('${id}','amount',this.value)"></div>
+    <div class="drow"><span class="k">金額</span><input class="einput" type="number" value="${p.revenue||0}" onchange="saveProjField('${id}','amount',this.value)"></div>
     <div class="drow"><span class="k">受注元</span><input class="einput" value="${esc(p.client||'')}" placeholder="—" onchange="saveProjField('${id}','client',this.value)"></div>
     <div class="drow"><span class="k">担当（リーダー）</span><select class="einput" onchange="saveProjField('${id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></div>
     <div class="drow"><span class="k">開始日</span><input class="einput" type="date" value="${p.start_date||''}" onchange="saveProjField('${id}','start_date',this.value)"></div>
     <div class="drow"><span class="k">納品日</span><input class="einput" type="date" value="${p.delivery_date||''}" onchange="saveProjField('${id}','delivery_date',this.value)"></div>
-    <div class="drow"><span class="k">メンバー<div class="muted" style="font-size:10.5px;font-weight:400">案件の全タスクを見られる</div></span>
-      <span>${(()=>{const ids=members.map(m=>m.user_id);
-        const canEdit=OC.isManager();
-        const chips=ids.length?ids.map(uid=>`<span class="achip">${esc(OC.personName(uid))}${canEdit?`<span style="cursor:pointer;margin-left:2px" onclick="removeMember('${id}','${uid}')">×</span>`:''}</span>`).join(' '):'<span class="muted">—</span>';
-        if(!canEdit)return chips;
-        const opts=OC.people.filter(pp=>!ids.includes(pp.id)).map(pp=>`<option value="${pp.id}">${esc(pp.name||pp.email)}</option>`).join('');
-        return chips+` <select class="einput" style="max-width:150px;margin-left:4px" onchange="addMemberPick('${id}',this)"><option value="">＋メンバー追加</option>${opts}</select>`;
-      })()}</span></div>
-    <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
-    ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>${receiptLink(e)}
-      <div class="muted" style="font-size:12px">${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}${e.kind==='外注'&&e.vendor?'・外注 '+esc(e.vendor.name):''}</div></div>
-      <div class="a">${OC.yen(e.amount)} <span class="muted" style="font-size:11px">${esc(e.status||'')}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
-    <div class="seclabel" style="display:flex;align-items:center">タスク（${(tasks||[]).filter(t=>!t.parent_task_id).length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openTaskAddModal('${id}')">＋ タスク</button></div>
-    ${(()=>{const tops=(tasks||[]).filter(t=>!t.parent_task_id);
-      const line=(t,sub)=>`<div class="ln" style="${sub?'padding-left:22px;border-top:1px dashed var(--line)':''}"><div>
-        <span class="tasklink" onclick="openTaskModal('${t.id}')">${sub?'<span class="muted">↳ </span>':''}${esc(t.title)}</span>
-        <div class="muted" style="font-size:12px"><span class="pill" style="background:transparent;padding:0"><i class="dot s-${t.status||'未着手'}"></i>${esc(t.status||'未着手')}</span>　${t.start_date?OC.fmtDate(t.start_date):'—'} → ${t.end_date?OC.fmtDate(t.end_date):'—'}</div></div>
-        <div class="a" style="font-weight:400">${(t.task_assignees||[]).map(a=>'<span class="achip">'+esc(OC.personName(a.user_id))+'</span>').join(' ')}</div></div>`;
-      return tops.map(t=>line(t,false)+(tasks||[]).filter(s=>s.parent_task_id===t.id).map(s=>line(s,true)).join('')).join('')||'<div class="muted" style="font-size:13px;padding:6px 0">タスクはありません</div>';})()}
-    <div class="seclabel" style="display:flex;align-items:center">発注（${orders.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openOrderModal('${id}')">＋ 発注</button></div>
-    ${orders.length?orders.map(o=>`<div class="ln"><div><b>${esc(o.title)}</b> <span class="pill">${esc(o.kind)}</span>
-      <div class="muted" style="font-size:12px">宛先 ${o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))}・${esc(o.status||'')}</div></div>
-      <div class="a">${OC.yen(o.amount)}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">発注はまだありません</div>'}
+    <div class="drow"><span class="k">メンバー<div class="muted" style="font-size:10.5px;font-weight:400">案件の担当者から自動算出</div></span>
+      <span>${(members||[]).length?(members||[]).map(m=>`<span class="achip">${esc(OC.personName(m.user_id))}</span>`).join(' '):'<span class="muted">—</span>'}</span></div>
     <div class="seclabel">変更履歴</div>
     ${(logs||[]).length?logs.map(l=>`<details class="log-d"><summary class="log-row">
       <span class="log-act la-${esc(l.action)}">${({INSERT:'追加',UPDATE:'変更',DELETE:'削除'})[l.action]||esc(l.action)}</span>
@@ -729,46 +670,83 @@ async function selectProject(id){
     </summary><div class="log-diff">${OC.diffHTML(l)}</div></details>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">まだ履歴はありません</div>'}
   `;
 }
+// 案件（子）詳細。selectProjectの分岐として同じ#projDetailへ描画する。
+async function selectAnken(pid,id){
+  curProject=pid;curAnken=id;
+  document.querySelectorAll('#projTable tr[data-pid]').forEach(tr=>tr.classList.toggle('sel',tr.dataset.pid===pid));
+  const box=document.getElementById('projDetail');
+  if(!box)return;
+  box.innerHTML='<div class="empty">読み込み中…</div>';
+  const {p,tasks,expenses}=await OC.loadAnkenDetail(id);
+  if(!curAnkens.some(x=>x.id===id))curAnkens=[{id,...p}];
+  box.innerHTML=`
+    <div class="dh" oncontextmenu="ankenCtx(event,'${pid}','${id}')"><div>
+      <div class="muted" style="margin-bottom:4px"><span class="link" onclick="selectProject('${pid}')">← プロジェクトへ戻る</span></div>
+      <div class="nm">${esc(p.name||'—')}</div>
+      <div class="muted" style="margin-top:4px"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'')}</span></div></div>
+      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn ghost sm" onclick="openTaskAddModal('${id}')">＋ タスク</button>
+        <button class="btn ghost sm" onclick="openExpModal('${id}')">＋ 経費</button></div></div>
+    ${p.revenue===undefined?'<div class="muted" style="margin:14px 0 4px">金額は担当者本人・プロジェクトリーダー・経理のみ閲覧できます</div>':`
+    <div class="kpis" style="grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0 4px">
+      <div class="kpi"><div class="l">案件金額</div><div class="n" style="font-size:20px">${OC.yen(p.revenue)}</div></div>
+      <div class="kpi"><div class="l">経費</div><div class="n" style="font-size:20px">${OC.yen(p.cost)}</div></div>
+      <div class="kpi"><div class="l">粗利</div><div class="n ${(p.profit||0)<0?'neg':''}" style="font-size:20px">${OC.yen(p.profit)}</div></div>
+    </div>`}
+    <div class="seclabel" style="display:flex;align-items:center">タスク（${(tasks||[]).length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openTaskAddModal('${id}')">＋ タスク</button></div>
+    ${(tasks||[]).length?(tasks||[]).map(t=>`<div class="ln"><div>
+      <span class="tasklink" onclick="openTaskModal('${t.id}')">${esc(t.title)}</span>
+      <div class="muted" style="font-size:12px"><span class="pill" style="background:transparent;padding:0"><i class="dot s-${t.status||'未着手'}"></i>${esc(t.status||'未着手')}</span>　${t.start_date?OC.fmtDate(t.start_date):'—'} → ${t.end_date?OC.fmtDate(t.end_date):'—'}</div></div>
+      <div class="a" style="font-weight:400">${(t.task_assignees||[]).map(a=>'<span class="achip">'+esc(OC.personName(a.user_id))+'</span>').join(' ')}</div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">タスクはありません</div>'}
+    <div class="seclabel" style="display:flex;align-items:center">経費（${expenses.length}）<button class="btn ghost" style="margin-left:auto;padding:3px 11px;font-size:11.5px" onclick="openExpModal('${id}')">＋ 経費</button></div>
+    ${expenses.length?expenses.map(e=>`<div class="ln"><div><b>${esc(e.note||'（メモなし）')}</b>${receiptLink(e)}
+      <div class="muted" style="font-size:12px">${OC.fmtDate(e.spent_at)}・${esc(e.author?.name||e.author?.email||'—')}</div></div>
+      <div class="a">${OC.yen(e.amount)} <span class="muted" style="font-size:11px">${chargeLabel(e)}</span></div></div>`).join(''):'<div class="muted" style="font-size:13px;padding:6px 0">経費はまだありません</div>'}
+    <div class="seclabel">案件情報（その場で編集）</div>
+    <div class="drow"><span class="k">状態</span><select class="einput" onchange="saveProjField('${id}','status',this.value)">${pstatusOptions(p.status)}</select></div>
+    ${p.revenue===undefined?'':`<div class="drow"><span class="k">案件金額</span><input class="einput" type="number" value="${p.revenue||0}" onchange="saveProjField('${id}','amount',this.value)"></div>`}
+    <div class="drow"><span class="k">担当</span><select class="einput" onchange="saveProjField('${id}','leader_id',this.value)">${leaderOptions(p.leader_id)}</select></div>
+    <div class="drow"><span class="k">開始日</span><input class="einput" type="date" value="${p.start_date||''}" onchange="saveProjField('${id}','start_date',this.value)"></div>
+    <div class="drow"><span class="k">終了日</span><input class="einput" type="date" value="${p.end_date||''}" onchange="saveProjField('${id}','end_date',this.value)"></div>
+  `;
+}
 const PSTATUS=['見込','進行','完了','失注'];
 function pstatusOptions(cur){return PSTATUS.map(s=>`<option ${s===cur?'selected':''}>${s}</option>`).join('');}
 function leaderOptions(cur){return '<option value="">—</option>'+OC.people.map(p=>`<option value="${p.id}" ${p.id===cur?'selected':''}>${esc(p.name||p.email)}</option>`).join('');}
 async function saveProjField(id,field,value){
   let v=value;
   if(field==='amount')v=parseInt(String(value).replace(/[,，]/g,''),10)||0;
-  const p=OC.projects.find(x=>x.id===id)||{};
-  if(field==='amount'&&v<0){toast('金額は0以上で入力してください');try{await OC.loadProjects();}catch(e){}if(curView==='projects')selectProject(id);if(curView==='tasks')paintTasks();return;}
-  if((field==='start_date'||field==='delivery_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');if(curView==='projects')selectProject(id);if(curView==='tasks')paintTasks();return;}
-  if(field==='start_date'&&value&&p.delivery_date&&badRange(value,p.delivery_date)){toast('開始日は納品日以前にしてください');if(curView==='projects')selectProject(id);if(curView==='tasks')paintTasks();return;}
-  if(field==='delivery_date'&&value&&p.start_date&&badRange(p.start_date,value)){toast('納品日は開始日以降にしてください');if(curView==='projects')selectProject(id);if(curView==='tasks')paintTasks();return;}
-  if((field==='client'||field==='start_date'||field==='delivery_date'||field==='leader_id')&&v==='')v=null;
+  const isAnken=curAnken===id;
+  const p=isAnken?(curAnkens.find(x=>x.id===id)||{}):(OC.projects.find(x=>x.id===id)||{});
+  const refresh=()=>{ if(curView==='finance')paintFinance(); if(curView==='projects'){paintProjTable(); isAnken?selectAnken(curProject,id):selectProject(id);} if(curView==='tasks')paintTasks(); };
+  if(field==='amount'&&v<0){toast('金額は0以上で入力してください');try{await OC.loadProjects();}catch(e){}refresh();return;}
+  if((field==='start_date'||field==='delivery_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');refresh();return;}
+  if(field==='start_date'&&value&&p.delivery_date&&badRange(value,p.delivery_date)){toast('開始日は納品日以前にしてください');refresh();return;}
+  if(field==='delivery_date'&&value&&p.start_date&&badRange(p.start_date,value)){toast('納品日は開始日以降にしてください');refresh();return;}
+  if(field==='start_date'&&value&&p.end_date&&badRange(value,p.end_date)){toast('開始日は終了日以前にしてください');refresh();return;}
+  if(field==='end_date'&&value&&p.start_date&&badRange(p.start_date,value)){toast('終了日は開始日以降にしてください');refresh();return;}
+  if((field==='client'||field==='start_date'||field==='delivery_date'||field==='end_date'||field==='leader_id')&&v==='')v=null;
   const patch={};patch[field]=v;
   const {error}=await OC.updateProject(id,patch);
   if(error){
     toast('保存エラー: '+error.message);
     try{await OC.loadProjects();}catch(e){}
-    if(curView==='finance')paintFinance();
-    if(curView==='projects'){paintProjTable();selectProject(id);}
-    if(curView==='tasks')paintTasks();
+    refresh();
     return;
   }
   toast('保存しました');
   try{await OC.loadProjects();}catch(e){}
-  if(curView==='finance')paintFinance();
-  if(curView==='projects'){paintProjTable();selectProject(id);}
-  if(curView==='tasks')paintTasks();
+  refresh();
 }
-function openProjModal(preset){
-  preset=preset||{};
-  const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===preset.dupParent?'selected':''}>${esc(p.name)}</option>`).join('');
+function openProjModal(){
   const effectiveId=OC.effectiveUserId();
-  const leaderField=OC.isManager()?`<div class="field"><label class="fl" for="mLeader">案件リーダー</label><select id="mLeader" class="input">${OC.people.map(p=>`<option value="${p.id}" ${p.id===effectiveId?'selected':''}>${esc(p.name||p.email)}</option>`).join('')}</select></div>`:'';
-  modal(`<div class="modal"><div class="modal-h">案件を追加</div><form onsubmit="event.preventDefault();saveProj()"><div class="modal-b">
-    <div class="field"><label class="fl" for="mName">案件名</label><input id="mName" class="input" placeholder="○○ビル改修" value="${esc(preset.dupName||'')}"></div>
+  const leaderField=OC.isManager()?`<div class="field"><label class="fl" for="mLeader">担当（リーダー）</label><select id="mLeader" class="input">${OC.people.map(p=>`<option value="${p.id}" ${p.id===effectiveId?'selected':''}>${esc(p.name||p.email)}</option>`).join('')}</select></div>`:'';
+  modal(`<div class="modal"><div class="modal-h">プロジェクトを追加</div><form onsubmit="event.preventDefault();saveProj()"><div class="modal-b">
+    <div class="field"><label class="fl" for="mName">プロジェクト名</label><input id="mName" class="input" placeholder="○○ビル改修"></div>
     <div class="field"><label class="fl" for="mClient">受注元（任意）</label><input id="mClient" class="input" placeholder="◇◇建設"></div>
-    <div class="field"><label class="fl" for="mAmt">受注金額（円・任意）</label><input id="mAmt" class="input" inputmode="numeric" placeholder="0"></div>
+    <div class="field"><label class="fl" for="mAmt">金額（円・任意）</label><input id="mAmt" class="input" inputmode="numeric" placeholder="0"></div>
     <div style="display:flex;gap:10px"><div class="field" style="flex:1"><label class="fl" for="mStart">開始日</label><input id="mStart" class="input" type="date"></div>
       <div class="field" style="flex:1"><label class="fl" for="mDeliv">納品日</label><input id="mDeliv" class="input" type="date"></div></div>
-    <div class="field"><label class="fl" for="mParent">派生元の案件（任意）</label><select id="mParent" class="input"><option value="">新規（派生元なし）</option>${opts}</select></div>
     ${leaderField}
     </div><div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="mSave">追加</button></div></form></div>`);
   setTimeout(()=>{const e=document.getElementById('mName');if(e)e.focus();},30);
@@ -787,20 +765,33 @@ function projCtx(ev,id){
     {label:'削除…',danger:true,fn:()=>deleteProjectUI(id,p.name)},
   ]);
 }
-// 案件の複製（P3 #9）: タスク構造ごと複製する。日付・進捗・状態は引き継がず未着手、
-// 親子構造は旧ID→新IDのマップで復元。経費・発注は複製しない。
+// 右クリックメニュー: 案件を開く・削除（リーダー/経理のみ）
+function ankenCtx(ev,pid,id){
+  const a=curAnkens.find(x=>x.id===id);
+  if(!a){ev.preventDefault();return;}
+  const uid=OC.effectiveUserId();
+  const pm=(curProject===pid&&curProjMeta)?curProjMeta:((OC.projects||[]).find(x=>x.id===pid)||{});
+  if(!(OC.isManager()||a.leader_id===uid||pm.leader_id===uid||pm.owner_id===uid)){ev.preventDefault();return;}
+  ctxMenu(ev,[
+    {label:'案件を開く',fn:()=>selectAnken(pid,id)},
+    {sep:true},
+    {label:'削除…',danger:true,fn:()=>deleteAnkenUI(pid,id,a.name)},
+  ]);
+}
+// プロジェクトの複製（P3 #9）: 直下タスクの構造ごと複製する。日付・進捗・状態は引き継がず未着手、
+// 親子構造は旧ID→新IDのマップで復元。経費・案件は複製しない。
 async function duplicateProjectUI(id){
   const p=OC.projects.find(x=>x.id===id);
   if(!p)return;
-  if(!confirm('案件「'+(p.name||'')+'」をタスク構造ごと複製します。日付・進捗・状態は引き継がず未着手になります（経費・発注は複製しません）。よろしいですか？'))return;
+  if(!confirm('プロジェクト「'+(p.name||'')+'」を直下タスクの構造ごと複製します。日付・進捗・状態は引き継がず未着手になります（経費・案件は複製しません）。よろしいですか？'))return;
   try{
     const detail=await OC.loadProjectDetail(id);
     const newName=(p.name||'')+'（コピー）';
     const payload={name:newName,client:detail.p.client||null,amount:p.revenue||0,
-      leader_id:detail.p.leader_id||null,parent_id:id,owner_id:OC.effectiveUserId(),status:'進行'};
+      leader_id:detail.p.leader_id||null,parent_id:null,owner_id:OC.effectiveUserId(),status:'進行'};
     const {data:newProj,error:e1}=await OC.addProject(payload).select().single();
     if(e1){toast('複製エラー: '+e1.message);return;}
-    const tasks=detail.tasks||[];
+    const tasks=(detail.tasks||[]).filter(t=>t.project_id===id);
     const idMap={};
     let remaining=[...tasks],guard=0,failCount=0;
     while(remaining.length&&guard++<50){
@@ -821,48 +812,105 @@ async function duplicateProjectUI(id){
     }
     failCount+=remaining.length; // 親の insert 失敗で試行されなかった子タスクの分
     const okCount=Object.keys(idMap).length;
-    toast(failCount?'案件「'+newName+'」を複製しました（タスク'+okCount+'件・失敗'+failCount+'件）':'案件「'+newName+'」を複製しました（タスク'+okCount+'件）');
+    toast(failCount?'プロジェクト「'+newName+'」を複製しました（タスク'+okCount+'件・失敗'+failCount+'件）':'プロジェクト「'+newName+'」を複製しました（タスク'+okCount+'件）');
     try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
     if(OC.isManager()){try{await OC.loadMyProjectIds();}catch(e){}}
     if(curView==='projects'){paintProjTable();selectProject(newProj.id);}
   }catch(e){toast('複製エラー: '+(e.message||e));}
 }
 async function deleteProjectUI(id,name){
-  if(!confirm('案件「'+(name||'')+'」を削除します。経費・タスク・発注も対象です。よろしいですか？'))return;
+  let ac=0,ec=0;
+  try{ const d=await OC.loadProjectDetail(id); ac=(d.ankens||[]).length; ec=(d.expenses||[]).length; }catch(e){}
+  const extra=(ac||ec)?('案件'+ac+'件・経費'+ec+'件も削除されます。'):'';
+  if(!confirm('プロジェクト「'+(name||'')+'」を削除します。'+extra+'よろしいですか？'))return;
   const {error}=await OC.deleteProject(id);
-  if(error){
-    toast(error.code==='23503'?'経費が残っている案件は削除できません（先に経費を削除）':'削除エラー: '+error.message);
-    return;
-  }
-  toast('案件を削除しました');
+  if(error){toast('削除エラー: '+error.message);return;}
+  toast('プロジェクトを削除しました');
   if(curProject===id){
-    curProject=null;
+    curProject=null;curAnken=null;
     const box=document.getElementById('projDetail');
-    if(box)box.innerHTML='<div class="empty">← 左の一覧から案件を選んでください</div>';
+    if(box)box.innerHTML='<div class="empty">← 左の一覧からプロジェクトを選んでください</div>';
   }
   try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
   if(curView==='projects')paintProjTable();
+  if(curView==='finance')paintFinance();
+}
+async function deleteAnkenUI(pid,id,name){
+  if(!confirm('案件「'+(name||'')+'」を削除します。タスク・経費も削除されます。よろしいですか？'))return;
+  const {error}=await OC.deleteProject(id);
+  if(error){toast('削除エラー: '+error.message);return;}
+  toast('案件を削除しました');
+  try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
+  if(curView==='projects'){paintProjTable();selectProject(pid);}
 }
 async function saveProj(){
   const name=document.getElementById('mName').value.trim();
-  if(!name){toast('案件名を入れてください');return;}
+  if(!name){toast('プロジェクト名を入れてください');return;}
   const amount=parseInt((document.getElementById('mAmt').value||'0').replace(/[,，]/g,''),10)||0;
-  if(amount<0){toast('受注金額は0以上で入力してください');return;}
+  if(amount<0){toast('金額は0以上で入力してください');return;}
   const _s=document.getElementById('mStart').value,_d=document.getElementById('mDeliv').value;
   if(!saneDate(_s)||!saneDate(_d)){toast('日付の年を確認してください（2000〜2100）');return;}
   if(badRange(_s,_d)){toast('納品日は開始日以降にしてください');return;}
   const payload={name,client:document.getElementById('mClient').value.trim()||null,amount,
     start_date:document.getElementById('mStart').value||null,delivery_date:document.getElementById('mDeliv').value||null,
-    parent_id:document.getElementById('mParent').value||null,owner_id:OC.effectiveUserId(),
+    parent_id:null,owner_id:OC.effectiveUserId(),
     leader_id:OC.isManager()?(document.getElementById('mLeader').value||OC.effectiveUserId()):OC.effectiveUserId(),status:'進行'};
   document.getElementById('mSave').disabled=true;
   const {error}=await OC.addProject(payload);
   if(error){toast('追加エラー: '+error.message);document.getElementById('mSave').disabled=false;return;}
-  closeModal();toast('案件「'+name+'」を追加');
+  closeModal();toast('プロジェクト「'+name+'」を追加');
   try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
   if(OC.isManager()){try{await OC.loadMyProjectIds();}catch(e){}}
   if(curView==='projects')paintProjTable();
   else if(curView==='finance')renderFinance(document.getElementById('content'));
+}
+function openAnkenModal(parentId){
+  modal(`<div class="modal"><div class="modal-h">案件を追加</div><form onsubmit="event.preventDefault();saveAnken('${parentId}')"><div class="modal-b">
+    <div class="field"><label class="fl" for="aName">案件名</label><input id="aName" class="input" placeholder="○○工事"></div>
+    <div class="field"><label class="fl" for="aLeader">担当者</label><select id="aLeader" class="input">${leaderOptions(OC.effectiveUserId())}</select></div>
+    <div class="field"><label class="fl" for="aAmt">金額（円・任意）</label><input id="aAmt" class="input" inputmode="numeric" placeholder="0"></div>
+    <div style="display:flex;gap:10px"><div class="field" style="flex:1"><label class="fl" for="aStart">開始日</label><input id="aStart" class="input" type="date"></div>
+      <div class="field" style="flex:1"><label class="fl" for="aEnd">終了日</label><input id="aEnd" class="input" type="date"></div></div>
+    </div><div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="aSave">追加</button></div></form></div>`);
+  setTimeout(()=>{const e=document.getElementById('aName');if(e)e.focus();},30);
+}
+async function saveAnken(parentId){
+  const name=document.getElementById('aName').value.trim();
+  if(!name){toast('案件名を入れてください');return;}
+  const leader_id=document.getElementById('aLeader').value||null;
+  if(!leader_id){toast('担当者を選んでください');return;}
+  const amount=parseInt((document.getElementById('aAmt').value||'0').replace(/[,，]/g,''),10)||0;
+  if(amount<0){toast('金額は0以上で入力してください');return;}
+  const _s=document.getElementById('aStart').value,_e=document.getElementById('aEnd').value;
+  if(!saneDate(_s)||!saneDate(_e)){toast('日付の年を確認してください（2000〜2100）');return;}
+  if(badRange(_s,_e)){toast('終了日は開始日以降にしてください');return;}
+  document.getElementById('aSave').disabled=true;
+  const {error}=await OC.addAnken(parentId,{name,leader_id,amount,start_date:_s||null,end_date:_e||null,note:null});
+  if(error){toast('追加エラー: '+error.message);document.getElementById('aSave').disabled=false;return;}
+  closeModal();toast('案件「'+name+'」を追加');
+  try{await OC.loadProjects();}catch(e){}await OC.projectOptions();
+  if(curView==='projects')selectProject(parentId);
+}
+// メンバー別粗利（リーダー/経理のみ表示）: 子案件の担当分＋プロジェクト直下リーダー分。ビュー化せずフロントで expenses から算出。
+function computeMemberProfits(p,ankens,expenses){
+  const chargedSum={};
+  (expenses||[]).forEach(e=>{ if(!e.charged_user_id)return; chargedSum[e.charged_user_id]=(chargedSum[e.charged_user_id]||0)+(e.amount||0); });
+  const byLeader={};
+  (ankens||[]).forEach(a=>{ if(!a.leader_id)return; byLeader[a.leader_id]=(byLeader[a.leader_id]||0)+(a.revenue||0)+(a.client_billed||0); });
+  const ids=new Set(Object.keys(byLeader));
+  if(p.leader_id)ids.add(p.leader_id);
+  return [...ids].map(uid=>{
+    const profit=(uid===p.leader_id)
+      ?(p.revenue||0)+(p.client_billed||0)-(p.anken_sum||0)-(chargedSum[uid]||0)
+      :(byLeader[uid]||0)-(chargedSum[uid]||0);
+    return {id:uid,name:OC.personName(uid),profit};
+  }).sort((a,b)=>b.profit-a.profit);
+}
+// 経費の申請先ラベル（self=自分／member=対象者名／client=クライアント請求）
+function chargeLabel(e){
+  if(e.charge_to==='client')return 'クライアント請求';
+  if(e.charge_to==='member')return esc(e.charged?.name||OC.personName(e.charged_user_id));
+  return '自分';
 }
 
 // ---- 経費 ----
@@ -878,23 +926,9 @@ function receiptLink(e){
   return e.receipt_url?` <span class="link" style="white-space:nowrap" onclick="viewReceipt('${esc(e.receipt_url)}')">📎レシート</span>`:'';
 }
 let expCache=[];
-// 経費の承認/差戻（H-4）: 経理・管理者のみ状態セルをその場編集できる。
-// RLS: expenses_update = 本人 or is_manager()（db/schema.sql）なので経理側の更新が通る。
-const EXP_STATUS=['申請','承認','差戻'];
-function expStatusCell(e){
-  if(!OC.isAccounting()||!e.id)return `<span class="stbadge" style="background:var(--accent-soft);color:var(--accent)">${esc(e.status||'')}</span>`;
-  return `<select class="einput" style="max-width:90px" onchange="saveExpStatus('${e.id}',this.value)">${EXP_STATUS.map(s=>`<option ${s===e.status?'selected':''}>${s}</option>`).join('')}</select>`;
-}
-async function saveExpStatus(id,status){
-  const {error}=await OC.sb.from('expenses').update({status}).eq('id',id);
-  if(error){toast('承認状態の保存エラー: '+error.message);paintExpenses();return;}
-  const row=expCache.find(x=>x.id===id); if(row)row.status=status;
-  toast('経費を「'+status+'」にしました');
-  paintExpenses();
-}
 function expActions(){document.getElementById('topActions').innerHTML='<button class="btn" onclick="openExpModal()">＋ 新規経費</button>';}
 let expGroupMode='proj'; // 'proj' | 'flat'
-let expFilter={q:'',status:'',month:''};
+let expFilter={q:'',month:''};
 let expSort={key:'spent_at',dir:-1};
 async function renderExpenses(c){
   expActions();
@@ -907,26 +941,23 @@ async function renderExpenses(c){
   }
   const months=[...new Set(expCache.map(e=>(e.spent_at||'').slice(0,7)).filter(Boolean))].sort().reverse();
   const guide=!OC.projects.length?`<div class="card" style="margin-bottom:16px;background:var(--accent-soft)"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-    <b>まず案件を1件作成してください</b><button class="btn sm" style="margin-left:auto" onclick="go('projects');openProjModal()">＋ 案件を追加</button>
+    <b>まずプロジェクトを1件作成してください</b><button class="btn sm" style="margin-left:auto" onclick="go('projects');openProjModal()">＋ プロジェクトを追加</button>
   </div></div>`:'';
   c.innerHTML=`${guide}<div class="toolbar">
-    <input id="xSearch" class="input search" placeholder="🔍 メモ・案件名・入力者" value="${esc(expFilter.q)}" oninput="setExpQ(this.value)">
-    <select id="xStatus" class="input" onchange="setExpStatusFilter(this.value)"><option value="">状態：すべて</option>${EXP_STATUS.map(s=>`<option value="${s}" ${s===expFilter.status?'selected':''}>${s}</option>`).join('')}</select>
+    <input id="xSearch" class="input search" placeholder="🔍 メモ・プロジェクト名・入力者" value="${esc(expFilter.q)}" oninput="setExpQ(this.value)">
     <select id="xMonth" class="input" onchange="setExpMonthFilter(this.value)"><option value="">月：すべて</option>${months.map(m=>`<option value="${m}" ${m===expFilter.month?'selected':''}>${m}</option>`).join('')}</select>
-    <div class="viewbar" style="margin-left:auto"><button id="egProj" onclick="setExpMode('proj')">案件ごと</button><button id="egFlat" onclick="setExpMode('flat')">一覧</button></div>
+    <div class="viewbar" style="margin-left:auto"><button id="egProj" onclick="setExpMode('proj')">プロジェクトごと</button><button id="egFlat" onclick="setExpMode('flat')">一覧</button></div>
   </div>
   <div class="muted" id="expSummary" style="margin-bottom:10px"></div>
   <div id="expBody"></div>`;
   paintExpenses();
 }
 function setExpQ(v){expFilter.q=v;paintExpenses();}
-function setExpStatusFilter(v){expFilter.status=v;paintExpenses();}
 function setExpMonthFilter(v){expFilter.month=v;paintExpenses();}
 function setExpMode(m){expGroupMode=m;paintExpenses();}
 function expFiltered(){
   const q=(expFilter.q||'').trim().toLowerCase();
   return expCache.filter(e=>{
-    if(expFilter.status&&e.status!==expFilter.status)return false;
     if(expFilter.month&&(e.spent_at||'').slice(0,7)!==expFilter.month)return false;
     if(q&&!`${e.note||''} ${e.proj?.name||''} ${e.author?.name||e.author?.email||''}`.toLowerCase().includes(q))return false;
     return true;
@@ -954,7 +985,7 @@ async function saveExpField(id,field,value){
   const row=expCache.find(x=>x.id===id);if(row)row[field]=v;
   toast('保存しました');
   paintExpenses();
-  if(curView==='projects'&&curProject)selectProject(curProject);
+  refreshProjectDetailIfOpen();
 }
 function expRowsHTML(list){
   return list.map(e=>`<tr style="cursor:default" oncontextmenu="expCtx(event,'${e.id}')">
@@ -962,19 +993,15 @@ function expRowsHTML(list){
     <td class="l">${expNoteCell(e)}</td>
     <td class="l">${esc(e.author?.name||e.author?.email||'—')}</td>
     <td>${expAmtCell(e)}</td>
-    <td class="l">${expStatusCell(e)}</td>
+    <td class="l">${chargeLabel(e)}</td>
   </tr>`).join('');
 }
-// 右クリックメニュー: レシート・承認/差戻・削除（P0-B #9。本人or経理で出し分け）
+// 右クリックメニュー: レシート・削除（本人or経理）
 function expCtx(ev,id){
   const e=expCache.find(x=>x.id===id);
   if(!e){ev.preventDefault();return;}
   const items=[];
   if(e.receipt_url)items.push({label:'レシートを開く',fn:()=>viewReceipt(e.receipt_url)});
-  if(OC.isAccounting()){
-    if(items.length)items.push({sep:true});
-    EXP_STATUS.forEach(s=>items.push({label:s+' にする',checked:e.status===s,fn:()=>saveExpStatus(id,s)}));
-  }
   if(e.user_id===OC.effectiveUserId()||OC.isManager()){
     if(items.length)items.push({sep:true});
     items.push({label:'削除…',danger:true,fn:()=>deleteExpenseUI(id,e.amount)});
@@ -989,26 +1016,7 @@ async function deleteExpenseUI(id,amount){
   expCache=expCache.filter(x=>x.id!==id);
   toast('経費を削除しました');
   paintExpenses();
-  if(curView==='projects'&&curProject)selectProject(curProject);
-  if(curView==='home')renderHome(document.getElementById('content'));
-}
-// 一括承認/差戻（P3 #2）: 経理のみ・一覧表示限定。.in()の1クエリでまとめて更新する。
-function selectedExpIds(){return [...document.querySelectorAll('.xck:checked')].map(c=>c.value);}
-function toggleExpAll(box){document.querySelectorAll('.xck').forEach(c=>c.checked=box.checked);updateExpBulkBar();}
-function updateExpBulkBar(){
-  const bar=document.getElementById('expBulkBar');if(!bar)return;
-  const n=selectedExpIds().length;
-  bar.innerHTML=n?`<span class="muted">${n}件選択</span> <button class="btn ghost sm" onclick="bulkExpStatus('承認')">選択を承認</button> <button class="btn ghost sm" onclick="bulkExpStatus('差戻')">選択を差戻</button>`:'';
-}
-async function bulkExpStatus(status){
-  const ids=selectedExpIds();
-  if(!ids.length)return;
-  if(!confirm(ids.length+'件の経費を「'+status+'」にします。よろしいですか？'))return;
-  const {error}=await OC.sb.from('expenses').update({status}).in('id',ids);
-  if(error){toast('保存エラー: '+error.message);return;}
-  ids.forEach(id=>{const row=expCache.find(x=>x.id===id);if(row)row.status=status;});
-  toast(ids.length+'件を「'+status+'」にしました');
-  paintExpenses();
+  refreshProjectDetailIfOpen();
 }
 function paintExpenses(){
   document.getElementById('egProj').classList.toggle('on',expGroupMode==='proj');
@@ -1024,36 +1032,32 @@ function paintExpenses(){
     const {key,dir}=expSort;
     rows.sort((a,b)=>{let x=a[key],y=b[key];if(typeof x==='string'||typeof y==='string')return String(x||'').localeCompare(String(y||''))*dir;return((x||0)-(y||0))*dir;});
     const ar=k=>expSort.key===k?(expSort.dir<0?' ▾':' ▴'):'';
-    const bulkBar=OC.isAccounting()?`<div class="toolbar" id="expBulkBar" style="margin-bottom:10px"></div>`:'';
-    body.innerHTML=bulkBar+`<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
-      ${OC.isAccounting()?'<th style="width:30px"><input type="checkbox" onchange="toggleExpAll(this)"></th>':''}
-      <th class="l sortable" onclick="sortExp('spent_at')">日付${ar('spent_at')}</th><th class="l">案件 / メモ</th><th class="l">入力者</th><th class="sortable" onclick="sortExp('amount')">金額${ar('amount')}</th><th class="l">状態</th>
+    body.innerHTML=`<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
+      <th class="l sortable" onclick="sortExp('spent_at')">日付${ar('spent_at')}</th><th class="l">プロジェクト / メモ</th><th class="l">入力者</th><th class="sortable" onclick="sortExp('amount')">金額${ar('amount')}</th><th class="l">申請先</th>
     </tr></thead><tbody>${rows.map(e=>`<tr style="cursor:default" oncontextmenu="expCtx(event,'${e.id}')">
-      ${OC.isAccounting()?`<td><input type="checkbox" class="xck" value="${e.id}" onchange="updateExpBulkBar()"></td>`:''}
       <td class="l">${OC.fmtDate(e.spent_at)}</td>
       <td class="l">${e.proj?.code?'<span class="code">'+esc(e.proj.code)+'</span> ':''}${esc(e.proj?.name||'—')}<div class="muted" style="font-size:12px">${expNoteCell(e)}</div></td>
       <td class="l">${esc(e.author?.name||e.author?.email||'—')}</td>
       <td>${expAmtCell(e)}</td>
-      <td class="l">${expStatusCell(e)}</td>
+      <td class="l">${chargeLabel(e)}</td>
     </tr>`).join('')}</tbody></table></div></div>`;
-    if(OC.isAccounting())updateExpBulkBar();
     return;
   }
-  // 案件ごと
+  // プロジェクトごと
   const groups={};
   filtered.forEach(e=>{const k=e.project_id||'_none';(groups[k]=groups[k]||{proj:e.proj,items:[]}).items.push(e);});
   const arr=Object.values(groups).map(g=>({...g,total:g.items.reduce((s,e)=>s+(e.amount||0),0)}))
     .sort((a,b)=>b.total-a.total);
   body.innerHTML=arr.map(g=>`<div class="card" style="margin-bottom:16px">
-    <div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'案件なし')}
+    <div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'プロジェクトなし')}
       <span class="muted" style="margin-left:auto;font-weight:700">${g.items.length}件・<span style="color:var(--ink)">${OC.yen(g.total)}</span></span></div>
     <div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
-      <th class="l">日付</th><th class="l">メモ</th><th class="l">入力者</th><th>金額</th><th class="l">状態</th>
+      <th class="l">日付</th><th class="l">メモ</th><th class="l">入力者</th><th>金額</th><th class="l">申請先</th>
     </tr></thead><tbody>${expRowsHTML(g.items)}</tbody></table></div></div>`).join('');
 }
 function openTaskAddModal(pid,preset){
   preset=preset||{};
-  const projField=pid?'':`<div class="field"><label class="fl" for="ntProj">案件</label><select id="ntProj" class="input">${OC.projOpts.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')||'<option value="">案件なし</option>'}</select></div>`;
+  const projField=pid?'':`<div class="field"><label class="fl" for="ntProj">プロジェクト</label><select id="ntProj" class="input">${OC.projOpts.map(p=>`<option value="${p.id}">${esc(projOptLabel(p))}</option>`).join('')||'<option value="">プロジェクトなし</option>'}</select></div>`;
   modal(`<div class="modal"><div class="modal-h">タスクを追加</div><form onsubmit="event.preventDefault();saveNewTask('${pid||''}')"><div class="modal-b">
     ${projField}
     <div class="field"><label class="fl" for="ntTitle">タイトル</label><input id="ntTitle" class="input" placeholder="図面作成 など" value="${esc(preset.title||'')}"></div>
@@ -1093,7 +1097,7 @@ async function duplicateTaskUI(id){
   toast('タスク「'+newTitle+'」を複製しました');
   if(document.getElementById('tmRoot'))closeModal();
   await reloadTasks();
-  if(curView==='projects'&&curProject)selectProject(curProject);
+  refreshProjectDetailIfOpen();
 }
 async function deleteTaskUI(id,title){
   const subs=tasksCache.filter(s=>s.parent_task_id===id);
@@ -1103,13 +1107,13 @@ async function deleteTaskUI(id,title){
   toast('タスクを削除しました');
   if(document.getElementById('tmRoot'))closeModal();
   await reloadTasks();
-  if(curView==='projects'&&curProject)selectProject(curProject);
+  refreshProjectDetailIfOpen();
 }
 async function saveNewTask(pid){
   const v=x=>document.getElementById(x).value;
   const project_id=pid||v('ntProj')||null;
   const title=v('ntTitle').trim();if(!title){toast('タイトルを入れてください');return;}
-  if(!project_id){toast('案件を選んでください');return;}
+  if(!project_id){toast('プロジェクトを選んでください');return;}
   if(!saneDate(v('ntStart'))||!saneDate(v('ntEnd'))){toast('日付の年を確認してください（2000〜2100）');return;}
   if(badRange(v('ntStart'),v('ntEnd'))){toast('終了日は開始日以降にしてください');return;}
   const btn=document.getElementById('ntSave');if(btn)btn.disabled=true;   // 連打によるタスクの重複登録を防ぐ
@@ -1120,14 +1124,19 @@ async function saveNewTask(pid){
   closeModal();toast('タスクを追加'+(asg.length?'（担当'+asg.length+'名）':''));
   try{tasksCache=await OC.loadAllTasks();}catch(e){}
   if(curView==='tasks')paintTasks();
-  if(curView==='projects'&&curProject)selectProject(curProject);
+  refreshProjectDetailIfOpen();
+}
+function chargeOptions(){
+  return '<option value="self">自分</option><option value="client">先方クライアント（請求）</option>'
+    +OC.people.map(p=>`<option value="${p.id}">${esc(p.name||p.email)}</option>`).join('');
 }
 function openExpModal(projectId){
-  const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${esc(p.name)}</option>`).join('');
+  const opts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${esc(projOptLabel(p))}</option>`).join('');
   modal(`<div class="modal"><div class="modal-h">経費を記録</div><form onsubmit="event.preventDefault();saveExp()"><div class="modal-b">
     <div class="field"><label class="fl" for="eAmt">金額（円）</label><input id="eAmt" class="input" inputmode="numeric" placeholder="0"></div>
-    <div class="field"><label class="fl" for="eProj">紐づく案件</label><select id="eProj" class="input">${opts}</select></div>
+    <div class="field"><label class="fl" for="eProj">紐づくプロジェクト</label><select id="eProj" class="input">${opts}</select></div>
     <div class="field"><label class="fl" for="eMemo">メモ（何を買ったか）</label><input id="eMemo" class="input" placeholder="木材・ビス など"></div>
+    <div class="field"><label class="fl" for="eCharge">申請先</label><select id="eCharge" class="input">${chargeOptions()}</select></div>
     </div><div class="modal-f"><button type="button" class="btn ghost" onclick="closeModal()">キャンセル</button><button type="submit" class="btn" id="eSave">記録する</button></div></form></div>`);
   setTimeout(()=>{const e=document.getElementById('eAmt');if(e)e.focus();},30);
 }
@@ -1135,14 +1144,16 @@ async function saveExp(){
   const amount=parseInt((document.getElementById('eAmt').value||'0').replace(/[,，]/g,''),10)||0;
   const project_id=document.getElementById('eProj').value;
   const note=document.getElementById('eMemo').value.trim();
-  if(!(amount>0)||!project_id){toast('金額（正の数）と案件を入れてください');return;}
+  if(!(amount>0)||!project_id){toast('金額（正の数）とプロジェクトを入れてください');return;}
+  const chargeVal=document.getElementById('eCharge').value;
+  const charge_to=chargeVal==='self'?'self':chargeVal==='client'?'client':'member';
+  const charged_user_id=chargeVal==='self'?OC.effectiveUserId():chargeVal==='client'?null:chargeVal;
   document.getElementById('eSave').disabled=true;
-  const {error}=await OC.addExpense(project_id,amount,note);
+  const {error}=await OC.addExpense(project_id,amount,note,charge_to,charged_user_id);
   if(error){toast('記録エラー: '+error.message);document.getElementById('eSave').disabled=false;return;}
   closeModal();toast(OC.yen(amount)+' を記録しました');
   if(curView==='expenses')renderExpenses(document.getElementById('content'));
-  if(curView==='projects'&&curProject)selectProject(curProject);
-  if(curView==='home')renderHome(document.getElementById('content'));
+  refreshProjectDetailIfOpen();
 }
 
 // ---- 経理（ダッシュボード） ----
@@ -1150,11 +1161,11 @@ let finSort={key:'profit',dir:-1};
 function ym(d){return d?String(d).slice(0,7):'';}
 async function renderFinance(c){
   if(!OC.isManager()){c.innerHTML='<div class="card"><div class="card-b empty">経理ユーザー（経理／管理者）のみ閲覧できます。</div></div>';return;}
-  document.getElementById('topActions').innerHTML='<button class="btn" onclick="openProjModal()">＋ 案件を追加</button>';
+  document.getElementById('topActions').innerHTML='<button class="btn" onclick="openProjModal()">＋ プロジェクトを追加</button>';
   if(!OC.projects.length){
     try{ await OC.loadProjects(); }
     catch(e){
-      c.innerHTML='<div class="card"><div class="card-b empty">案件の読み込みに失敗しました：'+esc(e.message||e)+
+      c.innerHTML='<div class="card"><div class="card-b empty">プロジェクトの読み込みに失敗しました：'+esc(e.message||e)+
         '<br><button class="btn ghost sm" style="margin-top:10px" onclick="renderFinance(document.getElementById(\'content\'))">↻ 再読み込み</button></div></div>';
       return;
     }
@@ -1163,7 +1174,7 @@ async function renderFinance(c){
   const leaders=[...new Set(OC.projects.map(p=>p.leader_id).filter(Boolean))];
   c.innerHTML=`<div id="finKpis"></div>
     <div class="toolbar">
-      <input id="fSearch" class="input search" placeholder="🔍 案件名・受注元" oninput="paintFinance()">
+      <input id="fSearch" class="input search" placeholder="🔍 プロジェクト名・受注元" oninput="paintFinance()">
       <select id="fStatus" class="input" onchange="paintFinance()"><option value="">状態：すべて</option><option>見込</option><option>進行</option><option>完了</option><option>失注</option></select>
       <select id="fLeader" class="input" onchange="paintFinance()"><option value="">担当：すべて</option>${leaders.map(id=>`<option value="${id}">${esc(OC.personName(id))}</option>`).join('')}</select>
       <select id="fMonth" class="input" onchange="paintFinance()"><option value="">納品月：すべて</option>${months.map(m=>`<option value="${m}">${m}</option>`).join('')}</select>
@@ -1188,10 +1199,10 @@ function finFiltered(){
 function sortFin(k){if(finSort.key===k)finSort.dir*=-1;else finSort={key:k,dir:(k==='name'||k==='status')?1:-1};paintFinance();}
 function exportFinanceCSV(){
   const rows=finFiltered();
-  const head=['番号','案件名','受注元','状態','担当','受注','原価','外注','粗利','粗利率(%)','納品日'];
+  const head=['番号','プロジェクト名','受注元','状態','担当','金額','発注計','経費計','クライアント請求','粗利','納品日'];
   const q=s=>{s=String(s==null?'':s);return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
   const lines=[head.join(',')].concat(rows.map(p=>[p.code||'',p.name||'',p.client||'',p.status||'',
-    p.leader_id?OC.personName(p.leader_id):'',p.revenue||0,p.cost||0,p.outsource||0,p.profit||0,p.profit_rate||0,p.delivery_date||''].map(q).join(',')));
+    p.leader_id?OC.personName(p.leader_id):'',p.revenue||0,p.anken_sum||0,p.tree_cost||0,p.tree_client||0,p.profit||0,p.delivery_date||''].map(q).join(',')));
   const csv='﻿'+lines.join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -1203,43 +1214,45 @@ function paintFinance(){
   const rows=finFiltered();const {key,dir}=finSort;
   rows.sort((a,b)=>{let x=a[key],y=b[key];if(key==='name'){x=(a.code||'')+(a.name||'');y=(b.code||'')+(b.name||'');}
     if(typeof x==='string'||typeof y==='string')return String(x||'').localeCompare(String(y||''),'ja')*dir;return((x||0)-(y||0))*dir;});
-  const rev=rows.reduce((s,p)=>s+(p.revenue||0),0),cost=rows.reduce((s,p)=>s+(p.cost||0),0),prof=rows.reduce((s,p)=>s+(p.profit||0),0);
+  const rev=rows.reduce((s,p)=>s+(p.revenue||0),0),cost=rows.reduce((s,p)=>s+(p.tree_cost||0),0),prof=rows.reduce((s,p)=>s+(p.profit||0),0);
   document.getElementById('finKpis').innerHTML=`<div class="kpis">
-    <div class="kpi"><div class="l">案件数</div><div class="n">${rows.length}</div></div>
-    <div class="kpi"><div class="l">受注計</div><div class="n">${OC.yen(rev)}</div></div>
-    <div class="kpi"><div class="l">原価計</div><div class="n">${OC.yen(cost)}</div></div>
+    <div class="kpi"><div class="l">プロジェクト数</div><div class="n">${rows.length}</div></div>
+    <div class="kpi"><div class="l">金額計</div><div class="n">${OC.yen(rev)}</div></div>
+    <div class="kpi"><div class="l">経費計</div><div class="n">${OC.yen(cost)}</div></div>
     <div class="kpi"><div class="l">粗利計</div><div class="n ${prof<0?'neg':'pos'}">${OC.yen(prof)}</div><div class="s">粗利率 ${rev?Math.round(prof/rev*100):0}%</div></div>
   </div>`;
   const ar=k=>finSort.key===k?(finSort.dir<0?' ▾':' ▴'):'';
   document.getElementById('finTable').innerHTML=`<table class="tbl"><thead><tr>
-    <th class="l sortable" onclick="sortFin('name')">案件${ar('name')}</th>
+    <th class="l sortable" onclick="sortFin('name')">プロジェクト${ar('name')}</th>
     <th class="l sortable" onclick="sortFin('status')">状態${ar('status')}</th>
     <th class="l">担当</th>
-    <th class="sortable" onclick="sortFin('revenue')">受注${ar('revenue')}</th>
-    <th class="sortable" onclick="sortFin('cost')">原価${ar('cost')}</th>
-    <th class="sortable" onclick="sortFin('outsource')">外注${ar('outsource')}</th>
-    <th class="sortable" onclick="sortFin('profit')">粗利${ar('profit')}</th>
-    <th class="sortable" onclick="sortFin('profit_rate')" title="粗利率 ＝ 粗利 ÷ 受注">粗利率${ar('profit_rate')}</th>
+    <th class="sortable" onclick="sortFin('revenue')">金額${ar('revenue')}</th>
+    <th class="sortable" onclick="sortFin('anken_sum')">発注計${ar('anken_sum')}</th>
+    <th class="sortable" onclick="sortFin('tree_cost')">経費計${ar('tree_cost')}</th>
+    <th class="sortable" onclick="sortFin('tree_client')">クライアント請求${ar('tree_client')}</th>
+    <th class="sortable" onclick="sortFin('profit')" title="粗利 ＝ 金額 − 発注計">粗利${ar('profit')}</th>
     <th class="l">納品</th>
   </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:default" oncontextmenu="finCtx(event,'${p.id}')">
     <td class="l"><b><span class="link" onclick="go('projects');setTimeout(()=>selectProject('${p.id}'),40)">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','status')"><span class="pill"><i class="dot s-${p.status}"></i>${esc(p.status||'—')}</span></td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','leader_id')">${esc(p.leader_id?OC.personName(p.leader_id):'—')}</td>
     <td class="fcell" onclick="finEdit(this,'${p.id}','amount')">${OC.yen(p.revenue)}</td>
-    <td>${OC.yen(p.cost)}</td><td>${OC.yen(p.outsource)}</td>
-    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.yen(p.profit)}</b></td><td>${p.profit_rate}%</td>
+    <td>${OC.yen(p.anken_sum)}</td><td>${OC.yen(p.tree_cost)}</td><td>${OC.yen(p.tree_client)}</td>
+    <td class="${(p.profit||0)<0?'neg':''}"><b>${OC.yen(p.profit)}</b></td>
     <td class="l fcell" onclick="finEdit(this,'${p.id}','delivery_date')">${OC.fmtDate(p.delivery_date)}</td>
-  </tr>`).join('')||'<tr><td class="empty" colspan="9">該当する案件がありません</td></tr>'}</tbody></table>`;
+  </tr>`).join('')||'<tr><td class="empty" colspan="9">該当するプロジェクトがありません</td></tr>'}</tbody></table>`;
 }
 
-// 右クリックメニュー: 案件を開く・状態変更（P0-B #12。金額・日付は誤爆しやすいので載せない）
+// 右クリックメニュー: プロジェクトを開く・状態変更・削除（金額・日付は誤爆しやすいので載せない）
 function finCtx(ev,id){
   const p=OC.projects.find(x=>x.id===id);
   if(!p){ev.preventDefault();return;}
   ctxMenu(ev,[
-    {label:'案件を開く',fn:()=>{go('projects');setTimeout(()=>selectProject(id),40);}},
+    {label:'プロジェクトを開く',fn:()=>{go('projects');setTimeout(()=>selectProject(id),40);}},
     {sep:true},
     ...PSTATUS.map(s=>({label:s+' にする',checked:p.status===s,fn:()=>saveProjField(id,'status',s)})),
+    {sep:true},
+    {label:'削除…',danger:true,fn:()=>deleteProjectUI(id,p.name)},
   ]);
 }
 function finEdit(td,pid,field){
@@ -1312,14 +1325,14 @@ async function renderTasks(c){
     <button id="tvBoard" onclick="setTaskView('board')">ボード</button>
     <button id="tvList" onclick="setTaskView('list')">リスト</button></div>
     <button class="btn" onclick="openTaskAddModal()">＋ タスク</button></div>`;
-  const projOpts=OC.projects.map(p=>`<option value="${p.id}" ${p.id===taskFilter.proj?'selected':''}>${esc(p.name)}</option>`).join('');
+  const projOpts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===taskFilter.proj?'selected':''}>${esc(projOptLabel(p))}</option>`).join('');
   const meId=OC.effectiveUserId();
   const ppl=OC.people.slice().sort((a,b)=>(a.id===meId?-1:b.id===meId?1:0));
   const asgItems=ppl.map(p=>({v:p.id,label:(p.id===meId?'自分（'+(p.name||p.email)+'）':(p.name||p.email)),me:p.id===meId,sep:p.id===meId}));
   const statusItems=TSTATUS.map(s=>({v:s,label:s}));
   c.innerHTML=`<div class="toolbar">
     <input id="tfQ" class="input search" placeholder="🔍 タスク名" value="${esc(taskFilter.q)}" oninput="setTaskQ(this.value)">
-    <select id="tfProj" class="input" onchange="setProjFilter()"><option value="">案件：すべて</option>${projOpts}</select>
+    <select id="tfProj" class="input" onchange="setProjFilter()"><option value="">プロジェクト：すべて</option>${projOpts}</select>
     ${mcheck('status','状態',statusItems,taskFilter.status)}
     ${mcheck('asg','担当',asgItems,taskFilter.asgs)}
     <button class="btn ghost" style="padding:8px 12px;font-size:12.5px" onclick="clearTaskFilter()">クリア</button>
@@ -1360,14 +1373,23 @@ function closeBarPop(){const p=document.getElementById('barPop');if(p)p.classLis
 // タイムライン案件行のクリック用ポップオーバー（openBarPopと同型・#barPop/.bpop共用）: 状態・開始/納品日・タスク追加・詳細
 function openProjPop(ev,pid){
   ev.stopPropagation();
-  const p=OC.projects.find(x=>x.id===pid);if(!p)return;
+  // タスクは案件（子）直下が基本のため、左一覧（親のみ）に無ければ project_task_labels 由来の t.proj から拾う
+  let p=OC.projects.find(x=>x.id===pid);
+  if(!p){ const t=tasksCache.find(x=>x.project_id===pid); p=t&&t.proj; }
+  if(!p)return;
+  const parentId=((OC.projOpts||[]).find(x=>x.id===pid)||{}).parent_id;
+  const endField=parentId?'end_date':'delivery_date';
+  const endVal=parentId?(p.end_date||''):(p.delivery_date||'');
+  const openDetail=parentId
+    ?`closeBarPop();go('projects');setTimeout(()=>selectAnken('${parentId}','${pid}'),40)`
+    :`closeBarPop();go('projects');setTimeout(()=>selectProject('${pid}'),40)`;
   const pop=document.getElementById('barPop');
   pop.innerHTML=PSTATUS.map(s=>`<div class="bp-row" onclick="saveProjField('${pid}','status','${s}');closeBarPop()"><i class="dot s-${s}"></i>${s===p.status?'✓ ':''}${s}</div>`).join('')
     +`<div class="bp-sep"></div>`
-    +`<div class="bp-dates"><input type="date" class="einput" value="${p.start_date||''}" onchange="saveProjField('${pid}','start_date',this.value)"><input type="date" class="einput" value="${p.delivery_date||''}" onchange="saveProjField('${pid}','delivery_date',this.value)"></div>`
+    +`<div class="bp-dates"><input type="date" class="einput" value="${p.start_date||''}" onchange="saveProjField('${pid}','start_date',this.value)"><input type="date" class="einput" value="${endVal}" onchange="saveProjField('${pid}','${endField}',this.value)"></div>`
     +`<div class="bp-sep"></div>`
     +`<div class="bp-link" onclick="closeBarPop();openTaskAddModal('${pid}')">＋ タスクを追加</div>`
-    +`<div class="bp-link" onclick="closeBarPop();go('projects');setTimeout(()=>selectProject('${pid}'),40)">詳細を開く</div>`;
+    +`<div class="bp-link" onclick="${openDetail}">詳細を開く</div>`;
   pop.style.left=Math.min(ev.clientX,window.innerWidth-210)+'px';
   pop.style.top=Math.min(ev.clientY,window.innerHeight-260)+'px';
   pop.classList.add('show');
@@ -1405,15 +1427,12 @@ async function tmStartChange(id,el){
 }
 async function assignPick(id,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.assignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast('担当を追加');refreshAfterTaskEdit(id);}
 async function removeAsg(id,uid){const n=OC.personName(uid);const {error}=await OC.unassignTask(id,uid);if(error){toast('エラー: '+error.message);return;}toast(n+' を担当から外しました');refreshAfterTaskEdit(id);}
-async function addMemberPick(pid,sel){const uid=sel.value;if(!uid)return;const {error}=await OC.addProjectMember(pid,uid);if(error){toast('メンバー追加エラー: '+error.message);return;}toast('メンバーを追加');selectProject(pid);}
-async function removeMember(pid,uid){const {error}=await OC.removeProjectMember(pid,uid);if(error){toast('メンバー削除エラー: '+error.message);return;}toast('メンバーを外しました');selectProject(pid);}
 // --- タスク詳細モーダル ---
 async function refreshAfterTaskEdit(id){ try{tasksCache=await OC.loadAllTasks();}catch(e){} paintTasks(); if(document.getElementById('tmRoot'))openTaskModal(id,true); }
 async function openTaskModal(id,silent){
   let t=tasksCache.find(x=>x.id===id);
   if(!t){ try{tasksCache=await OC.loadAllTasks();}catch(e){} t=tasksCache.find(x=>x.id===id); }
   if(!t){toast('タスクが見つかりません');return;}
-  const subs=tasksCache.filter(s=>s.parent_task_id===id);
   const proj=t.proj||(OC.projects.find(p=>p.id===t.project_id)||{});
   const asg=asgHTML(t);
   modal(`<div class="modal wide" id="tmRoot"><div class="modal-h">タスク詳細
@@ -1428,66 +1447,41 @@ async function openTaskModal(id,silent){
       </div>
       <div class="field" style="margin-top:12px"><label class="fl">担当</label>${asg}</div>
       <div class="field"><label class="fl" for="tmNote">メモ</label><textarea id="tmNote" class="input" rows="2" onchange="saveTaskField('${id}','note',this.value)">${esc(t.note||'')}</textarea></div>
-      <div class="seclabel">サブタスク（${subs.length}）</div>
-      ${subs.map(s=>`<div class="sub-line">
-        <span class="st"><span class="tasklink" onclick="openTaskModal('${s.id}')">${esc(s.title)}</span></span>
-        <select class="einput" onchange="saveSubField('${s.id}','${id}','status',this.value)">${TSTATUS.map(x=>`<option ${x===(s.status||'未着手')?'selected':''}>${x}</option>`).join('')}</select>
-      </div>`).join('')||'<div class="muted" style="font-size:12.5px;padding:4px 0">サブタスクはありません</div>'}
-      <div class="sub-line"><input id="tmNewSub" class="input" placeholder="サブタスクを追加…" style="flex:1" onkeydown="if(event.key==='Enter')addSub('${id}')"><button class="btn ghost sm" onclick="addSub('${id}')">追加</button></div>
     </div>
     <div class="modal-f"><button class="btn ghost" onclick="closeModal()">閉じる</button></div>
   </div>`);
   if(!silent)setTimeout(()=>{const e=document.getElementById('tmTitle');if(e)e.focus();},30);
-}
-async function saveSubField(sid,parentId,field,value){
-  if((field==='start_date'||field==='end_date')&&value&&!saneDate(value)){toast('日付の年を確認してください（2000〜2100）');refreshAfterTaskEdit(parentId);return;}
-  let v=value;if((field==='start_date'||field==='end_date')&&v==='')v=null;
-  const {error}=await OC.updateTask(sid,{[field]:v});
-  if(error){toast('保存エラー: '+error.message);refreshAfterTaskEdit(parentId);return;}
-  refreshAfterTaskEdit(parentId);
-}
-async function addSub(parentId){
-  const inp=document.getElementById('tmNewSub');const title=(inp?inp.value:'').trim();if(!title)return;
-  if(addSub._busy)return;addSub._busy=true;   // 連打によるサブタスクの重複登録を防ぐ
-  try{
-    const parent=tasksCache.find(x=>x.id===parentId);
-    const {error}=await OC.addTask({project_id:parent?parent.project_id:null,parent_task_id:parentId,title,status:'未着手'});
-    if(error){toast('追加エラー: '+error.message);return;}
-    toast('サブタスクを追加');refreshAfterTaskEdit(parentId);
-  }finally{ addSub._busy=false; }
 }
 function taskGroups(){const g={};visibleTasks().forEach(t=>{const k=t.project_id||'_';(g[k]=g[k]||{proj:t.proj,items:[]}).items.push(t);});return Object.values(g);}
 function updTfCount(){const e=document.getElementById('tfCount');if(e)e.textContent=visibleTasks().length+' 件'+(tasksCache.length>=2000?'（表示は2000件まで）':'');}
 // --- リスト ---
 function paintTaskList(body){
   body.innerHTML=taskGroups().map(g=>{
-    const tops=g.items.filter(t=>!t.parent_task_id);
-    const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
-    const row=(t,sub)=>`<tr class="trow s-row-${t.status||'未着手'}" style="cursor:default" oncontextmenu="taskCtx(event,'${t.id}')">
+    const row=t=>`<tr class="trow s-row-${t.status||'未着手'}" style="cursor:default" oncontextmenu="taskCtx(event,'${t.id}')">
       <td style="width:6px;padding:0;background:${stColor(t.status)}"></td>
-      <td class="l" style="${sub?'padding-left:28px':''}">${sub?'<span class="muted">↳ </span>':''}<span class="stpill st-${t.status||'未着手'}">${esc(t.status||'未着手')}</span> ${titleSpan(t)}</td>
+      <td class="l"><span class="stpill st-${t.status||'未着手'}">${esc(t.status||'未着手')}</span> ${titleSpan(t)}</td>
       <td class="l ed" style="width:110px">${statusSel(t)}</td>
       <td class="l ed" style="width:150px"><input class="einput" type="date" value="${t.start_date||''}" onchange="saveTaskField('${t.id}','start_date',this.value)"></td>
       <td class="l ed" style="width:150px"><input class="einput" type="date" value="${t.end_date||''}" onchange="saveTaskField('${t.id}','end_date',this.value)"></td>
       <td class="l">${asgHTML(t)}</td></tr>`;
     const pid=(g.items[0]||{}).project_id;
-    return `<div class="card" style="margin-bottom:16px"><div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'案件なし')}
-      <span class="muted" style="margin-left:auto;font-weight:700">${tops.length}件</span>
+    return `<div class="card" style="margin-bottom:16px"><div class="card-h">${g.proj?.code?'<span class="code">'+esc(g.proj.code)+'</span> ':''}${esc(g.proj?.name||'プロジェクトなし')}
+      <span class="muted" style="margin-left:auto;font-weight:700">${g.items.length}件</span>
       ${pid?`<button class="btn ghost" style="padding:3px 11px;font-size:11.5px;margin-left:10px" onclick="openTaskAddModal('${pid}')">＋ タスク</button>`:''}</div>
       <div class="card-b" style="padding:0"><table class="tbl"><thead><tr>
         <th style="width:6px;padding:0"></th><th class="l">タスク</th><th class="l">変更</th><th class="l">開始</th><th class="l">終了</th><th class="l">担当</th>
-      </tr></thead><tbody>${tops.map(t=>row(t,false)+subs(t).map(s=>row(s,true)).join('')).join('')}</tbody></table></div></div>`;
+      </tr></thead><tbody>${g.items.map(row).join('')}</tbody></table></div></div>`;
   }).join('');
 }
 // --- ボード（ドラッグで状態変更） ---
 function paintTaskBoard(body){
-  const tops=visibleTasks().filter(t=>!t.parent_task_id);
+  const all=visibleTasks();
   body.innerHTML=`<div class="board">${TSTATUS.map(st=>{
-    const list=tops.filter(t=>(t.status||'未着手')===st);
+    const list=all.filter(t=>(t.status||'未着手')===st);
     return `<div class="bcol" data-st="${st}" ondragover="boardOver(event,this)" ondragleave="this.classList.remove('over')" ondrop="boardDrop(event,this)">
       <div class="bcol-h"><i class="dot s-${st}"></i>${st}<span class="c">${list.length}</span></div>
       ${list.map(t=>`<div class="bcard" draggable="true" oncontextmenu="taskCtx(event,'${t.id}')" ondragstart="boardDrag(event,'${t.id}')" ondragend="this.classList.remove('drag')">
-        <div class="bpj">${esc(t.proj?.name||'案件なし')}</div>
+        <div class="bpj">${esc(t.proj?.name||'プロジェクトなし')}</div>
         <div class="bt">${titleSpan(t)}</div>
         ${asgHTML(t)}
         <div class="bd">${t.start_date?OC.fmtDate(t.start_date):''}${t.end_date?' → '+OC.fmtDate(t.end_date):''}</div>
@@ -1516,8 +1510,8 @@ function paintTaskTimeline(body){
   const groups=taskGroups();
   const dated=visibleTasks().filter(t=>t.start_date||t.end_date);
   const hasProjDate=groups.some(g=>{const p=pmap[(g.items[0]||{}).project_id];return p&&(p.delivery_date||p.start_date);});
-  if(!dated.length&&!hasProjDate){body.innerHTML='<div class="card"><div class="card-b empty">日付の入ったタスク・案件期限がありません（リスト/ボードで日付を入れると表示されます）</div></div>';return;}
-  // 範囲＝タスク日付＋案件(開始/納品)＋今日。未来側に余白を持たせ「先の日付まで」見えるようにする。
+  if(!dated.length&&!hasProjDate){body.innerHTML='<div class="card"><div class="card-b empty">日付の入ったタスク・プロジェクト期限がありません（リスト/ボードで日付を入れると表示されます）</div></div>';return;}
+  // 範囲＝タスク日付＋プロジェクト(開始/納品)＋今日。未来側に余白を持たせ「先の日付まで」見えるようにする。
   const today=ymd(new Date());
   let min=today,max=today;
   const push=d=>{if(!d)return;if(d<min)min=d;if(d>max)max=d;};
@@ -1535,175 +1529,36 @@ function paintTaskTimeline(body){
   let monthLines='';
   days.forEach((d,i)=>{if(d.getDate()===1&&i>0)monthLines+=`<div class="gmonth" style="left:${i*W}px"></div>`;});
   const todayBar=(todayLeft>=0?`<div class="gtoday" style="left:${todayLeft+W/2}px"></div>`:'')+monthLines;
-  const head=`<div class="grow ghead"><div class="gname">案件 / タスク</div><div class="gcells" style="width:${totalW}px;display:flex">${days.map(d=>{
+  const head=`<div class="grow ghead"><div class="gname">プロジェクト / タスク</div><div class="gcells" style="width:${totalW}px;display:flex">${days.map(d=>{
     const wd=d.getDay();const ds=ymd(d);return `<div class="gday ${wd===0||wd===6?'we':''} ${ds===today?'td':''} ${d.getDate()===1?'mo':''}">${d.getMonth()+1}/${d.getDate()}<br>${'日月火水木金土'[wd]}</div>`;}).join('')}</div></div>`;
   const bar=t=>{if(!t.start_date||!t.end_date)return '';const left=dDiff(minD,t.start_date)*W;const w=(dDiff(t.start_date,t.end_date)+1)*W;
     const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
     return `<div class="gbar s-${t.status||'未着手'}" style="left:${left}px;width:${Math.max(w-3,10)}px" onclick="openBarPop(event,'${t.id}')" oncontextmenu="taskCtx(event,'${t.id}')" title="${esc(t.title)}（${esc(t.status||'未着手')}${who?'・'+who:''}）"><span style="position:relative;z-index:1">${esc(t.title)}</span></div>`;};
   const rows=groups.map(g=>{
-    const tops=g.items.filter(t=>!t.parent_task_id);
-    const subs=t=>g.items.filter(s=>s.parent_task_id===t.id);
     const pid=(g.items[0]||{}).project_id;
     const proj=pmap[pid]||g.proj||{};
-    const projName=`${g.proj?.code?'['+esc(g.proj.code)+'] ':''}${esc(g.proj?.name||'案件なし')}`;
+    const projName=`${g.proj?.code?'['+esc(g.proj.code)+'] ':''}${esc(g.proj?.name||'プロジェクトなし')}`;
     let projMarks=todayBar;
     if(proj.start_date&&proj.delivery_date&&proj.delivery_date>=minD&&proj.start_date<=maxD){
       const s=proj.start_date<minD?minD:proj.start_date;const e=proj.delivery_date>maxD?maxD:proj.delivery_date;
-      projMarks+=`<div class="gpspan" style="left:${dDiff(minD,s)*W}px;width:${Math.max((dDiff(s,e)+1)*W-2,4)}px" title="案件期間 ${esc(proj.start_date)}〜${esc(proj.delivery_date)}"></div>`;
+      projMarks+=`<div class="gpspan" style="left:${dDiff(minD,s)*W}px;width:${Math.max((dDiff(s,e)+1)*W-2,4)}px" title="プロジェクト期間 ${esc(proj.start_date)}〜${esc(proj.delivery_date)}"></div>`;
     }
     if(proj.delivery_date&&proj.delivery_date>=minD&&proj.delivery_date<=maxD){
       projMarks+=`<div class="gdead" style="left:${dDiff(minD,proj.delivery_date)*W+W/2}px" title="納品期限 ${esc(proj.delivery_date)}">◆</div>`;
     }
     const deadMeta=proj.delivery_date?`<span class="gnmeta" title="納品期限 ${esc(proj.delivery_date)}">◆納品 ${mmdd(proj.delivery_date)}</span>`:'';
     const projRow=`<div class="grow gproj"><div class="gname"><span class="gnttl">${pid?`<span class="tasklink" onclick="openProjPop(event,'${pid}')">${projName}</span>`:projName}</span>${deadMeta}${pid?`<button class="gaddbtn" title="タスクを追加" onclick="openTaskAddModal('${pid}')">＋</button>`:''}</div><div class="gcells" style="width:${totalW}px">${projMarks}</div></div>`;
-    const taskRow=(t,sub)=>{const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
-      return `<div class="grow"><div class="gname" style="${sub?'padding-left:20px':''}">${statusSelMini(t)}<span class="gnttl"><span class="tasklink" onclick="openTaskModal('${t.id}')">${sub?'↳ ':''}${esc(t.title)}</span></span>${who?'<span class="gnasg">'+who+'</span>':''}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;};
-    return projRow+tops.map(t=>taskRow(t,false)+subs(t).map(s=>taskRow(s,true)).join('')).join('');
+    const taskRow=t=>{const who=(t.task_assignees||[]).map(a=>esc(OC.personName(a.user_id))).join('・');
+      return `<div class="grow"><div class="gname">${statusSelMini(t)}<span class="gnttl"><span class="tasklink" onclick="openTaskModal('${t.id}')">${esc(t.title)}</span></span>${who?'<span class="gnasg">'+who+'</span>':''}</div><div class="gcells" style="width:${totalW}px">${todayBar}${bar(t)}</div></div>`;};
+    return projRow+g.items.map(taskRow).join('');
   }).join('');
   body.innerHTML=`<div class="vlegend">
       <span><i style="background:#9AA0A6"></i>未着手</span><span><i style="background:var(--accent)"></i>進行</span>
       <span><i style="background:var(--good)"></i>完了</span><span><i style="background:var(--warn)"></i>保留</span>
-      <span style="color:var(--bad)">┃今日</span><span style="color:var(--bad)">◆案件の納品期限</span><span>未来45日先まで表示。バーをクリックで状態・日付を変更。</span></div>
+      <span style="color:var(--bad)">┃今日</span><span style="color:var(--bad)">◆プロジェクトの納品期限</span><span>未来45日先まで表示。バーをクリックで状態・日付を変更。</span></div>
     <div class="gwrap"><div class="grid-g">${head}${rows}</div></div>`;
   const w=body.querySelector('.gwrap');
   if(w&&todayLeft>=0)w.scrollLeft=Math.max(0,todayLeft-w.clientWidth*0.3);
-}
-
-// ---- 発注 ----
-// 受けた内注の状態変更（H-4）。RLS: orders_update = from_user/to_user_id/is_manager（db/v3.sql）。
-// 部門宛て（担当者未指定）は本人条件を満たさないため、経理/管理者以外には表示のみに留める。
-const ORDER_STATUS=['依頼中','進行','完了','取消'];
-function orderStatusCell(o,recv){
-  const can=recv?(o.to_user_id===OC.effectiveUserId()||OC.isManager()):(o.from_user===OC.effectiveUserId()||OC.isManager());
-  if(!can)return esc(o.status||'');
-  return `<select class="einput" style="max-width:90px" onchange="saveOrderStatus('${o.id}',this.value)">${ORDER_STATUS.map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}</select>`;
-}
-async function saveOrderStatus(id,status){
-  const {error}=await OC.sb.from('orders').update({status}).eq('id',id);
-  if(error){toast('状態の保存エラー: '+error.message);if(curView==='orders')renderOrders(document.getElementById('content'));return;}
-  toast('発注を「'+status+'」にしました');
-  if(curView==='orders')renderOrders(document.getElementById('content'));
-}
-// 金額・依頼内容のその場編集（P3 #4）: 自分が出した発注のみ、経理は全件編集可。
-function canEditOrder(o,recv){return !recv&&(o.from_user===OC.effectiveUserId()||OC.isManager());}
-function orderTitleCell(o,recv){
-  if(!canEditOrder(o,recv))return `<b>${esc(o.title)}</b> <span class="pill">${esc(o.kind)}</span>`;
-  return `<input class="einput" value="${esc(o.title)}" onchange="saveOrderField('${o.id}','title',this.value)"> <span class="pill">${esc(o.kind)}</span>`;
-}
-function orderAmtCell(o,recv){
-  if(!canEditOrder(o,recv))return `<b>${OC.yen(o.amount)}</b>`;
-  return `<input class="einput" type="number" style="text-align:right;max-width:110px" value="${o.amount}" onchange="saveOrderField('${o.id}','amount',this.value)">`;
-}
-async function saveOrderField(id,field,value){
-  let v=value;
-  if(field==='title'){v=String(value).trim();if(!v){toast('依頼内容を入れてください');renderOrders(document.getElementById('content'));return;}}
-  if(field==='amount'){v=parseInt(String(value).replace(/[,，]/g,''),10)||0;if(v<0){toast('金額は0以上で入力してください');renderOrders(document.getElementById('content'));return;}}
-  const patch={};patch[field]=v;
-  const {error}=await OC.updateOrder(id,patch);
-  if(error){toast('保存エラー: '+error.message);renderOrders(document.getElementById('content'));return;}
-  toast('保存しました');
-  if(curView==='orders')renderOrders(document.getElementById('content'));
-}
-const OF_KEY='oc_order_filter';
-let orderFilterStatus=(()=>{try{return localStorage.getItem(OF_KEY)||'';}catch(e){return '';}})();
-function setOrderFilter(v){orderFilterStatus=v;try{localStorage.setItem(OF_KEY,v);}catch(e){}paintOrders();}
-let ordersCache=[], ordersRaw={out:[],inbound:[]};
-async function renderOrders(c){
-  document.getElementById('topActions').innerHTML='<button class="btn" onclick="openOrderModal()">＋ 発注する</button>';
-  c.innerHTML='<div class="empty">読み込み中…</div>';
-  ordersRaw=await OC.loadOrders();
-  c.innerHTML=`<div class="toolbar">
-    <select id="oFilterStatus" class="input" onchange="setOrderFilter(this.value)"><option value="">状態：すべて</option>${ORDER_STATUS.map(s=>`<option value="${s}" ${s===orderFilterStatus?'selected':''}>${s}</option>`).join('')}</select>
-  </div><div id="ordersBody"></div>`;
-  paintOrders();
-}
-function paintOrders(){
-  const {out,inbound}=ordersRaw;
-  ordersCache=[...out.map(o=>({...o,recv:false})),...inbound.map(o=>({...o,recv:true}))];
-  const oCard=(o,recv)=>`<tr style="cursor:default" oncontextmenu="orderCtx(event,'${o.id}')">
-    <td class="l">${orderTitleCell(o,recv)}</td>
-    <td class="l">${o.project_id?`<span class="link" onclick="go('projects');setTimeout(()=>selectProject('${o.project_id}'),40)">${esc(o.proj?.name||'案件')}</span>`:'—'}</td>
-    <td class="l">${recv?('依頼 '+esc(OC.personName(o.from_user))):('宛先 '+(o.kind==='外注'?esc(o.vendor?.name||'外注先'):esc(OC.deptName(o.to_dept_id)+(o.to_user_id?'・'+OC.personName(o.to_user_id):''))))}</td>
-    <td>${orderAmtCell(o,recv)}</td><td class="l">${orderStatusCell(o,recv)}</td></tr>`;
-  const tbl=(rows,recv,empty)=>{
-    const filtered=orderFilterStatus?rows.filter(o=>o.status===orderFilterStatus):rows;
-    return filtered.length?`<table class="tbl"><thead><tr><th class="l">依頼</th><th class="l">案件</th><th class="l">${recv?'相手':'宛先'}</th><th>金額</th><th class="l">状態</th></tr></thead><tbody>${filtered.map(o=>oCard(o,recv)).join('')}</tbody></table>`:`<div class="empty">${empty}</div>`;
-  };
-  const capNote=arr=>arr.length>=300?'<span style="color:#c0392b;font-weight:600;font-size:11.5px;margin-left:8px">表示は直近300件</span>':'';
-  document.getElementById('ordersBody').innerHTML=`<div class="grid2" style="align-items:start">
-    <div class="card"><div class="card-h">自分が出した発注${capNote(out)}</div><div class="card-b" style="padding:0">${tbl(out,false,'まだ発注はありません')}</div></div>
-    <div class="card"><div class="card-h">自分が受けた内注${capNote(inbound)}</div><div class="card-b" style="padding:0">${tbl(inbound,true,'受けた内注はありません')}</div></div>
-  </div>`;
-}
-// 右クリックメニュー: 状態変更・案件ジャンプ・削除（P0-B #10。「取消」と「削除」は別項目）
-function orderCtx(ev,id){
-  const o=ordersCache.find(x=>x.id===id);
-  if(!o){ev.preventDefault();return;}
-  const can=o.recv?(o.to_user_id===OC.effectiveUserId()||OC.isManager()):(o.from_user===OC.effectiveUserId()||OC.isManager());
-  const items=[];
-  if(o.project_id)items.push({label:'案件を開く',fn:()=>{go('projects');setTimeout(()=>selectProject(o.project_id),40);}});
-  if(can){
-    if(items.length)items.push({sep:true});
-    ORDER_STATUS.forEach(s=>items.push({label:s+' にする',checked:o.status===s,fn:()=>saveOrderStatus(o.id,s)}));
-  }
-  if(o.from_user===OC.effectiveUserId()||OC.isManager()){
-    if(items.length)items.push({sep:true});
-    items.push({label:'削除…',danger:true,fn:()=>deleteOrderUI(o.id,o.title)});
-  }
-  if(!items.length){ev.preventDefault();return;}
-  ctxMenu(ev,items);
-}
-async function deleteOrderUI(id,title){
-  if(!confirm('発注「'+(title||'')+'」を取り消します。記録ごと消えます。通常は状態の「取消」を使ってください。'))return;
-  const {error}=await OC.deleteOrder(id);
-  if(error){toast('削除エラー: '+error.message);return;}
-  toast('発注を削除しました');
-  if(curView==='orders')renderOrders(document.getElementById('content'));
-  if(curView==='projects'&&curProject)selectProject(curProject);
-}
-function openOrderModal(pid){
-  const projOpts=OC.projOpts.map(p=>`<option value="${p.id}" ${p.id===pid?'selected':''}>${esc(p.name)}</option>`).join('');
-  const vendorOpts=OC.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}（${esc(v.kind)}）</option>`).join('');
-  const deptOpts=OC.departments.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('');
-  modal(`<div class="modal"><div class="modal-h">発注する</div><div class="modal-b">
-    <div class="field"><label class="fl" for="oProj">案件（発注元）</label><select id="oProj" class="input">${projOpts}</select></div>
-    <div class="field"><label class="fl" for="oKind">種別</label><select id="oKind" class="input" onchange="orderKind()">
-      <option value="外注">外注（外部の業者へ）</option><option value="内注">内注（社内の人・別部門へ）</option></select></div>
-    <div class="field" id="oVendorF"><label class="fl" for="oVendor">外注先</label><select id="oVendor" class="input">${vendorOpts}</select></div>
-    <div class="field hidden" id="oDeptF"><label class="fl" for="oDept">内注先（部門）</label><select id="oDept" class="input" onchange="orderUsers()">${deptOpts}</select>
-      <label class="fl" style="margin-top:10px" for="oUser">担当者（その部門の人・任意）</label><select id="oUser" class="input"></select></div>
-    <div class="field"><label class="fl" for="oTitle">依頼内容</label><input id="oTitle" class="input" placeholder="例）図面作成・運搬 など"></div>
-    <div class="field"><label class="fl" for="oAmt">金額（円）</label><input id="oAmt" class="input" inputmode="numeric" placeholder="0"></div>
-    </div><div class="modal-f"><button class="btn ghost" onclick="closeModal()">キャンセル</button><button class="btn" id="oSave" onclick="saveOrder()">発注する</button></div></div>`);
-  orderKind();
-  setTimeout(()=>{const e=document.getElementById('oTitle');if(e)e.focus();},30);
-}
-function orderKind(){const k=document.getElementById('oKind').value;
-  document.getElementById('oVendorF').classList.toggle('hidden',k!=='外注');
-  document.getElementById('oDeptF').classList.toggle('hidden',k!=='内注');
-  if(k==='内注')orderUsers();}
-function orderUsers(){const dept=document.getElementById('oDept').value;
-  const list=OC.people.filter(p=>(OC.peopleDepts[p.id]||[]).includes(dept));
-  document.getElementById('oUser').innerHTML='<option value="">部門全体へ（担当者未指定）</option>'+list.map(p=>`<option value="${p.id}">${esc(p.name||p.email)}</option>`).join('');}
-async function saveOrder(){
-  const project_id=document.getElementById('oProj').value;
-  const kind=document.getElementById('oKind').value;
-  const title=document.getElementById('oTitle').value.trim();
-  const amount=parseInt((document.getElementById('oAmt').value||'0').replace(/[,，]/g,''),10)||0;
-  const vendor_id=kind==='外注'?(document.getElementById('oVendor').value||null):null;
-  const to_dept_id=kind==='内注'?(document.getElementById('oDept').value||null):null;
-  const to_user_id=kind==='内注'?(document.getElementById('oUser').value||null):null;
-  if(!project_id){toast('案件を選んでください');return;}
-  if(!title){toast('依頼内容を入れてください');return;}
-  if(amount<0){toast('金額は0以上で入力してください');return;}
-  if(kind==='外注'&&!vendor_id){toast('外注先を選んでください');return;}
-  if(kind==='内注'&&!to_dept_id){toast('内注先（部門）を選んでください');return;}
-  document.getElementById('oSave').disabled=true;
-  const {error}=await OC.addOrder({project_id,kind,vendor_id,to_dept_id,to_user_id,from_user:OC.effectiveUserId(),title,amount});
-  if(error){toast('発注エラー: '+error.message);document.getElementById('oSave').disabled=false;return;}
-  closeModal();toast(kind+'「'+title+'」を発注');
-  if(curView==='orders')renderOrders(document.getElementById('content'));
-  if(curView==='projects'&&curProject)selectProject(curProject);
 }
 
 // ---- メンバー管理（管理者のみ） ----
@@ -1896,13 +1751,12 @@ async function boot(){
   await Promise.all([OC.loadPeople(),OC.loadDepartments(),OC.loadVendors(),OC.projectOptions()]);
   try{ await OC.loadProjects(); }catch(e){ console.error('[boot] loadProjects失敗',e); }
   refreshShell();
-  await refreshBadges();   // go()より先に確定させる。順序が逆だとmarkBadgeSeenPCの既読化前の件数で塗り直されて残る（P4-8）
   document.getElementById('login').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   hideSplash();
   if(OC.impersonatingUser)toast('前回の代理操作（'+(OC.impersonatingUser.name||OC.impersonatingUser.email)+'）を継続中');
   const h=(location.hash||'').slice(1);
-  go(h||'home',true);   // リロード時は直前のviewへ復元（無ければホーム）。fromPop=trueでpush抑止
+  go(h||'projects',true);   // リロード時は直前のviewへ復元（無ければプロジェクト）。fromPop=trueでpush抑止
 }
 // 起動スプラッシュ（P4-9）: ログイン画面・オフライン検知など、boot以外でも画面を出す直前に隠す
 function hideSplash(){ document.getElementById('splash')?.classList.add('hidden'); }

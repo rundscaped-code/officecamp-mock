@@ -133,52 +133,49 @@
   // ---- 代理操作の鏡像スコープ ----
   // 代理操作は管理者セッションのまま動くため、DBのRLSは管理者基準（全件見える）。
   // 「対象ユーザーが自分で見たのと同じ範囲」に揃えるため、代理中かつ対象が
-  // 経理/管理者でない時だけ、対象が見える案件ID集合をフロントで算出して絞る。
-  // 集合は can_see_project（= メンバー or 所有者）と一致させる。
+  // 経理/管理者でない時だけ、対象が見えるプロジェクトID集合をフロントで算出して絞る。
+  // 集合は can_see_project の新定義（owner/leader/member ＋ 親子展開）と一致させる。
+  // 指定ユーザーの可視集合: owner_id / leader_id / project_members ＋ タスク担当
+  // （名前のみ可視も含む＝現状維持）、さらに「担当する子の親」「見える親の子」を展開。
+  // projects は RLS で可視分に絞られて返るため全行 select してよい
+  // （管理者セッションでは全行が返るが、uid 条件の集合演算側で対象者基準に絞られる）。
+  OC._computeVisibleIds = async function (uid) {
+    const [{ data: mem }, { data: ta }, { data: projs }] = await Promise.all([
+      OC.sb.from('project_members').select('project_id').eq('user_id', uid),
+      OC.sb.from('task_assignees').select('task:task_id(project_id)').eq('user_id', uid),
+      OC.sb.from('projects').select('id,parent_id,leader_id,owner_id'),
+    ]);
+    const s = new Set();
+    (mem || []).forEach((r) => s.add(r.project_id));
+    // タスク担当だけの行も可視集合へ（自分のタスク＋案件名は見える。
+    // 金額系 project_costs はビュー側の行フィルタで別途締まるので金額は出ない）
+    (ta || []).forEach((r) => { const pid = r.task && r.task.project_id; if (pid) s.add(pid); });
+    const rows = projs || [];
+    rows.forEach((p) => { if (p.owner_id === uid || p.leader_id === uid) s.add(p.id); });
+    rows.forEach((p) => { if (p.parent_id && s.has(p.id)) s.add(p.parent_id); });  // 担当する子の親
+    rows.forEach((p) => { if (p.parent_id && s.has(p.parent_id)) s.add(p.id); });  // 見える親の子
+    return s;
+  };
   OC._visKey = undefined; OC._visIds = null;
   OC._ensureVisible = async function () {
     const key = (OC.impersonatingId && !OC.isManager()) ? OC.impersonatingId : null;
     if (key === OC._visKey) return OC._visIds;       // null===null＝絞り込み無しもキャッシュ
     OC._visKey = key;
     if (!key) { OC._visIds = null; return null; }
-    const uid = OC.effectiveUserId();
-    const [{ data: owned }, { data: mem }, { data: ta }] = await Promise.all([
-      OC.sb.from('projects').select('id').eq('owner_id', uid),
-      OC.sb.from('project_members').select('project_id').eq('user_id', uid),
-      OC.sb.from('task_assignees').select('task:task_id(project_id)').eq('user_id', uid),
-    ]);
-    const s = new Set();
-    (owned || []).forEach((r) => s.add(r.id));
-    (mem || []).forEach((r) => s.add(r.project_id));
-    // タスク担当だけの案件も可視集合へ（自分のタスク＋案件名は見える。
-    // 経理ビュー project_costs は can_see_project で別途締まるので金額は出ない）
-    (ta || []).forEach((r) => { const pid = r.task && r.task.project_id; if (pid) s.add(pid); });
-    OC._visIds = s;
-    return s;
+    OC._visIds = await OC._computeVisibleIds(OC.effectiveUserId());
+    return OC._visIds;
   };
   OC.projectVisible = (pid) => !OC._visIds || OC._visIds.has(pid);
   // 代理操作の切替時に呼ぶ：案件キャッシュと可視集合を破棄して再取得させる。
   OC.resetScope = function () { OC._visKey = undefined; OC._visIds = null; OC.projects = []; OC.projOpts = []; OC.myProjIds = null; };
 
-  // ---- 案件タブの自己スコープ（経理・管理者向け） ----
-  // 「自分の案件」＝owner_id/leader_id が自分、project_members に自分がいる、
-  // いずれかのタスクの task_assignees に自分がいる、のいずれか。
+  // ---- プロジェクトタブの自己スコープ（経理・管理者向け） ----
+  // 「自分のプロジェクト」＝owner_id/leader_id が自分、project_members に自分がいる、
+  // いずれかのタスクの task_assignees に自分がいる、＋その親子行（可視集合と同じ定義）。
   OC.myProjIds = null;
   OC.loadMyProjectIds = async function () {
-    const uid = OC.effectiveUserId();
-    const [{ data: owned }, { data: led }, { data: mem }, { data: ta }] = await Promise.all([
-      OC.sb.from('projects').select('id').eq('owner_id', uid),
-      OC.sb.from('projects').select('id').eq('leader_id', uid),
-      OC.sb.from('project_members').select('project_id').eq('user_id', uid),
-      OC.sb.from('task_assignees').select('task:task_id(project_id)').eq('user_id', uid),
-    ]);
-    const s = new Set();
-    (owned || []).forEach((r) => s.add(r.id));
-    (led || []).forEach((r) => s.add(r.id));
-    (mem || []).forEach((r) => s.add(r.project_id));
-    (ta || []).forEach((r) => { const pid = r.task && r.task.project_id; if (pid) s.add(pid); });
-    OC.myProjIds = s;
-    return s;
+    OC.myProjIds = await OC._computeVisibleIds(OC.effectiveUserId());
+    return OC.myProjIds;
   };
 
   // ---- ユーザー/マスタ ----
@@ -218,12 +215,13 @@
     OC.vendors = data || []; return OC.vendors;
   };
 
-  // ---- 案件 ----
+  // ---- プロジェクト・案件 ----
+  // プロジェクト = projects の親行（parent_id IS NULL）/ 案件 = 子行（担当 = leader_id）。
   OC.loadProjects = async function () {
     await OC._ensureVisible();
     const [{ data: costs, error: e1 }, { data: meta, error: e2 }] = await Promise.all([
-      OC.sb.from('project_costs').select('*').order('profit', { ascending: false }),
-      OC.sb.from('projects').select('id,status,client,delivery_date,start_date,leader_id'),
+      OC.sb.from('project_costs').select('*').is('parent_id', null).order('profit', { ascending: false }),
+      OC.sb.from('projects').select('id,status,client,delivery_date,start_date,leader_id').is('parent_id', null),
     ]);
     if (e1 || e2) throw (e1 || e2);
     const m = Object.fromEntries((meta || []).map((x) => [x.id, x]));
@@ -232,38 +230,69 @@
     OC.projects = rows;
     return OC.projects;
   };
+  // 選択肢は親子とも返す。各行に parent_id と parent_name（親行名。親自身は null）を
+  // 付け、呼び出し側が「親名 › 案件名」を組めるようにする。
   OC.projectOptions = async function () {
     await OC._ensureVisible();
-    const { data } = await OC.sb.from('projects').select('id,name').neq('status', '失注').order('created_at', { ascending: false });
-    let rows = data || [];
+    const { data } = await OC.sb.from('projects').select('id,name,parent_id').neq('status', '失注').order('created_at', { ascending: false });
+    const all = data || [];
+    const nameById = {}; all.forEach((p) => (nameById[p.id] = p.name));
+    let rows = all;
     if (OC._visIds) rows = rows.filter((p) => OC._visIds.has(p.id));
+    rows.forEach((p) => { p.parent_name = p.parent_id ? (nameById[p.parent_id] || null) : null; });
     OC.projOpts = rows; return OC.projOpts;
   };
+  // プロジェクト詳細: p = 親行、ankens = 子行（projects で全可視分＋project_costs の
+  // 金額列を重ねる。金額列は担当本人・親の owner/leader・経理のみビューが返す）、
+  // expenses / tasks = ツリー全体、members = project_members（導出結果の表示用）。
   OC.loadProjectDetail = async function (id) {
-    const [{ data: p }, { data: pmeta }, { data: exps }, { data: ords }, { data: members }, { data: tasks }] = await Promise.all([
-      OC.sb.from('project_costs').select('*').eq('id', id).single(),
-      OC.sb.from('projects').select('status,delivery_date,start_date,client,leader_id,note').eq('id', id).single(),
-      OC.sb.from('expenses').select('amount,note,spent_at,status,kind,receipt_url,author:user_id(name,email),vendor:vendor_id(name)').eq('project_id', id).order('spent_at', { ascending: false }),
-      OC.sb.from('orders').select('id,kind,amount,title,status,from_user,to_user_id,to_dept_id,vendor:vendor_id(name)').eq('project_id', id).order('created_at', { ascending: false }),
-      OC.sb.from('project_members').select('user_id').eq('project_id', id),
-      OC.sb.from('tasks').select('id,title,status,start_date,end_date,progress,leader_id,parent_task_id,task_assignees(user_id)').eq('project_id', id).order('start_date', { nullsFirst: false }),
+    const [{ data: p }, { data: pmeta }, { data: kids }] = await Promise.all([
+      // 金額ビュー行は可視フィルタで無いことがあるため maybeSingle（single だと 0 行で throw）
+      OC.sb.from('project_costs').select('*').eq('id', id).maybeSingle(),
+      OC.sb.from('projects').select('status,delivery_date,start_date,client,leader_id,owner_id,parent_id,note').eq('id', id).single(),
+      // 子案件のメタ。amount は含めない（金額は project_costs の行フィルタに委ねる）
+      OC.sb.from('projects').select('id,name,code,status,start_date,end_date,leader_id,note').eq('parent_id', id).order('created_at'),
     ]);
-    return { p: { ...(p || {}), ...(pmeta || {}) }, expenses: exps || [], orders: ords || [], members: members || [], tasks: tasks || [] };
+    const childIds = (kids || []).map((k) => k.id);
+    const treeIds = [id, ...childIds];
+    const [{ data: kcosts }, { data: exps }, { data: tasks }, { data: members }] = await Promise.all([
+      childIds.length
+        ? OC.sb.from('project_costs').select('*').in('id', childIds)
+        : Promise.resolve({ data: [] }),
+      OC.sb.from('expenses').select('id,project_id,amount,note,spent_at,status,kind,receipt_url,charge_to,charged_user_id,author:user_id(name,email),charged:charged_user_id(name),vendor:vendor_id(name),proj:project_id(name,parent_id)').in('project_id', treeIds).order('spent_at', { ascending: false }),
+      OC.sb.from('tasks').select('id,project_id,title,note,status,start_date,end_date,progress,leader_id,parent_task_id,task_assignees(user_id)').in('project_id', treeIds).order('start_date', { nullsFirst: false }),
+      OC.sb.from('project_members').select('user_id').eq('project_id', id),
+    ]);
+    const costById = Object.fromEntries((kcosts || []).map((c) => [c.id, c]));
+    const ankens = (kids || []).map((k) => ({ ...k, ...(costById[k.id] || {}) }));
+    return { p: { ...(p || {}), ...(pmeta || {}) }, ankens, expenses: exps || [], tasks: tasks || [], members: members || [] };
+  };
+  // 案件詳細: その案件のみ（タスクと経費）。
+  OC.loadAnkenDetail = async function (id) {
+    const [{ data: p }, { data: pmeta }, { data: tasks }, { data: exps }] = await Promise.all([
+      OC.sb.from('project_costs').select('*').eq('id', id).maybeSingle(),
+      OC.sb.from('projects').select('name,code,status,start_date,end_date,client,leader_id,owner_id,parent_id,note').eq('id', id).single(),
+      OC.sb.from('tasks').select('id,project_id,title,note,status,start_date,end_date,progress,leader_id,parent_task_id,task_assignees(user_id)').eq('project_id', id).order('start_date', { nullsFirst: false }),
+      OC.sb.from('expenses').select('id,project_id,amount,note,spent_at,status,kind,receipt_url,charge_to,charged_user_id,author:user_id(name,email),charged:charged_user_id(name),vendor:vendor_id(name),proj:project_id(name,parent_id)').eq('project_id', id).order('spent_at', { ascending: false }),
+    ]);
+    return { p: { ...(p || {}), ...(pmeta || {}) }, tasks: tasks || [], expenses: exps || [] };
   };
   OC.addProject = (payload) => OC.sb.from('projects').insert(payload);
   OC.updateProject = (id, patch) => OC.sb.from('projects').update(patch).eq('id', id);
-  // 案件メンバーの明示追加/削除（タスク担当の自動昇格は廃止＝v14。メンバーは全タスクを見られる）
-  OC.addProjectMember = (project_id, user_id) => OC.sb.from('project_members').insert({ project_id, user_id });
-  OC.removeProjectMember = (project_id, user_id) => OC.sb.from('project_members').delete().match({ project_id, user_id });
-  // 案件削除（P0-B）。RLS projects_delete = owner or is_manager（db/schema.sql:153）。
-  // expenses.project_id が on delete restrict のため、経費が残る案件は error.code==='23503' を呼び出し側で文言変換する。
+  // 案件追加: payload = { name, leader_id, amount, start_date, end_date, note }。
+  // parent_id・status・owner_id はここで確定させる（呼び出し側からは上書きさせない）。
+  OC.addAnken = (parent_id, payload) => OC.sb.from('projects')
+    .insert({ ...payload, parent_id, status: '進行', owner_id: OC.effectiveUserId() });
+  // プロジェクト/案件削除。RLS projects_delete = owner/leader/親の owner・leader/is_manager（db/v16）。
+  // expenses.project_id・projects.parent_id とも on delete cascade（v16）のため、
+  // プロジェクト削除で配下の案件・タスク・経費も一括で消える。confirm は呼び出し側で出す。
   OC.deleteProject = (id) => OC.sb.from('projects').delete().eq('id', id);
 
   // ---- 経費 ----
   OC.loadExpenses = async function (limit) {
     await OC._ensureVisible();
     let q = OC.sb.from('expenses')
-      .select('id,amount,note,spent_at,status,kind,project_id,user_id,receipt_url,proj:project_id(name,code),author:user_id(name,email),vendor:vendor_id(name)')
+      .select('id,amount,note,spent_at,status,kind,charge_to,charged_user_id,project_id,user_id,receipt_url,proj:project_id(name,code,parent_id),author:user_id(name,email),charged:charged_user_id(name),vendor:vendor_id(name)')
       .order('spent_at', { ascending: false });
     if (limit && !OC._visIds) q = q.limit(limit);
     const { data, error } = await q;
@@ -272,7 +301,12 @@
     if (OC._visIds) { rows = rows.filter((e) => OC._visIds.has(e.project_id)); if (limit) rows = rows.slice(0, limit); }
     return rows;
   };
-  OC.addExpense = (project_id, amount, note) => OC.sb.from('expenses').insert({ project_id, amount, note, user_id: OC.effectiveUserId() });
+  // 申請先 charge_to: 'self'=自分の負担 / 'member'=charged_user_id の負担 / 'client'=先方請求。
+  OC.addExpense = (project_id, amount, note, charge_to, charged_user_id) => {
+    const ct = charge_to || 'self';
+    const cu = ct === 'self' ? OC.effectiveUserId() : ct === 'member' ? (charged_user_id || null) : null;
+    return OC.sb.from('expenses').insert({ project_id, amount, note, charge_to: ct, charged_user_id: cu, user_id: OC.effectiveUserId() });
+  };
   // 経費の編集・削除（P0-B）。RLS expenses_update/expenses_delete = 本人 or is_manager（db/schema.sql:163,167）。
   OC.updateExpense = (id, patch) => OC.sb.from('expenses').update(patch).eq('id', id);
   OC.deleteExpense = (id) => OC.sb.from('expenses').delete().eq('id', id);
@@ -290,7 +324,7 @@
     // 取得は created_at 降順＋limit(2000)（start_date昇順のままだと日付未設定＝NULLS LASTで
     // 新規タスクから先に切り捨てられるため）。表示順は取得後に start_date 昇順へ並べ替える。
     let q = OC.sb.from('tasks')
-      .select('id,project_id,title,start_date,end_date,status,progress,leader_id,parent_task_id,task_assignees(user_id)')
+      .select('id,project_id,title,note,start_date,end_date,status,progress,leader_id,parent_task_id,task_assignees(user_id)')
       .order('created_at', { ascending: false })
       .limit(2000);
     if (OC._visIds) q = q.in('project_id', [...OC._visIds]);
@@ -302,7 +336,7 @@
       if (!b.start_date) return -1;
       return a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0;
     });
-    // 案件名/日付は project_task_labels 経由（メンバー外のタスク担当者にも安全に返る。金額/客先は含まない・v17）。
+    // 案件名/日付は project_task_labels 経由（メンバー外のタスク担当者にも安全に返る。金額/客先は含まない・v16）。
     // projects への直埋め込みだと、案件メンバーでない担当者には行ごとRLSでnullになり案件名が消える。
     const projIds = [...new Set(rows.map((t) => t.project_id).filter(Boolean))];
     if (projIds.length) {
@@ -330,36 +364,47 @@
   OC.FIELD_JP = { name: '案件名', title: 'タイトル', amount: '金額', status: '状態', note: 'メモ',
     start_date: '開始日', end_date: '終了日', delivery_date: '納品日', client: '受注元',
     progress: '進捗', leader_id: 'リーダー', kind: '種別', vendor_id: '外注先',
-    to_dept_id: '内注先', spent_at: '日付', profit: '粗利', parent_task_id: '親タスク' };
+    to_dept_id: '内注先', spent_at: '日付', profit: '粗利', parent_task_id: '親タスク',
+    charge_to: '申請先', charged_user_id: '申請先メンバー' };
   OC.fieldLabel = (k) => OC.FIELD_JP[k] || k;
   // 値の表示整形。自由入力値（名前・メモ等）が混ざるため必ずエスケープして返す
   OC.fmtVal = function (k, v) {
     if (v === null || v === undefined || v === '') return '空';
-    if (k === 'leader_id' || k === 'to_user_id' || k === 'user_id' || k === 'from_user') return OC.esc(OC.personName(v));
+    if (k === 'leader_id' || k === 'to_user_id' || k === 'user_id' || k === 'from_user' || k === 'charged_user_id') return OC.esc(OC.personName(v));
     if (k === 'to_dept_id') return OC.esc(OC.deptName(v));
     if (k === 'amount') return OC.yen(v);
+    if (k === 'charge_to') return { self: '自分', member: 'メンバー', client: 'クライアント請求' }[v] || OC.esc(String(v));
     return OC.esc(String(v));
   };
   OC.diffHTML = function (l) {
     const o = l.diff?.old || {}, n = l.diff?.new || {};
-    const skip = new Set(['id', 'created_at', 'updated_at', 'owner_id', 'receipt_url', 'user_id', 'from_user']);
+    // parent_id は uuid の生値で diff に出ても読めないため出さない（親子はラベル側で表現）
+    const skip = new Set(['id', 'created_at', 'updated_at', 'owner_id', 'receipt_url', 'user_id', 'from_user', 'parent_id']);
+    // projects 行は diff の parent_id 有無で「案件」（子）/「プロジェクト」（親）と表記を変える
+    const isAnken = l.table_name === 'projects' && !!(n.parent_id || o.parent_id);
+    const label = (k) => (l.table_name === 'projects' && k === 'name')
+      ? (isAnken ? '案件名' : 'プロジェクト名') : OC.fieldLabel(k);
     const keys = [...new Set([...Object.keys(o), ...Object.keys(n)])].filter((k) => !skip.has(k));
     const changed = keys.filter((k) => JSON.stringify(o[k]) !== JSON.stringify(n[k]));
     if (l.action === 'INSERT') {
-      const list = keys.filter((k) => n[k] !== null && n[k] !== '').map((k) => `<div class="dl"><span class="dk">${OC.fieldLabel(k)}</span><span class="dn">${OC.fmtVal(k, n[k])}</span></div>`).join('');
+      const list = keys.filter((k) => n[k] !== null && n[k] !== '').map((k) => `<div class="dl"><span class="dk">${label(k)}</span><span class="dn">${OC.fmtVal(k, n[k])}</span></div>`).join('');
       return list || '<div class="muted">—</div>';
     }
     if (l.action === 'DELETE') {
-      const list = keys.filter((k) => o[k] !== null && o[k] !== '').map((k) => `<div class="dl"><span class="dk">${OC.fieldLabel(k)}</span><span class="do">${OC.fmtVal(k, o[k])}</span></div>`).join('');
+      const list = keys.filter((k) => o[k] !== null && o[k] !== '').map((k) => `<div class="dl"><span class="dk">${label(k)}</span><span class="do">${OC.fmtVal(k, o[k])}</span></div>`).join('');
       return list || '<div class="muted">—</div>';
     }
     if (!changed.length) return '<div class="muted">変更なし</div>';
-    return changed.map((k) => `<div class="dl"><span class="dk">${OC.fieldLabel(k)}</span>
+    return changed.map((k) => `<div class="dl"><span class="dk">${label(k)}</span>
       <span class="do">${OC.fmtVal(k, o[k])}</span> → <span class="dn">${OC.fmtVal(k, n[k])}</span></div>`).join('');
   };
   OC.logLabel = function (l) {
-    const t = { projects: '案件', expenses: '経費', tasks: 'タスク', orders: '発注' }[l.table_name] || OC.esc(l.table_name);
     const n = l.diff?.new || l.diff?.old || {};
+    // projects 行は diff の parent_id 有無で「案件」（子）/「プロジェクト」（親）。
+    // orders は UI 廃止後も過去の履歴行が残るため表記を残す。
+    const t = l.table_name === 'projects'
+      ? (n.parent_id ? '案件' : 'プロジェクト')
+      : ({ expenses: '経費', tasks: 'タスク', orders: '発注' }[l.table_name] || OC.esc(l.table_name));
     if (l.table_name === 'expenses') return `${t}：${OC.esc(n.note || '（メモなし）')} ${n.amount ? OC.yen(n.amount) : ''}`;
     if (l.table_name === 'tasks') return `${t}：${OC.esc(n.title)}`;
     if (l.table_name === 'orders') return `${t}：${OC.esc(n.title)} ${n.amount ? OC.yen(n.amount) : ''}`;
@@ -367,44 +412,6 @@
     return t;
   };
 
-  // ---- 通知バッジ（P4-8）: 自分宛て内注(依頼中)・自分の差戻経費の件数。
-  // count は head:true で件数のみ取得（全行フェッチしない）。既読化はlocalStorageの最終閲覧時刻と
-  // created_at を比較し、閲覧後に増えた分だけを「未読」として数える。
-  OC.badgeSeenAt = (key) => { try { return localStorage.getItem('oc_seen_' + key); } catch (e) { return null; } };
-  OC.badgeMarkSeen = (key) => { try { localStorage.setItem('oc_seen_' + key, new Date().toISOString()); } catch (e) {} };
-  OC.loadBadgeCounts = async function () {
-    const uid = OC.effectiveUserId();
-    if (!uid) return { orders: 0, expense: 0 };
-    const deptList = OC.effectiveDepts();
-    const orFilter = ['to_user_id.eq.' + uid].concat(deptList.map((d) => 'to_dept_id.eq.' + d)).join(',');
-    const seenO = OC.badgeSeenAt('orders');
-    let qO = OC.sb.from('orders').select('id', { count: 'exact', head: true }).or(orFilter).eq('status', '依頼中');
-    if (seenO) qO = qO.gt('created_at', seenO);
-    // 差戻は既存行のstatus更新でcreated_atが変わらず「未読」判定が成立しないため、
-    // 解消（status変更）されるまで件数をそのまま出し続ける（P4-8修正）。
-    const qE = OC.sb.from('expenses').select('id', { count: 'exact', head: true }).eq('user_id', uid).eq('status', '差戻');
-    const [{ count: co }, { count: ce }] = await Promise.all([qO, qE]);
-    return { orders: co || 0, expense: ce || 0 };
-  };
-
-  // ---- 発注 ----
-  OC.addOrder = (payload) => OC.sb.from('orders').insert({ from_user: OC.effectiveUserId(), ...payload });
-  // 発注削除（P0-B）。RLS orders_delete = from_user or is_manager（db/v3.sql:40）。
-  OC.deleteOrder = (id) => OC.sb.from('orders').delete().eq('id', id);
-  // 発注の金額・依頼内容のその場編集（P3）。RLS orders_update = from_user/to_user_id/is_manager（db/v3.sql）。
-  OC.updateOrder = (id, patch) => OC.sb.from('orders').update(patch).eq('id', id);
-  OC.loadOrders = async function () {
-    const sel = 'id,project_id,kind,amount,title,status,from_user,to_user_id,to_dept_id,created_at,vendor:vendor_id(name),proj:project_id(name)';
-    const effectiveId = OC.effectiveUserId();
-    // 実効ユーザーIDが未確定（未ログイン等）なら不正な .or(...eq.undefined) を投げず空で返す。
-    if (!effectiveId) return { out: [], inbound: [] };
-    const deptList = OC.effectiveDepts();
-    const inFilter = ['to_user_id.eq.' + effectiveId].concat(deptList.map((d) => 'to_dept_id.eq.' + d)).join(',');
-    // 取消・完了も含めて永久に積み上がるのを防ぐため直近300件に制限（P3）。
-    const [{ data: out }, { data: inb }] = await Promise.all([
-      OC.sb.from('orders').select(sel).eq('from_user', effectiveId).order('created_at', { ascending: false }).limit(300),
-      OC.sb.from('orders').select(sel).or(inFilter).order('created_at', { ascending: false }).limit(300),
-    ]);
-    return { out: out || [], inbound: inb || [] };
-  };
+  // 発注（orders）と通知バッジの API はプロジェクト−案件再編（v16）で廃止。
+  // orders テーブル・トリガは DB に残置するが、ここからは読み書きしない。
 })();

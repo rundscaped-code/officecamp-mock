@@ -1,6 +1,6 @@
 # officecamp-mock
 
-オフィスキャンプ社内の案件・経費・タスク管理アプリ。Supabase（Auth/DB/RLS/Edge Functions）＋ビルド無し静的フロント、PWA。
+オフィスキャンプ社内のプロジェクト・案件・経費・タスク管理アプリ。Supabase（Auth/DB/RLS/Edge Functions）＋ビルド無し静的フロント、PWA。
 
 - dev 起動: repo ルートで `python -m http.server 8788` → http://localhost:8788/app.html
 - 本番: https://rundscaped-code.github.io/officecamp-mock/ （master へ push すると GitHub Pages が自動反映。repo は public）
