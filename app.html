@@ -76,7 +76,7 @@
     padding:14px;font-size:var(--fs-lg);color:var(--ink);outline:none;font-family:inherit}
   select.control{appearance:none}
   .btn{display:block;width:100%;border:none;border-radius:16px;padding:16px;font-size:17px;font-weight:700;
-    color:#fff;background:var(--accent);cursor:pointer;font-family:inherit;box-shadow:0 6px 16px rgba(0,0,0,.18)}
+    color:#fff;background:var(--accent);cursor:pointer;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,.12)}
   .btn:disabled{opacity:.5}
   .btn-ghost{background:var(--card);color:var(--ink);border:1.5px solid var(--line);box-shadow:none}
   /* 案件 */
@@ -112,6 +112,11 @@
     color:var(--gray);font-size:var(--fs-xs);font-weight:600;cursor:pointer;
     border:none;background:transparent;font-family:inherit;padding:0}   /* button化に伴うリセット（M-4） */
   .tab.on{color:var(--accent)}.tab svg{width:24px;height:24px}
+  /* 自分宛の新着タスク件数。タブのアイコン右上に重ねる */
+  .tab{position:relative}
+  .tab .bdg{position:absolute;top:6px;left:calc(50% + 6px);min-width:17px;height:17px;padding:0 4px;
+    border-radius:9px;background:var(--st-lost);color:#fff;font-size:10px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;line-height:1}
   .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);
     background:var(--ink);color:#fff;padding:12px 20px;border-radius:30px;font-size:14px;font-weight:600;
     opacity:0;pointer-events:none;transition:.3s;z-index:10;box-shadow:0 8px 20px rgba(0,0,0,.3)}
@@ -655,6 +660,7 @@
     <button type="button" class="tab" data-s="projects" onclick="nav('projects')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>プロジェクト</button>
     <button type="button" class="tab" data-s="schedule" onclick="nav('schedule')">
+      <span class="bdg hidden" id="tasksBadge" aria-label="新しく割り当てられたタスク">0</span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h10M3 10h14M3 15h7"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>タスク</button>
     <button type="button" class="tab hidden" data-s="finance" onclick="nav('finance')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>経理</button>
@@ -737,9 +743,30 @@ function nav(name,fromPop){
     }
   }
   if(name==='ankens')loadAnkens();
-  if(name==='schedule')loadGantt();
+  if(name==='schedule'){loadGantt();markTasksSeen();}
   if(name==='finance')loadFinance();
   if(name==='expense')loadLedger();
+}
+// ---- 自分宛の新着タスク（db/v20: task_assignees.created_at） ----
+// 端末が持つ最終確認時刻より後に自分へ割り当てられたタスク数を、タブのバッジに出す。
+// タスクを作った時刻ではなく「担当に足された時刻」で見るので、後から担当に入った分も拾える。
+const TASKS_SEEN='oc_tasks_seen_at';
+function tasksSeenAt(){
+  try{ return localStorage.getItem(TASKS_SEEN)||'1970-01-01T00:00:00Z'; }catch(e){ return '1970-01-01T00:00:00Z'; }
+}
+async function refreshTaskBadge(){
+  const el=document.getElementById('tasksBadge'); if(!el||!me)return;
+  try{
+    const {count}=await sb.from('task_assignees').select('task_id',{count:'exact',head:true})
+      .eq('user_id',me.id).gt('created_at',tasksSeenAt());
+    const n=count||0;
+    el.textContent=n>9?'9+':String(n);
+    el.classList.toggle('hidden',n===0);
+  }catch(e){ el.classList.add('hidden'); }
+}
+function markTasksSeen(){
+  try{ localStorage.setItem(TASKS_SEEN,new Date().toISOString()); }catch(e){}
+  refreshTaskBadge();
 }
 // URLハッシュから画面を復元する（起動時・ブラウザ戻る/進む共通）。#detail/<id> は一覧タブを開いてから詳細を開く。
 function applyHash(){
@@ -827,13 +854,13 @@ function toggleDeptAdmin(show){
 }
 function openDeptAdmin(){ toggleSettings(false); renderDeptAdmin(); toggleDeptAdmin(true); }
 function deptOptionTags(sel){
-  return `<option value="">—</option>`+departments.map(d=>`<option value="${d.id}" ${d.id===sel?'selected':''}>${d.name}</option>`).join('');
+  return `<option value="">—</option>`+departments.map(d=>`<option value="${d.id}" ${d.id===sel?'selected':''}>${esc(d.name)}</option>`).join('');
 }
 function renderDeptAdmin(){
   document.getElementById('deptAdminList').innerHTML = people.map(p=>{
     const ds=peopleDepts[p.id]||[];
     return `<div class="card pad" style="margin-bottom:8px">
-      <div style="font-weight:700;margin-bottom:6px">${p.name||p.email}（${p.role||'—'}）</div>
+      <div style="font-weight:700;margin-bottom:6px">${esc(p.name||p.email)}（${esc(p.role||'—')}）</div>
       <div class="row-inline">
         <select class="control" id="da_${p.id}_0">${deptOptionTags(ds[0]||'')}</select>
         <select class="control" id="da_${p.id}_1">${deptOptionTags(ds[1]||'')}</select>
@@ -1059,7 +1086,7 @@ async function loadDepartments(){
 const personName = id => { const p=peopleById[id]; return esc(p?(p.name||p.email):'—'); };
 function peopleOptions(sel){
   return `<option value="">${sel||'—選択—'}</option>`+
-    people.map(p=>`<option value="${p.id}">${p.name||p.email}（${p.role}）</option>`).join('');
+    people.map(p=>`<option value="${p.id}">${esc(p.name||p.email)}（${esc(p.role)}）</option>`).join('');
 }
 // 経費フォームの申請先: 自分 / 先方クライアント（請求） / 各メンバー（自分を除く）
 function fillChargeOptions(){
@@ -1080,15 +1107,20 @@ async function loadProjects(){
   projRows=(data||[]).map(p=>({...p,...(m[p.id]||{})}));
   if(isManager()){
     try{
-      const [{data:owned},{data:led},{data:mem}]=await Promise.all([
-        sb.from('projects').select('id').eq('owner_id',me.id).is('parent_id',null),
-        sb.from('projects').select('id').eq('leader_id',me.id).is('parent_id',null),
+      // 可視集合の定義は shared.js の OC._computeVisibleIds と揃える（PC と結果を一致させるため）。
+      // 旧実装はタスク担当由来と親子展開が抜けており、同じ人でも端末で一覧が変わっていた。
+      const [{data:mem},{data:ta},{data:all}]=await Promise.all([
         sb.from('project_members').select('project_id').eq('user_id',me.id),
+        sb.from('task_assignees').select('task:task_id(project_id)').eq('user_id',me.id),
+        sb.from('projects').select('id,parent_id,leader_id,owner_id'),
       ]);
       const s=new Set();
-      (owned||[]).forEach(r=>s.add(r.id));
-      (led||[]).forEach(r=>s.add(r.id));
       (mem||[]).forEach(r=>s.add(r.project_id));
+      (ta||[]).forEach(r=>{const pid=r.task&&r.task.project_id; if(pid)s.add(pid);});
+      const all2=all||[];
+      all2.forEach(p=>{if(p.owner_id===me.id||p.leader_id===me.id)s.add(p.id);});
+      all2.forEach(p=>{if(p.parent_id&&s.has(p.id))s.add(p.parent_id);});   // 担当する子の親
+      all2.forEach(p=>{if(p.parent_id&&s.has(p.parent_id))s.add(p.id);});   // 見える親の子
       projRows=projRows.filter(p=>s.has(p.id));
     }catch(e){}
   }
@@ -1238,7 +1270,7 @@ function toggleProjForm(show){
     lf.classList.toggle('hidden',!isManager());
     if(isManager()){
       document.getElementById('npLeader').innerHTML=
-        people.map(p=>`<option value="${p.id}" ${p.id===me.id?'selected':''}>${p.name||p.email}</option>`).join('');
+        people.map(p=>`<option value="${p.id}" ${p.id===me.id?'selected':''}>${esc(p.name||p.email)}</option>`).join('');
     }
     document.getElementById('npName').focus();
   }
@@ -1443,7 +1475,7 @@ async function renderProjectDetail(id,body,keepScroll,savedScrollTop){
     <div class="dpane hidden" id="dp-info">
       <div class="sec">プロジェクト情報</div>
       <div class="card pad">
-        <div class="task-meta" style="line-height:2">番号：${p.code||'—'}<br>受注元：${pmeta?.client||'—'}<br>
+        <div class="task-meta" style="line-height:2">番号：${esc(p.code||'—')}<br>受注元：${esc(pmeta?.client||'—')}<br>
           リーダー：${pmeta?.leader_id?personName(pmeta.leader_id):'—'}</div>
         <div class="row-inline" style="margin-top:10px">
           <div style="flex:1"><label style="font-size:12px;color:var(--sub);font-weight:700">開始日</label>
@@ -1685,7 +1717,8 @@ async function deleteAnkenUI(id,name){
 // ---- 経費行の共通描画（申請先つき） ----
 function chargeLabel(e){
   if(e.charge_to==='client')return 'クライアント請求';
-  if(e.charge_to==='member')return (e.charged?.name||personName(e.charged_user_id))+' 負担';
+  // personName は内部でエスケープ済み。charged.name は生値なのでここで包む
+  if(e.charge_to==='member')return (e.charged?.name?esc(e.charged.name):personName(e.charged_user_id))+' 負担';
   return '自分負担';
 }
 function expRowHTML(e,showProj){
@@ -1874,7 +1907,7 @@ async function openTask(id){
   const chips=(t.task_assignees||[]).map(a=>`<span class="chip">${personName(a.user_id)}
     <b class="x" onclick="unassign('${id}','${a.user_id}')">×</b></span>`).join('')||'<span style="color:var(--sub)">担当者なし</span>';
   document.getElementById('taskModalBody').innerHTML=`
-    <div class="tm-proj">${t.proj?.code?t.proj.code+'　':''}${t.proj?.name||''}</div>
+    <div class="tm-proj">${t.proj?.code?esc(t.proj.code)+'　':''}${esc(t.proj?.name||'')}</div>
     <input class="control" style="font-size:18px;font-weight:700;margin-bottom:12px" value="${esc(t.title)}" onchange="updTask('${id}','title',this.value)">
     <div class="field"><label>ステータス</label>
       <select class="st-sel s-${t.status}" style="width:auto" onchange="updTask('${id}','status',this.value);this.className='st-sel s-'+this.value">${TASK_STATUS.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}</select></div>
@@ -1943,7 +1976,7 @@ function bcard(t,pmeta){
   const m=pmeta[t.project_id]||{};
   const who=(t.task_assignees||[]).map(a=>personName(a.user_id)).join('、');
   return `<div class="bcard" data-tid="${t.id}" onpointerdown="boardPointerDown(event,'${t.id}')" onclick="boardCardClick(event,'${t.id}')">
-    <div class="bcard-h" style="display:flex;gap:6px;align-items:center">${statusSelectMini(t)}<div class="bpc">${m.code||''}${m.name?' '+m.name:''}</div></div>
+    <div class="bcard-h" style="display:flex;gap:6px;align-items:center">${statusSelectMini(t)}<div class="bpc">${esc(m.code||'')}${m.name?' '+esc(m.name):''}</div></div>
     <div class="bt">${esc(t.title)}</div>
     <div class="tk-sub">${dateText(t)}${who?'<br>担当：'+who:''}</div></div>`;
 }
@@ -2089,7 +2122,9 @@ async function loadGantt(){
 // ---- 経理（網羅一覧・ソート・クリックで詳細） ----
 let finRows=[], finSort={key:'profit',dir:-1};
 const PROJ_STATUS=['見込','進行','完了','失注'];
-const esc = s => String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g,'&lt;');
+// & < > " をすべてエスケープ（shared.js の OC.esc と同一実装）。
+// 旧実装は " と < のみで、名前・受注元に仕込まれたタグ属性が抜けていた。
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function statusOptions(cur){
   return PROJ_STATUS.map(s=>`<option ${s===cur?'selected':''}>${s}</option>`).join('');
 }
@@ -2198,7 +2233,9 @@ function renderFinance(){
     FIN_COLS.map(c=>`<td class="${c.l?'l':''} ${c.ed?'ed':''}">${c.fmt(r)}</td>`).join('')
   }</tr>`).join('') : `<tr><td class="l" colspan="${FIN_COLS.length}" style="color:var(--sub);text-align:center;padding:24px">該当するプロジェクトがありません</td></tr>`;
   const t=rows.reduce((a,r)=>({revenue:a.revenue+(r.revenue||0),anken_sum:a.anken_sum+(r.anken_sum||0),tree_cost:a.tree_cost+(r.tree_cost||0),profit:a.profit+(r.profit||0)}),{revenue:0,anken_sum:0,tree_cost:0,profit:0});
-  const totMap={name:'合計',revenue:yen(t.revenue),anken_sum:yen(t.anken_sum),tree_cost:yen(t.tree_cost),profit:yen(t.profit)};
+  // 表記ルール: 集計（上のサマリと合計行）は万表記、明細行は円表記。
+  // 同じ画面で同じ合計が万と円の2通りに出ていたのを揃えた。
+  const totMap={name:'合計',revenue:man(t.revenue),anken_sum:man(t.anken_sum),tree_cost:man(t.tree_cost),profit:man(t.profit)};
   const tot=rows.length?`<tr class="tot">${FIN_COLS.map(c=>`<td class="${c.l?'l':''}">${totMap[c.key]||''}</td>`).join('')}</tr>`:'';
   document.getElementById('finTable').innerHTML=`<thead><tr>${head}</tr></thead><tbody>${body}${tot}</tbody>`;
 }
@@ -2220,7 +2257,13 @@ async function deleteProjectUI(id,name){
   const {data:children}=await sb.from('projects').select('id').eq('parent_id',id);
   const childIds=(children||[]).map(c=>c.id);
   const {count}=await sb.from('expenses').select('id',{count:'exact',head:true}).in('project_id',[id,...childIds]);
-  if(!confirm('「'+(name||'')+'」を削除します。案件'+childIds.length+'件・経費'+(count||0)+'件も削除されます。'))return;
+  // 配下がある削除は cascade で案件・タスク・経費まで消え、元に戻せない。
+  // confirm 1回では押し間違いを止められないため、プロジェクト名の入力を求める。
+  if(childIds.length||count){
+    const t=prompt('「'+(name||'')+'」を削除します。案件'+childIds.length+'件・経費'+(count||0)+'件も消え、元に戻せません。\n\n続けるにはプロジェクト名を入力してください。');
+    if(t===null)return;
+    if(t.trim()!==String(name||'').trim()){toast('プロジェクト名が一致しません。削除を中止しました');return;}
+  }else if(!confirm('「'+(name||'')+'」を削除します。'))return;
   const {error}=await sb.from('projects').delete().eq('id',id);
   if(error){toast('削除エラー: '+error.message);return;}
   toast('プロジェクトを削除しました');
@@ -2286,15 +2329,44 @@ async function record(){
   let charge_to='self', charged_user_id=me.id;
   if(chargeVal==='client'){charge_to='client';charged_user_id=null;}
   else if(chargeVal&&chargeVal!=='self'){charge_to='member';charged_user_id=chargeVal;}
+  const draft={amount,note,charge:chargeVal,receipt_url:receiptPath,
+    parent_id:document.getElementById('proj').value,
+    anken_id:document.getElementById('projAnken').value};
   const btn=document.getElementById('recBtn');btn.disabled=true;
   try{
     const {error}=await sb.from('expenses').insert({project_id,amount,note,receipt_url:receiptPath,charge_to,charged_user_id});
-    if(error){toast('保存エラー: '+error.message);return;}
+    if(error){saveExpDraft(draft);toast('保存エラー: '+error.message+'（入力は下書きに残しました）');return;}
+    clearExpDraft();
     toast(yen(amount)+' を記録しました');
     document.getElementById('amt').value='';document.getElementById('memo').value='';
     document.getElementById('receipt').value='';document.getElementById('ocrMsg').textContent='';receiptPath=null;
     document.getElementById('expCharge').value='self';
+  }catch(e){
+    // オフラインや通信断はここに来る（supabase-js が例外を投げる）。入力を消さない。
+    saveExpDraft(draft);
+    toast('送信できませんでした。入力は下書きに残しました');
   }finally{ btn.disabled=false; }   // 通信例外でもボタンが永久disabledにならないよう必ず戻す
+}
+
+// ---- 送信できなかった経費の下書き ----
+// Service Worker は非GETを素通しするため、電波の無い現場で記録すると insert が落ち、
+// 入力内容がそのまま消えていた。失敗時に localStorage へ退避し、次回起動で書き戻す。
+const EXP_DRAFT='oc_expense_draft';
+function saveExpDraft(d){ try{localStorage.setItem(EXP_DRAFT,JSON.stringify(d));}catch(e){} }
+function clearExpDraft(){ try{localStorage.removeItem(EXP_DRAFT);}catch(e){} }
+function restoreExpDraft(){
+  let d=null; try{d=JSON.parse(localStorage.getItem(EXP_DRAFT)||'null');}catch(e){}
+  if(!d)return;
+  // 案件selectは親プロジェクトに連動して組み直すため、親→案件の順に入れる
+  if(d.parent_id){
+    document.getElementById('proj').value=d.parent_id;
+    rebuildAnkenSelect();
+    document.getElementById('projAnken').value=d.anken_id||'';
+  }
+  const set=(id,v)=>{const el=document.getElementById(id); if(el&&v!=null&&v!=='')el.value=v;};
+  set('amt',d.amount); set('memo',d.note); set('expCharge',d.charge);
+  receiptPath=d.receipt_url||null;
+  toast('送信できなかった経費を復元しました。内容を確認して記録してください');
 }
 
 // ---- PWA（Service Worker 登録＋インストール導線） ----
@@ -2370,6 +2442,8 @@ async function boot(){
   await loadDepartments();
   await loadProjectOptions();
   fillChargeOptions();
+  restoreExpDraft();   // 前回オフラインで送れなかった経費があれば書き戻す
+  refreshTaskBadge();  // 自分宛の新着タスク件数
   document.getElementById('acctBtn').classList.add('show');
   applyHash();   // リロード時は直前のタブ/プロジェクト詳細へ復元。ハッシュが無ければ経費タブへ着地（M-6）
 }

@@ -7,7 +7,9 @@
 <!-- 旧モックの残置をやめ、本番アプリへのリダイレクトページに置き換え（L-2）。
      JS: 画面幅でスマホ版/PC版へ自動振り分け。JS無効時は meta refresh でスマホ版へ。 -->
 <meta http-equiv="refresh" content="1;url=app.html">
-<script>location.replace(matchMedia('(min-width:860px)').matches?'pc.html':'app.html');</script>
+<!-- 閾値は pc.html の viewport（width=1024）に合わせる。860px にすると
+     860〜1023px の窓（タブレット横・小さいノート）で PC 版が縮小表示か横スクロールになる。 -->
+<script>location.replace(matchMedia('(min-width:1024px)').matches?'pc.html':'app.html');</script>
 <style>
   body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;
     background:#F4F4F5;color:#1A1A1A;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}

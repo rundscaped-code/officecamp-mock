@@ -7,7 +7,10 @@
 <style>
   :root{
     --bg:#F6F7F9;--panel:#FFFFFF;--side:#0E1116;--side-ink:#C7CCD4;
-    --ink:#1A1D21;--sub:#5F6670;--line:#E7E9ED;--accent:#2D6CDF;--accent-soft:#EAF1FD;
+    --ink:#1A1D21;--sub:#5F6670;--line:#E7E9ED;--accent:#1A1A1A;--accent-soft:#F0F0F0;
+    /* --accent はブランド色（スマホ版と共通の黒）。--go は「進行中・選択行・フォーカス」だけに使う青。
+       同じ青を両方に使うと、状態色とブランド色が混ざって画面の意味が読めなくなる。 */
+    --go:#2D6CDF;
     --good:#2E7D52;--bad:#C0392B;--warn:#B8860B;--radius:12px;--side-active:#1C2230;
     --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
     /* タイポグラフィトークン（L-3）: 主要コンポーネントの文字サイズはこの4段で指定する */
@@ -15,9 +18,12 @@
   }
   [data-theme="dark"]{
     --bg:#0F1115;--panel:#171A1F;--side:#0A0C10;--side-ink:#AEB6C2;--side-active:#1E2530;
-    --ink:#E8EAED;--sub:#8A929E;--line:#262A31;--accent:#5B8DEF;--accent-soft:#1A2433;
+    --ink:#E8EAED;--sub:#8A929E;--line:#262A31;--accent:#EDEDED;--accent-soft:#2C2D33;--go:#5B8DEF;
     --good:#4FAF7C;--bad:#E5705F;--warn:#D4A24B;--shadow:0 1px 3px rgba(0,0,0,.5);
   }
+  /* ダークでは --accent が明色になるため、その上に載る文字を反転する */
+  [data-theme="dark"] .btn{color:#16171A}
+  [data-theme="dark"] .splash-logo{color:#16171A}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",Segoe UI,sans-serif;font-size:var(--fs-md)}
@@ -27,7 +33,8 @@
   .app{display:flex;height:100dvh}
   .side{width:236px;flex:none;background:var(--side);color:var(--side-ink);display:flex;flex-direction:column;padding:18px 12px}
   .brand{display:flex;align-items:center;gap:9px;padding:6px 10px 18px;font-weight:800;letter-spacing:.5px;color:#fff;font-size:15px}
-  .brand .logo{width:26px;height:26px;border-radius:7px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px}
+  /* サイドバーが黒（--side:#0E1116）なので、ロゴは白地に反転させる（黒だと沈んで消える） */
+  .brand .logo{width:26px;height:26px;border-radius:7px;background:#fff;color:#0E1116;display:flex;align-items:center;justify-content:center;font-size:14px}
   .nav{display:flex;flex-direction:column;gap:2px;flex:1}
   /* ナビはbutton要素（Tab移動・Enter起動を成立させる、M-4）。a向けの旧指定も互換のため残す */
   .nav a,.nav button{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;color:var(--side-ink);cursor:pointer;font-weight:600;font-size:13.5px;user-select:none;
@@ -36,6 +43,9 @@
   .nav a.on,.nav button.on{background:var(--side-active);color:#fff}
   .nav a .ic,.nav button .ic{width:18px;height:18px;flex:none;opacity:.9}
   .nav .navsec{font-size:10px;letter-spacing:1.5px;color:#5b626d;font-weight:700;padding:14px 12px 6px}
+  /* 自分宛の新着タスク件数 */
+  .navbdg{margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--bad);
+    color:#fff;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1}
   .side-foot{border-top:1px solid rgba(255,255,255,.08);padding-top:10px;margin-top:8px;display:flex;flex-direction:column;gap:2px}
   .side-foot .me{padding:6px 12px;font-size:12px;color:#8b929d}
   .side-foot .me b{color:#fff;display:block;font-size:13px}
@@ -43,7 +53,7 @@
     border:none;background:transparent;font-family:inherit;width:100%;text-align:left}
   .sfbtn:hover{background:rgba(255,255,255,.06);color:#fff}
   /* キーボード操作の可視化（M-4）: Tab移動時のみアウトラインを出す */
-  :where(a,button,select,input,textarea,summary,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  :where(a,button,select,input,textarea,summary,[tabindex]):focus-visible{outline:2px solid var(--go);outline-offset:2px}
   /* ===== メイン ===== */
   .main{flex:1;min-width:0;display:flex;flex-direction:column}
   .top{height:62px;flex:none;border-bottom:1px solid var(--line);background:var(--panel);display:flex;align-items:center;gap:16px;padding:0 26px}
@@ -59,7 +69,7 @@
   .btn.ghost:hover{background:var(--accent-soft);filter:none}
   .btn.sm{padding:6px 11px;font-size:12.5px}
   .input,select.input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 11px;font-size:var(--fs-md);color:var(--ink);outline:none;font-family:inherit}
-  .input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .input:focus{border-color:var(--go);box-shadow:0 0 0 3px rgba(45,108,223,.15)}
   select.input{appearance:none}
   label.fl{display:block;font-size:var(--fs-sm);font-weight:700;color:var(--sub);margin:0 2px 5px}
   .field{margin-bottom:13px}
@@ -86,25 +96,26 @@
   table.tbl tbody td.l{text-align:left;white-space:normal}
   table.tbl tbody tr{cursor:pointer}
   table.tbl tbody tr:hover{background:var(--accent-soft)}
-  table.tbl tbody tr.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+  table.tbl tbody tr.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--go)}
   table.tbl tbody tr:last-child td{border-bottom:none}
   .neg{color:var(--bad)}
   .pos{color:var(--good)}
   .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--accent-soft);color:var(--accent)}
   .dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
-  .s-見込,.s-未着手{background:#9AA0A6}.s-進行{background:var(--accent)}.s-完了{background:var(--good)}.s-保留{background:var(--warn)}.s-失注{background:var(--bad)}
+  .s-見込,.s-未着手{background:#9AA0A6}.s-進行{background:var(--go)}.s-完了{background:var(--good)}.s-保留{background:var(--warn)}.s-失注{background:var(--bad)}
   .stbadge{font-size:11.5px;font-weight:700;padding:2px 10px;border-radius:20px}
   .code{font-size:11px;font-weight:700;color:var(--sub);background:var(--accent-soft);padding:1px 7px;border-radius:6px}
   /* その場編集コントロール */
   .einput{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:5px 8px;font-size:13px;font-family:inherit;max-width:210px;outline:none}
-  .einput:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .einput:focus{border-color:var(--go);box-shadow:0 0 0 3px rgba(45,108,223,.15)}
   .drow{align-items:center}
   .drow .einput{width:220px;max-width:220px;text-align:left}
   .drow>span:first-child{flex:none}
   select.einput{appearance:none;cursor:pointer}
   td .einput{width:100%;max-width:none;padding:4px 6px;text-align:inherit}
   td.ed{padding:6px 8px}
-  .link{color:var(--accent);cursor:pointer}
+  /* アクセントが黒になったので、リンクは下線で押せることを示す（色だけでは本文と区別できない） */
+  .link{color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
   /* クリックで編集（経理セル等） */
   .fcell{cursor:text;border-radius:6px}
   .fcell:hover{box-shadow:inset 0 0 0 1px var(--line)}
@@ -154,7 +165,7 @@
   .gproj .gcells{background:var(--bg)}
   .gbar{position:absolute;top:6px;height:21px;border-radius:6px;display:flex;align-items:center;color:#fff;font-size:10.5px;
     font-weight:700;padding:0 8px;overflow:hidden;white-space:nowrap;cursor:pointer;z-index:1}
-  .gbar.s-未着手{background:#9AA0A6}.gbar.s-進行{background:var(--accent)}.gbar.s-完了{background:var(--good)}.gbar.s-保留{background:var(--warn)}
+  .gbar.s-未着手{background:#9AA0A6}.gbar.s-進行{background:var(--go)}.gbar.s-完了{background:var(--good)}.gbar.s-保留{background:var(--warn)}
   .gtoday{position:absolute;top:0;bottom:0;width:2px;background:var(--bad);opacity:.6;z-index:2}
   .gfill{position:absolute;left:0;top:0;bottom:0;background:rgba(255,255,255,.32);border-right:1px solid rgba(255,255,255,.55)}
   .gpspan{position:absolute;top:13px;height:7px;border-radius:4px;background:var(--accent);opacity:.18;z-index:0}
@@ -164,7 +175,7 @@
   .gasg{margin-left:6px;opacity:.85;font-weight:600}
   /* ガントバー・タスク名列のミニステータス操作 */
   .stmini{width:32px;flex:none;padding:2px 0;margin-right:6px;border:none;background:transparent;font-weight:800;text-align:center;cursor:pointer;font-family:inherit}
-  .stmini.s-未着手{color:#9AA0A6}.stmini.s-進行{color:var(--accent)}.stmini.s-完了{color:var(--good)}.stmini.s-保留{color:var(--warn)}
+  .stmini.s-未着手{color:#9AA0A6}.stmini.s-進行{color:var(--go)}.stmini.s-完了{color:var(--good)}.stmini.s-保留{color:var(--warn)}
   .bpop{display:none;position:fixed;z-index:200;min-width:190px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.28);padding:6px}
   .bpop.show{display:block}
   .bpop .bp-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;font-size:13.5px;cursor:pointer;white-space:nowrap}
@@ -176,13 +187,13 @@
   .bpop .bp-link:hover{background:var(--accent-soft);border-radius:7px}
   /* タスク状態の色分け（リスト） */
   .stpill{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:20px;margin-right:6px;color:#fff;vertical-align:middle}
-  .stpill.st-未着手{background:#9AA0A6}.stpill.st-進行{background:var(--accent)}.stpill.st-完了{background:var(--good)}.stpill.st-保留{background:var(--warn)}
+  .stpill.st-未着手{background:#9AA0A6}.stpill.st-進行{background:var(--go)}.stpill.st-完了{background:var(--good)}.stpill.st-保留{background:var(--warn)}
   .trow.s-row-完了{opacity:.72}
   .trow.s-row-進行 td.l:nth-child(2){font-weight:600}
   .vlegend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--sub);margin:0 0 10px}
   .vlegend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
   /* タスク詳細モーダル */
-  .tasklink{color:var(--accent);cursor:pointer;font-weight:600}
+  .tasklink{color:var(--accent);cursor:pointer;font-weight:600;text-decoration:underline;text-underline-offset:2px}
   .tasklink:hover{text-decoration:underline}
   .modal.wide{width:600px}
   .tm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -331,7 +342,7 @@
       <button type="button" data-v="ankens" onclick="go('ankens')"><span class="ic">▥</span> 案件</button>
       <button type="button" data-v="projects" onclick="go('projects')"><span class="ic">▤</span> プロジェクト</button>
       <button type="button" data-v="expenses" onclick="go('expenses')"><span class="ic">¥</span> 経費</button>
-      <button type="button" data-v="tasks"    onclick="go('tasks')"><span class="ic">☷</span> タスク</button>
+      <button type="button" data-v="tasks"    onclick="go('tasks')"><span class="ic">☷</span> タスク<span class="navbdg hidden" id="tasksBadge" aria-label="新しく割り当てられたタスク">0</span></button>
       <div class="navsec hidden" id="adminSec">管理</div>
       <button type="button" data-v="finance" id="financeNav" class="hidden" onclick="go('finance')"><span class="ic">▣</span> 経理</button>
       <button type="button" data-v="members" id="membersNav" class="hidden" onclick="go('members')"><span class="ic">👥</span> メンバー</button>
@@ -504,8 +515,30 @@ function go(v,fromPop){
   if(v==='ankens')return renderAnkens(c);
   if(v==='expenses')return renderExpenses(c);
   if(v==='finance')return renderFinance(c);
-  if(v==='tasks')return renderTasks(c);
+  if(v==='tasks'){markTasksSeen();return renderTasks(c);}
   if(v==='members')return renderMembers(c);
+}
+// ---- 自分宛の新着タスク（db/v20: task_assignees.created_at） ----
+// 端末が持つ最終確認時刻より後に自分へ割り当てられたタスク数をサイドバーに出す。
+// タスクの作成時刻ではなく「担当に足された時刻」で見るので、後から担当に入った分も拾える。
+const TASKS_SEEN='oc_tasks_seen_at';
+function tasksSeenAt(){
+  try{ return localStorage.getItem(TASKS_SEEN)||'1970-01-01T00:00:00Z'; }catch(e){ return '1970-01-01T00:00:00Z'; }
+}
+async function refreshTaskBadge(){
+  const el=document.getElementById('tasksBadge'); const uid=OC.effectiveUserId();
+  if(!el||!uid)return;
+  try{
+    const {count}=await OC.sb.from('task_assignees').select('task_id',{count:'exact',head:true})
+      .eq('user_id',uid).gt('created_at',tasksSeenAt());
+    const n=count||0;
+    el.textContent=n>9?'9+':String(n);
+    el.classList.toggle('hidden',n===0);
+  }catch(e){ el.classList.add('hidden'); }
+}
+function markTasksSeen(){
+  try{ localStorage.setItem(TASKS_SEEN,new Date().toISOString()); }catch(e){}
+  refreshTaskBadge();
 }
 // リロードで直前のviewに復元、Alt+←等のブラウザ戻る/進むにも追従
 window.addEventListener('popstate',()=>{
@@ -953,8 +986,13 @@ async function duplicateProjectUI(id){
 async function deleteProjectUI(id,name){
   let ac=0,ec=0;
   try{ const d=await OC.loadProjectDetail(id); ac=(d.ankens||[]).length; ec=(d.expenses||[]).length; }catch(e){}
-  const extra=(ac||ec)?('案件'+ac+'件・経費'+ec+'件も削除されます。'):'';
-  if(!confirm('プロジェクト「'+(name||'')+'」を削除します。'+extra+'よろしいですか？'))return;
+  // 配下がある削除は cascade で案件・タスク・経費まで消え、元に戻せない。
+  // confirm 1回では押し間違いを止められないため、プロジェクト名の入力を求める。
+  if(ac||ec){
+    const t=prompt('プロジェクト「'+(name||'')+'」を削除します。案件'+ac+'件・経費'+ec+'件も消え、元に戻せません。\n\n続けるにはプロジェクト名を入力してください。');
+    if(t===null)return;
+    if(t.trim()!==String(name||'').trim()){toast('プロジェクト名が一致しません。削除を中止しました');return;}
+  }else if(!confirm('プロジェクト「'+(name||'')+'」を削除します。よろしいですか？'))return;
   const {error}=await OC.deleteProject(id);
   if(error){toast('削除エラー: '+error.message);return;}
   toast('プロジェクトを削除しました');
@@ -1525,7 +1563,7 @@ function paintFinance(){
     <th class="sortable" onclick="sortFin('anken_sum')">発注計${ar('anken_sum')}</th>
     <th class="sortable" onclick="sortFin('tree_cost')">経費計${ar('tree_cost')}</th>
     <th class="sortable" onclick="sortFin('tree_client')">クライアント請求${ar('tree_client')}</th>
-    <th class="sortable" onclick="sortFin('profit')" title="粗利 ＝ 金額 − 発注計">粗利${ar('profit')}</th>
+    <th class="sortable" onclick="sortFin('profit')" title="粗利 ＝ 金額 ＋ クライアント請求 − 経費計（発注計は社内配分のため引かない）">粗利${ar('profit')}</th>
     <th class="l">納品</th>
   </tr></thead><tbody>${rows.map(p=>`<tr style="cursor:default" oncontextmenu="finCtx(event,'${p.id}')">
     <td class="l"><b><span class="link" onclick="openFinanceDetail('${p.id}')">${p.code?'<span class="code">'+esc(p.code)+'</span> ':''}${esc(p.name)}</span></b>${p.client?'<div class="muted" style="font-size:11.5px">'+esc(p.client)+'</div>':''}</td>
@@ -1604,7 +1642,7 @@ function finEdit(td,pid,field){
 }
 // ---- タスク（タイムライン / ボード / リスト） ----
 const TSTATUS=['未着手','進行','完了','保留'];
-function stColor(s){return ({'未着手':'#9AA0A6','進行':'var(--accent)','完了':'var(--good)','保留':'var(--warn)'})[s||'未着手']||'#9AA0A6';}
+function stColor(s){return ({'未着手':'#9AA0A6','進行':'var(--go)','完了':'var(--good)','保留':'var(--warn)'})[s||'未着手']||'#9AA0A6';}
 const TF_KEY='oc_task_filter';
 // 初回（未保存）の既定は完了を除外した3状態。完了を見たい時は状態mcheckで明示チェックする（P3 #7）。
 function loadTaskFilter(){let f={proj:'',status:['未着手','進行','保留'],asgs:[],q:''};try{const r=JSON.parse(localStorage.getItem(TF_KEY)||'null');if(r){f.proj=r.proj||'';f.status=Array.isArray(r.status)?r.status:(r.status?[r.status]:[]);f.asgs=Array.isArray(r.asgs)?r.asgs:(r.asg?[r.asg]:[]);f.q=r.q||'';}}catch(e){}return f;}
@@ -1890,7 +1928,7 @@ function paintTaskTimeline(body){
     return projRow+g.items.map(taskRow).join('');
   }).join('');
   body.innerHTML=`<div class="vlegend">
-      <span><i style="background:#9AA0A6"></i>未着手</span><span><i style="background:var(--accent)"></i>進行</span>
+      <span><i style="background:#9AA0A6"></i>未着手</span><span><i style="background:var(--go)"></i>進行</span>
       <span><i style="background:var(--good)"></i>完了</span><span><i style="background:var(--warn)"></i>保留</span>
       <span style="color:var(--bad)">┃今日</span><span style="color:var(--bad)">◆プロジェクトの納品期限</span><span>未来45日先まで表示。バーをクリックで状態・日付を変更。</span></div>
     <div class="gwrap"><div class="grid-g">${head}${rows}</div></div>`;
@@ -2094,6 +2132,7 @@ async function boot(){
   if(OC.impersonatingUser)toast('前回の代理操作（'+(OC.impersonatingUser.name||OC.impersonatingUser.email)+'）を継続中');
   const h=(location.hash||'').slice(1);
   go(h||'projects',true);   // リロード時は直前のviewへ復元（無ければプロジェクト）。fromPop=trueでpush抑止
+  refreshTaskBadge();       // 自分宛の新着タスク件数（go が tasks なら markTasksSeen 側で 0 になる）
 }
 // 起動スプラッシュ（P4-9）: ログイン画面・オフライン検知など、boot以外でも画面を出す直前に隠す
 function hideSplash(){ document.getElementById('splash')?.classList.add('hidden'); }

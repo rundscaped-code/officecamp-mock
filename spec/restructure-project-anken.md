@@ -16,7 +16,7 @@
 ## 金額・粗利の定義（正）
 
 1. 案件行: 案件金額 = amount。クライアント請求 client_billed = Σ(charge_to='client' の紐づく経費)。経費 cost = Σ(charge_to≠'client' の紐づく経費)。案件粗利 = amount + client_billed − cost。
-2. プロジェクト行: プロジェクト金額 = amount。案件数 anken_count。発注計 anken_sum = Σ子 amount。経費計 tree_cost = 自行+全子行の非 client 経費。クライアント請求 tree_client = 同 client 分。粗利 = amount − anken_sum（ユーザー定義そのまま。リーダー個人の経費負担はメンバー別集計側で見る）。
+2. プロジェクト行: プロジェクト金額 = amount。案件数 anken_count。発注計 anken_sum = Σ子 amount。経費計 tree_cost = 自行+全子行の非 client 経費。クライアント請求 tree_client = 同 client 分。粗利 = amount + tree_client − tree_cost（2026-07-25 改訂・db/v19。旧定義 amount − anken_sum は経費を一切引かず、v16 以前に登録した親直下の経費が粗利に出なかった。発注計は社内配分なので粗利からは引かない）。
 3. メンバー別粗利（プロジェクト詳細。リーダー/経理のみ表示）: 人 X = Σ_{Xが担当の子案件 c}(c.amount + c.client_billed) − Σ(ツリー内で charged_user_id=X の経費)。リーダー行のみ = プロジェクト金額 + 親直下の client_billed − anken_sum − Σ(charged_user_id=リーダー)。フロントで expenses 行から計算（ビュー化しない）。
 4. 経費申請先の意味: self=申請者本人の負担（charged_user_id=申請者）。member=選択メンバーの負担（charged_user_id=その人）。client=先方請求（charged_user_id=null、紐づけ先の revenue に上乗せ＝粗利が増える）。
 
